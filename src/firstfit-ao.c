@@ -381,7 +381,7 @@ static memblock_t *mb_coalesce(memblock_t *blk, memarea_t *area)
  * Find block in given memory area and reserve it for use by caller.
  */
 
-static void *ma_alloc(memarea_t *area, uint32_t size)
+static void *ma_alloc(memarea_t *area, bool from_last, uint32_t size)
 {
 	DEBUG("requested block of size %u\n", size);
 
@@ -391,7 +391,10 @@ static void *ma_alloc(memarea_t *area, uint32_t size)
 	size = ALIGN(size + sizeof(memblock_used_t), MB_GRANULARITY);
 
 	/* browse free blocks list */
-	memblock_t *blk = area->free;
+	memblock_t *blk = (from_last) ? (area->last) : (area->free);
+
+	if (from_last && (blk->flags & MB_FLAG_USED))
+		return NULL;
 
 	while (blk != NULL) {
 		mb_valid(blk);
@@ -468,42 +471,50 @@ static void ma_free(memarea_t *area, void *memory)
 	mb_coalesce(blk, area);
 }
 
-/* ========================================================================= */
+/*
+ * Shrink sbrk memory area leaving 'pages_free' number of free pages.
+ */
 
-void *mm_alloc(memarea_t *mm, uint32_t size)
+static void ma_shrink(memarea_t *area, uint32_t pages_free)
 {
-	void *memory = NULL;
-		
-	memarea_t *area = mm;
+	memblock_t *blk = area->last;
 
+	mb_valid(blk);
 	ma_valid(area);
 
-	if (!(area->flags & MA_FLAG_READY)) {
-		area->free = (memblock_t *)ALIGN((uint32_t)(area + 1), MB_GRANULARITY);
-		area->last = area->free;
-		area->flags |= MA_FLAG_READY;
-		ma_touch(area);
+	assert(blk->flags & MB_FLAG_LAST);
+	assert(area->flags & MA_FLAG_SBRK);
 
-		mb_init(area);
+	if (!(blk->flags & MB_FLAG_USED)) {
+		int32_t n = SIZE_IN_PAGES(blk->size - sizeof(memblock_t)) - pages_free;
+
+		if ((n > 0) && (pm_sbrk_free((void *)((uint32_t)blk + blk->size - (n * PAGE_SIZE)), n))) {
+			blk->size -= n * PAGE_SIZE;
+			area->size -= n * PAGE_SIZE;
+
+			mb_touch(blk);
+			ma_touch(area);
+		}
 	}
+}
 
-	if ((memory = ma_alloc(area, size)))
-		return memory;
+/*
+ * Extend sbrk memory area with 'pages' number of pages.
+ */
 
-	/* try to get memory from system if block not found */
-	int n = SIZE_IN_PAGES(size);
+static bool ma_expand(memarea_t *area, uint32_t pages)
+{
+	DEBUG("Expanding area %p - %p\n", area, (void *)((uint32_t)area + area->size - 1));
 
-	DEBUG("get %d pages from system\n", n);
-
-	memblock_t *blk = pm_sbrk_alloc(n);
+	memblock_t *blk = pm_sbrk_alloc(pages);
 
 	if (blk == NULL) {
 		DEBUG("cannot get memory from system\n");
-		return NULL;
+		return FALSE;
 	}
 
 	/* setup new block */
-	blk->size	= n * PAGE_SIZE;
+	blk->size	= pages * PAGE_SIZE;
 	blk->flags	= MB_FLAG_FIRST | MB_FLAG_LAST;
 	blk->prev	= NULL;
 	blk->next	= NULL;
@@ -515,33 +526,39 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 
 	blk = mb_coalesce(blk, area);
 
-	area->size += n * PAGE_SIZE;
+	area->size += pages * PAGE_SIZE;
 
 	ma_touch(area);
 
-	return ma_alloc(area, size);
+	return TRUE;
+}
+
+/* ========================================================================= */
+
+void *mm_alloc(memarea_t *area, uint32_t size)
+{
+	ma_valid(area);
+
+	if (!(area->flags & MA_FLAG_READY)) {
+		area->free = (memblock_t *)ALIGN((uint32_t)(area + 1), MB_GRANULARITY);
+		area->last = area->free;
+		area->flags |= MA_FLAG_READY;
+		ma_touch(area);
+
+		mb_init(area);
+	}
+
+	void *memory = NULL;
+
+	if (!(memory = ma_alloc(area, FALSE, size)))
+		if (ma_expand(area, SIZE_IN_PAGES(size)))
+			memory = ma_alloc(area, TRUE, size);
+
+	return memory;
 }
 
 void mm_free(memarea_t *mm, void *memory)
 {
 	ma_free(mm, memory);
-
-	mb_valid(mm->last);
-	
-	assert(mm->last->flags & MB_FLAG_LAST);
-
-	/* give back memory to operating system */
-	if (!(mm->last->flags & MB_FLAG_USED)) {
-		int n = SIZE_IN_PAGES(mm->last->size - sizeof(memblock_t)) - 4;
-
-		if ((n > 0) && (pm_sbrk_free((void *)((uint32_t)mm->last + mm->last->size - (n * PAGE_SIZE)), n))) {
-			mm->last->size -= n * PAGE_SIZE;
-
-			mb_touch(mm->last);
-
-			mm->size -= n * PAGE_SIZE;
-
-			ma_touch(mm);
-		}
-	}
+	ma_shrink(mm, 4);
 }
