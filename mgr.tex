@@ -1,0 +1,244 @@
+% --- Inicjalizacja dokumentu --------------------------------------------------
+
+\documentclass[12pt,a4paper,titlepage,twoside]{mwart}
+\usepackage{latexsym}
+\usepackage{polski}
+\usepackage{array}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{a4wide}
+\usepackage{fancyhdr}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\pagestyle{fancy}
+
+% --- Zdefiniowanie autora i tytułu --------------------------------------------
+\author{Krystian Bacławski}
+\title{Praca magisterska}
+
+\frenchspacing
+
+\begin{document}
+
+\maketitle
+\cleardoublepage
+
+\tableofcontents
+\cleardoublepage
+
+% ------------------------------------------------------------------------------
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1.2ex plus 0.5ex minus 0.2ex}
+
+\section{Motywacja}
+
+Algorytmy zarządzania stertą towarzyszą informatyce od samych jej początków.
+Allokatorów sterty zaczęto używać, kiedy pojawiły się pierwsze dynamiczne
+struktury danych, takie jak listy i drzewa, a sama pamięć była na tyle duża, by
+zmieścić w niej większe problemy. Mimo, że minęło 50 lat od pojawienia się
+pierwszych algorytmów z tej klasy, dziedzina ta nadal nie jest wyczerpująco
+zbadana od strony praktycznej. Przyczyny są dwojakiej natury. Po pierwsze --
+duży wpływ na działanie allokatora ma specyfika sprzętu -- w szczególności
+wielowarstwowy model pamięci i wieloprocesorowość dzisiejszych komputerów. Po
+drugie -- programy allokujące pamięć z reguły korzystają z allokatora w pewien
+określony sposób, zdradzając przy tym ściśle określone wzorce.
+
+Ewolucja sprzętu spowodowała, że dobry algorytm zarządzania stertą 
+musi charakteryzować się niską fragmentacją, krótkim zamortyzowanym czasem
+przypadającym na jedną operację i wykorzystaniem lokalności bloków.
+Umiejętna implementacja korzystająca ze specyfiki pamięci ma również wpływ
+na prędkość algorytmów korzystających z allokatora.
+
+System Linux posiada bardzo dobre algorytmy zarządzania stertą, zarówno te
+działające w przestrzeni użytkownika (biblioteka glibc i glib) jak i w
+przestrzeni jądra. Niestety nie są to ani algorytmy uniwersalne, ani łatwo
+modyfikowalne na potrzeby programisty. Celem tej pracy jest zaimplementowanie
+allokatora pamięci działającego w pamięci dzielonej procesu. Specyfika tego
+problemu zostanie przestawiona w dziale \textbf{Implementacja}.
+
+\section{Wstęp teoretyczny}
+
+Zarządcy pamięci są algorytmami tak powszechnymi, że niemal nie zauważa się ich
+istnienia. Programiści traktują wywołania funkcji realizujących przydzielanie i
+zwalnianie obszarów za czarne skrzynki -- nie wiedząc, że pod spodem tkwią
+często zaawansowane algorytmy, a czasem również dość nieefektywne w pewnych
+przypadkach. Celem tego rodziału jest przedstawienie podstawowych koncepcji
+związanych z dostępem do pamięci i jej zarządzaniem.
+
+\subsection{Architektura zarządzanej pamięci}
+
+Do rozważań nad efektywną implementacją alokatora wydaje się być niezbędna
+elementarna znajomość architektury współczesnych systemów komputerowych.
+Programista implementujący własny manadżer pamięci musi wiedzieć, na co zwracać
+uwagę i czego unikać, by programy z niego korzystające działały wydajnie.
+
+\begin{figure}
+\centering
+\includegraphics[width=0.75\textwidth]{cpu-diagram}
+\caption{Uproszczony diagram architektury komputera}
+\end{figure}
+
+\parbox{\textwidth}{
+Większość teraźniejszych procesorów posiada wbudowaną jednostkę MMU (ang.
+Memory Management Unit), realizującą:
+\par\vspace{2mm}
+\begin{itemize}[label=\textbullet]
+	\item System uprawnień dostępu do pamięci (ang. memory protection).
+	\item Pamięć wirtualną poprzez mechanizm wymiany (ang. swapping).
+	\item Pamięc logiczną poprzez mechanizm mapowania (ang. memory mapping).
+\end{itemize}
+}
+
+Oprócz tego procesor ma szereg mechanizmów do buforowania wyników obliczeń z
+użyciem pamięci podręcznej (ang. memory cache). Jest to najdroższy i najszybszy
+typ pamięci wykorzystywany w komputerach. Podstawową jednostką pamięci
+podręcznej jest linia (ang. cache line) -- w przypadku architektury Intel IA-32
+długość linii wynosi 64 bajty. Pamięć ta jest przezroczysta dla użytkownika --
+tj. nie może z niej bezpośrednio korzystać.
+
+
+\parbox{\textwidth}{
+Z punktu widzenia systemu operacyjnego istnieją trzy rodzaje pamięci:
+\par\vspace{2mm}
+\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
+	\textbf{fizyczna}	& czyli pamięć operacyjna bezpośrednio dostępna dla procesora. \\
+	\textbf{wirtualna}	& wszystka dostępna pamięć, która w jakiś sposób może być wykorzystana przez procesor. \\
+	\textbf{logiczna}	& czyli pamięć widziana bezpośrednio przez proces. \\
+\end{tabularx}
+}
+
+Jednostkami które widzi procesor to linia i strona.
+
+Tu należy się mała opowieść o tym jak działają współczesne procesory. Nieco o
+pamięci cache (linia, cache hit, cache miss) i zarządzaniu pamiecią
+(deskryptory pamięci, TLB). Da to wgląd czytelnikowi w problematykę lokalności
+algorytmu.
+
+\subsection{Intuicyjna definicja problemu}
+
+Zarządca sterty to algorytm on-line, który operuje na pewnym obszarze pamięci
+w przestrzeni adresowej programu. Obiektami, którymi się zajmuje są bloki
+pamięci. Manadżer musi pamiętać, które bloki są przydzielane programowi, a
+które są nieużywane.
+
+\parbox{\textwidth}{
+Blok jest spójnym obszarem pamięci o następujących właściwościach:
+\par\vspace{2mm}
+\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
+	\textbf{położenie}	& adres obszaru pamięci, w którym się zaczyna. \\
+	\textbf{wielkość}	& mierzona (zazwyczaj) w bajtach. \\
+	\textbf{narodziny}	& kwant czasu, w którym zarządca oddaje blok na użytek programu. \\
+	\textbf{śmierć}		& kwant czasu, w którym program oddaje blok na użytek zarządcy. \\
+	\textbf{właściciel}	& proces lub wątek, któremu ten blok został przypisany. \\
+\end{tabularx}
+}
+
+\parbox{\textwidth}{
+Zarządca odpowiada na dwa typy żądań programu:
+\par\vspace{2mm}
+\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
+	\textbf{malloc} & które zwraca adres bloku pamięci o żądanym
+	rozmiarze lub informuje, że żądanie nie mogło zostać spełnione. \\
+
+	\textbf{free} & które oddaje obszar zajmowany przez blok pamięci o
+	podanym adresie do ponownego użycia przez algorytm zarządcy. \\
+\end{tabularx}
+}
+
+\subsubsection{Fragmentacja}
+
+Warto wspomnieć o tym, że blok z reguły jest większy niżby wynikało to z
+wartości przekazywanej do funkcji \textbf{malloc}.  Może to wynikać np. z
+pewnych założeń co do architektury sprzętu -- często jednostka alokacji jest
+równa rozmiarowi największej elementarnej danej, którą może przetwarzać
+procesor -- jak i tego, że algorytm może chcieć składować gdzieś dane niezbędne
+do przetwarzania bloków.
+
+Większość znanych alokatorów pamięci dla systemów operacyjnych przeznaczonych
+dla procesorów z rodziny Intel IA-32 za jednostkę alokacji przyjmuje 8 bajtów,
+co odpowiada rozmiarowi najdłuższej danej całkowitej oznaczanej w języku C jako
+'long long int'.
+
+Zarządca jest właściwie wyłącznie odpowiedzialny za wyznaczanie położenia
+obszaru pamięci, w którym będzie się znajdował blok i wszystkie niezbędne dane
+z nim związane. Algorytm wyznacza położenie danego bloku tylko raz -- tj. nie
+może go przemieszczać, ani zmieniać danych w nim zawartych (poza tymi, które są
+przeznaczone na struktury danych zarządcy), jeśli blok został już przydzielony.
+
+
+
+Ogólna definicja problemu zarządzania stertą jako algorytmu on-line.
+
+Przyjrzyjmy się trzem podstawowym wariantom problemu zarządzania pamięcią.
+
+\subsubsection{Klasyczna wersja problemu}
+
+Blok pamięci długości $n$-słów. Operacje: malloc, free.
+
+\subsubsection{Zarządzenie stronami pamięci}
+
+Większość ówczesnych komputerów ma pewne mechanizmy zarządzania pamięcią
+zaimplementowane sprzętowo. Mechanizmy te tworzono z myślą o systemach
+operacyjnych i użyciu ich do usprawnienia działania procesów.
+
+Jądro systemu uniksowego nie udostępnia procesom przestrzeni użytkownika
+mechanizmu zarządzania pamięcią dla bloków różnej długości. Implementacja
+popularnych funkcji malloc/free jest wczytywana z biblioteki libc. Proces
+użytkownika, może od systemu zarządać jedynie pewnej ilość tzw. ramek pamięci
+-- bloków z reguły wielkości 4KB. Z punktu widzenia procesora taki blok to
+najmniejsza jednostka pamięci, której właściwości jest w stanie kontrolować.
+Jądro systemu zarządza pamięcią fizyczną tworząc przestrzeń adresową na
+potrzeby procesu. Systemy partnerskie (ang. Buddy Systems) są podstawowym
+algorytmem zarządzania pamięcią fizyczną w systemie Linux.
+
+\subsubsection{Zarządzenie pamięcią dla bloków jednakowej wielkości}
+
+Wiele dynamicznych struktur danych drzewa charakteryzuje się stałą wielkością
+rekordu -- w przypadku drzewa jest to węzeł. Mając na względzie takie
+ograniczenia problemu, można łatwo zapanować nad problemem lokalności w algorytmach
+
+\subsubsection{Zarządzenie pamięcią dla bloków różnej wielkości}
+
+Najbardziej ogólny wariant algorytmu. Na potrzeby programistów jest on
+osiągalny przez wywołania malloc/free z biblioteki standardowej języka C.
+
+\section{Omówienie klasycznych mechanizmów}
+
+Podstawy, z których będę korzystał wymyślając własny algorytm.
+
+\subsection{Strategie wyboru bloku pamięci}
+
+W jaki sposób zarezerwować blok pamięci?
+
+\subsubsection{Best-fit}
+
+Wybór najlepiej pasującego wolnego bloku.
+
+\subsubsection{First-fit}
+
+Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
+
+\section{Zarządzanie pamięcią, a współpraca z jądrem systemu Linux}
+
+\begin{enumerate}
+\item mmap i munmap,
+\item mlock i munlock,
+\item madvise,
+\item mprotect,
+\item getpagesize,
+\item brk i sbrk.
+\end{enumerate}
+
+\section{Metody testowania wydajności manadżerów pamięci}
+
+Tu będzie o tym, że są dwie metody -- na chama (random) i ślady wykonania programów.
+
+\section{Implementacja}
+
+
+\end{document}
+
