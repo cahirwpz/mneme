@@ -111,6 +111,7 @@ void ma_print(memarea_t *area)
 
 	printf("\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", area->size, used, free);
 	printf("\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
+	printf("\033[0;36mFirst free block: $%.8x, last block: $%.8x.\033[0m\n", (uint32_t)area->free, (uint32_t)area->last);
 }
 
 /*
@@ -143,6 +144,13 @@ static void mb_insert(memblock_t *blk, memarea_t *area)
 	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)blk, blk->size, blk->flags);
 
 	ma_valid(area);
+
+	/* update last block pointer */
+	if (blk > area->last) {
+		area->last = blk;
+
+		ma_touch(area);
+	}
 	
 	/* list is empty - insert at the beginning */
 	if (area->free == NULL) {
@@ -153,7 +161,6 @@ static void mb_insert(memblock_t *blk, memarea_t *area)
 
 		mb_touch(blk);
 		ma_touch(area);
-
 		return;
 	}
 
@@ -217,6 +224,7 @@ static void mb_insert(memblock_t *blk, memarea_t *area)
 
 static void mb_split(memblock_t *blk, uint32_t size, memarea_t *area)
 {
+	ma_valid(area);
 	mb_valid(blk);
 	assert((size & MB_GRANULARITY_MASK) == 0);
 
@@ -256,6 +264,13 @@ static void mb_split(memblock_t *blk, uint32_t size, memarea_t *area)
 		newblk->next->prev = newblk;
 		
 		mb_touch(newblk->next);
+	}
+
+	/* correct pointer to last block */
+	if (newblk > area->last) {
+		area->last = newblk;
+
+		ma_touch(area);
 	}
 
 	DEBUG("splitted blocks: [$%.8x; %u; $%x] [$%.8x; %u; $%x]\n",
@@ -305,8 +320,6 @@ static void mb_pullout(memblock_t *blk, memarea_t *area)
 
 static memblock_t *mb_coalesce(memblock_t *blk, memarea_t *area)
 {
-	ma_valid(area);
-
 	/* coalesce with next block */
 	while (blk->next) {
 		if ((uint32_t)blk + blk->size != (uint32_t)blk->next)
@@ -320,6 +333,15 @@ static memblock_t *mb_coalesce(memblock_t *blk, memarea_t *area)
 
 		if (next->flags & MB_FLAG_LAST)
 			blk->flags |= MB_FLAG_LAST;
+
+		ma_valid(area);
+
+		if (area->last == next) {
+
+			area->last = blk;
+
+			ma_touch(area);
+		}
 
 		mb_touch(blk);
 	}
@@ -339,6 +361,15 @@ static memblock_t *mb_coalesce(memblock_t *blk, memarea_t *area)
 
 		if (next->flags & MB_FLAG_LAST)
 			blk->flags |= MB_FLAG_LAST;
+
+		ma_valid(area);
+
+		if (area->last == next) {
+
+			area->last = blk;
+
+			ma_touch(area);
+		}
 
 		mb_touch(blk);
 	}
@@ -449,6 +480,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 
 	if (!(area->flags & MA_FLAG_READY)) {
 		area->free = (memblock_t *)ALIGN((uint32_t)(area + 1), MB_GRANULARITY);
+		area->last = area->free;
 		area->flags |= MA_FLAG_READY;
 		ma_touch(area);
 
@@ -493,4 +525,23 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 void mm_free(memarea_t *mm, void *memory)
 {
 	ma_free(mm, memory);
+
+	mb_valid(mm->last);
+	
+	assert(mm->last->flags & MB_FLAG_LAST);
+
+	/* give back memory to operating system */
+	if (!(mm->last->flags & MB_FLAG_USED)) {
+		int n = SIZE_IN_PAGES(mm->last->size - sizeof(memblock_t)) - 4;
+
+		if ((n > 0) && (pm_sbrk_free((void *)((uint32_t)mm->last + mm->last->size - (n * PAGE_SIZE)), n))) {
+			mm->last->size -= n * PAGE_SIZE;
+
+			mb_touch(mm->last);
+
+			mm->size -= n * PAGE_SIZE;
+
+			ma_touch(mm);
+		}
+	}
 }

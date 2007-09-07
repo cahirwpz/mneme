@@ -4,7 +4,7 @@
  * Page manager: sbrk implementation.
  */
 
-#define NDEBUG
+//#define NDEBUG
 
 #include "sysmem.h"
 
@@ -42,11 +42,11 @@ bool pm_sbrk_free(void *area, uint32_t n)
 	DEBUG("segment end: $%.8x\n", (uint32_t)sbrk(0));
 
 	if ((uint8_t *)area + (PAGE_SIZE * n) == end) {
-		sbrk(-PAGE_SIZE * n);
+		if (brk(area) == 0) {
+			DEBUG("segment shrinked to: $%.8x\n", (uint32_t)sbrk(0));
 
-		DEBUG("segment shrinked to: $%.8x\n", (uint32_t)sbrk(0));
-
-		return TRUE;
+			return TRUE;
+		}
 	}
 
 	return FALSE;

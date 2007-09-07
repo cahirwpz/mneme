@@ -7,17 +7,18 @@
 
 /* Memory area structure */
 
-struct memarea
+struct memarea				/* size of this structure will be aligned to 16 bytes boundary */
 {
-	uint16_t checksum;
-	uint16_t flags;
-	uint32_t size;
-	uint32_t used;
+	uint16_t checksum;		// 2
+	uint16_t flags;			// 4
+	uint32_t size;			// 8
+	uint32_t used;			// 12
 
-	struct memarea *prev;
-	struct memarea *next;
+	struct memarea *prev;	// 16
+	struct memarea *next;	// 20
 
-	struct memblock *free;
+	struct memblock *free;	// 24
+	struct memblock *last;	// 28
 };
 
 typedef struct memarea memarea_t;
