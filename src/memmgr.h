@@ -23,6 +23,15 @@ struct memarea				/* size of this structure will be aligned to 16 bytes boundary
 
 typedef struct memarea memarea_t;
 
+/* Memory manager structure */
+
+struct memmgr
+{
+	struct memarea *areas;
+};
+
+typedef struct memmgr memmgr_t;
+
 /* Flags definition */
 
 #define MA_FLAG_READY	1
@@ -57,9 +66,9 @@ static inline void ma_valid(memarea_t *area)
 struct memarea *ma_new(pm_type_t type, uint32_t size);
 void ma_print(struct memarea *area);
 
-struct memarea *mm_init(void);
-void *mm_alloc(struct memarea *mm, uint32_t size);
-void mm_free(struct memarea *mm, void *memory);
-void mm_print(struct memarea *mm);
+void mm_init(struct memmgr *mm);
+void *mm_alloc(struct memmgr *mm, uint32_t size);
+void mm_free(struct memmgr *mm, void *memory);
+void mm_print(struct memmgr *mm);
 
 #endif

@@ -8,7 +8,7 @@
 
 #define MAX_BLOCK_NUM	(1 << 16)
 #define MAX_MEM_USED	(1 << 20)
-#define MAX_BLOCK_SIZE	(1 << 12)
+#define MAX_BLOCK_SIZE	(1 << 14)
 
 static struct
 {
@@ -16,7 +16,7 @@ static struct
 	uint32_t	last;
 } blocks;
 
-static struct memarea *mm = NULL;
+static memmgr_t mm;
 
 void usage(char *progname)
 {
@@ -63,7 +63,7 @@ int main(int argc, char **argv)
 
 	srand(seed);
 
-	mm = mm_init();
+	mm_init(&mm);
 
 	for (i = 0; i < ops; )
 	{
@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 			if (s < 4)
 				s = 4;
 
-			blocks.array[blocks.last + 1] = mm_alloc(mm, s);
+			blocks.array[blocks.last + 1] = mm_alloc(&mm, s);
 
 			/* if couldn't allocate then give up */
 			if (blocks.array[blocks.last + 1] == NULL)
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 
 			uint32_t i = rand() % (blocks.last + 1);
 
-			mm_free(mm, blocks.array[i]);
+			mm_free(&mm, blocks.array[i]);
 
 			printf("free(%p)\n", blocks.array[i]);
 
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 		i++;
 	}
 	
-	mm_print(mm);
+	mm_print(&mm);
 
 	return 0;
 }
