@@ -1,6 +1,6 @@
 CC		=	libtool --mode=compile gcc -g -static
 LD		=	libtool --mode=link gcc -g -static 
-CFLAGS	=	-O -Wall -DNDEBUG -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM
+CFLAGS	=	-O -Wall -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DNDEBUG 
 
 OBJS	=	memmgr.o firstfit-ao.o sysmem-mmap.o sysmem-sbrk.o sysmem-shm.o
 

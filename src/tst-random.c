@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 			if (blocks.array[blocks.last + 1] == NULL)
 				continue;
 
-			printf("malloc(%d) = %p\n", s, blocks.array[++blocks.last]);
+			fprintf(stderr, "malloc(%d) = %p\n", s, blocks.array[++blocks.last]);
 		} else {
 			if (blocks.last == -1)
 				continue;
@@ -96,13 +96,15 @@ int main(int argc, char **argv)
 
 			mm_free(&mm, blocks.array[i]);
 
-			printf("free(%p)\n", blocks.array[i]);
+			fprintf(stderr, "free(%p)\n", blocks.array[i]);
 
 			if (blocks.last != i)
 				blocks.array[i] = blocks.array[blocks.last];
 
 			blocks.array[blocks.last--] = NULL;
 		}
+
+		//mm_print(&mm);
 
 		i++;
 	}

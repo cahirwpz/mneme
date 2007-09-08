@@ -88,7 +88,7 @@ static inline void mb_valid(memblock_t *blk)
 
 static void mb_insert(memblock_t *newblk, memblock_t *guard)
 {
-	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)blk, blk->size, blk->flags);
+	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
 
 	mb_valid(newblk);
 	mb_valid(guard);
@@ -149,7 +149,7 @@ static void mb_split(memblock_t *blk, uint32_t size)
 	if (blk->size == size)
 		return;
 
-	DEBUG("will split block at $%.8x\n", (uint32_t)blk);
+	/* DEBUG("will split block at $%.8x\n", (uint32_t)blk); */
 
 	/* calculate new block address */
 	memblock_t *newblk = (memblock_t *)((uint32_t)blk + size);
@@ -181,12 +181,12 @@ static void mb_split(memblock_t *blk, uint32_t size)
 		if (newblk > newblk->next->prev)
 			newblk->next->prev = newblk;
 	} else {
-		blk->next->prev = newblk;
+		newblk->next->prev = newblk;
 	}
 
 	mb_touch(newblk->next);
 
-	DEBUG("splitted blocks: [$%.8x; %u; $%x] [$%.8x; %u; $%x]\n",
+	DEBUG("splitted blocks: [$%.8x; %u; $%.2x] [$%.8x; %u; $%.2x]\n",
 		  (uint32_t)blk, blk->size, blk->flags, (uint32_t)newblk, newblk->size, newblk->flags);
 }
 
@@ -298,7 +298,7 @@ static void mb_print(memblock_t *guard)
 	/* find first block */
 	memblock_t *blk = guard + 1;
 
-	printf("\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)guard + guard->size - 1));
+	fprintf(stderr, "\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)guard + guard->size - 1));
 
 	uint32_t used = 0, free = 0, largest = 0;
 
@@ -314,7 +314,7 @@ static void mb_print(memblock_t *guard)
 		if ((blk->flags & MB_FLAG_FIRST) && (blk->flags & MB_FLAG_LAST))
 			mark = " : FIRST and LAST";
 
-		printf("\033[1;3%cm  $%.8x - $%.8x : %d%s\033[0m\n", mb_is_used(blk) ? '1' : '2',
+		fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %d%s\033[0m\n", mb_is_used(blk) ? '1' : '2',
 				(uint32_t)blk, ((uint32_t)blk + blk->size - 1), blk->size, mark);
 
 		if (mb_is_used(blk)) {
@@ -329,9 +329,9 @@ static void mb_print(memblock_t *guard)
 		blk = (memblock_t *)((uint32_t)blk + blk->size);
 	}
 
-	printf("\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", guard->size, used, free);
-	printf("\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
-	printf("\033[0;36mFirst free block: $%.8x, last block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
+	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", guard->size, used, free);
+	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
+	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
 }
 
 /*
@@ -351,7 +351,7 @@ static void mb_init(memblock_t *guard, uint32_t size)
 
 	mb_touch(guard);
 
-	DEBUG("guard block [$%.8x; %u; $%x]\n", (uint32_t)guard, guard->size, guard->flags);
+	DEBUG("guard block [$%.8x; %u; $%.2x]\n", (uint32_t)guard, guard->size, guard->flags);
 
 	/* initialize first free block */
 	blk->prev 	  = guard;
@@ -361,7 +361,7 @@ static void mb_init(memblock_t *guard, uint32_t size)
 
 	mb_touch(blk);
 
-	DEBUG("first block [$%.8x; %u; $%x]\n", (uint32_t)blk, blk->size, blk->flags);
+	DEBUG("first block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 }
 
 /*
@@ -388,7 +388,10 @@ static void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 	while (TRUE) {
 		mb_valid(blk);
 
-		if (mb_is_guard(blk) || (blk->size >= size))
+		if (mb_is_guard(blk))
+			return NULL;
+		
+		if (blk->size >= size)
 			break;
 
 		blk = blk->next;
@@ -397,7 +400,7 @@ static void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 	if (blk == NULL)
 		return blk;
 
-	DEBUG("found block [$%.8x; %u; $%x]\n", (uint32_t)blk, blk->size, blk->flags);
+	DEBUG("found block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 	
 	/* try to split block and save the rest on the list */
 	mb_split(blk, size);
@@ -410,7 +413,7 @@ static void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 
 	mb_touch(blk);
 
-	DEBUG("will use block [$%.8x; %u; $%x]\n", (uint32_t)blk, blk->size, blk->flags);
+	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
 	return (void *)((uint32_t)blk + offsetof(memblock_t, next));
 }
@@ -481,7 +484,7 @@ static uint32_t mb_can_shrink(memblock_t *guard)
 	return (!mb_is_used(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
 }
 
-static uint32_t mb_shrink(memblock_t *guard, uint32_t pages)
+static void mb_shrink(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -493,6 +496,10 @@ static uint32_t mb_shrink(memblock_t *guard, uint32_t pages)
 	guard->prev->size -= pages * PAGE_SIZE;
 
 	mb_touch(guard->prev);
+
+	guard->size -= pages * PAGE_SIZE;
+
+	mb_touch(guard);
 }
 
 /*
@@ -531,6 +538,10 @@ static void mb_expand(memblock_t *guard, uint32_t pages)
 
 		mb_touch(blk);
 	}
+
+	guard->size += pages * PAGE_SIZE;
+
+	mb_touch(guard);
 }
 
 /* ========================================================================= */

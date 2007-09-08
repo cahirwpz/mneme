@@ -14,14 +14,7 @@
 
 void pm_sbrk_init()
 {
-	uint8_t *end = (uint8_t *) sbrk(0);
-
 	DEBUG("segment end: $%.8x\n", (uint32_t)sbrk(0));
-
-	/* align end of bss segment to page size */
-	assert(sbrk(PAGE_SIZE - ((uint32_t)end & (PAGE_SIZE - 1))) != (void *)-1);
-	
-	DEBUG("segment extended to: $%.8x\n", (uint32_t)sbrk(0));
 }
 
 void *pm_sbrk_alloc(uint32_t n)
