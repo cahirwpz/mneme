@@ -13,5 +13,5 @@ tst-random:	tst-random.lo libmymalloc.la
 	$(LD) -o $@ $^
 
 clean:
-	rm -f *~ *.o *.lo *.la
+	rm -f *~ *.o *.lo *.la *.loT
 	rm -rf .libs tst-random

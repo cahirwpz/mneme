@@ -9,20 +9,13 @@
 
 struct memarea				/* size of this structure will be aligned to 16 bytes boundary */
 {
-	uint16_t checksum;		// 0
-	uint16_t flags;			// 2
-	uint32_t size;			// 4
+	uint16_t checksum;
+	uint16_t flags;	
+	uint32_t size;
 
-	struct memarea *prev;	// 8
-	struct memarea *next;	// 12
-
-	/* fields for use by block manager */
-
-	uint32_t used;			// 16
-
-	struct memblock *free;	// 20
-	struct memblock *last;	// 24
-};
+	struct memarea *prev;
+	struct memarea *next;
+} __attribute__((aligned(16)));
 
 typedef struct memarea memarea_t;
 
@@ -67,8 +60,16 @@ static inline void ma_valid(memarea_t *area)
 /* Function prototypes */
 
 struct memarea *ma_new(pm_type_t type, uint32_t size);
-void ma_print(struct memarea *area);
 
+/* sbrk memory area procedures */
+bool ma_shrink(memarea_t *area, uint32_t pages);
+bool ma_expand(memarea_t *area, uint32_t pages);
+
+/* mmap memory area procedures */
+void ma_insert(memarea_t *area, memmgr_t *mm);
+void ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
+
+/* memory manager procedures */
 void mm_init(struct memmgr *mm);
 void *mm_alloc(struct memmgr *mm, uint32_t size);
 void mm_free(struct memmgr *mm, void *memory);

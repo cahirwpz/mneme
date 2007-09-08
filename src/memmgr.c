@@ -27,9 +27,7 @@ struct memarea *ma_new(pm_type_t type, uint32_t size)
 			break;
 	}
 
-	area->free  = NULL;
 	area->size  = PAGE_SIZE * SIZE_IN_PAGES(size);
-	area->used  = area->size;
 	area->prev  = NULL;
 	area->next  = NULL;
 
@@ -189,20 +187,56 @@ void ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
 }
 
 /*
- * Print memory areas.
+ * Shrink sbrk memory area by 'pages' number of pages.
  */
 
-void mm_print(memmgr_t *mm)
+bool ma_shrink(memarea_t *area, uint32_t pages)
 {
-	memarea_t *area = mm->areas;
+	ma_valid(area);
 
-	while (area != NULL) {
-		ma_valid(area);
+	assert(area->flags & MA_FLAG_SBRK);
+	assert(pages > 0);
 
-		ma_print(area);
+	DEBUG("shrinking area $%.8x - %.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
 
-		area = area->next;
+	if (pm_sbrk_free((void *)((uint32_t)area + area->size - (pages * PAGE_SIZE)), pages)) {
+		area->size -= pages * PAGE_SIZE;
+
+		ma_touch(area);
+
+		return TRUE;
 	}
+
+	return FALSE;
+}
+
+/*
+ * Expand sbrk memory area by 'pages' number of pages.
+ */
+
+bool ma_expand(memarea_t *area, uint32_t pages)
+{
+	ma_valid(area);
+
+	assert(area->flags & MA_FLAG_SBRK);
+	assert(pages > 0);
+
+	DEBUG("expanding area $%.8x - $%.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
+
+	void *memory = pm_sbrk_alloc(pages);
+
+	if (memory == NULL) {
+		DEBUG("cannot get %u pages from\n", pages);
+		return FALSE;
+	}
+
+	assert((uint32_t)area + area->size == (uint32_t)memory);
+
+	area->size += pages * PAGE_SIZE;
+
+	ma_touch(area);
+
+	return TRUE;
 }
 
 /*

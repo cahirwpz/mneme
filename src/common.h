@@ -15,6 +15,8 @@ typedef enum { FALSE, TRUE } bool;
 #define DEBUG(format, args...)
 #endif
 
+#define offsetof(type, member)	__builtin_offsetof(type, member)
+
 /*
  * Simple algorithm for calculating checksum.
  */
