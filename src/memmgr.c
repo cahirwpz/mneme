@@ -1,4 +1,5 @@
 #include "memmgr.h"
+#include <string.h>
 
 /*
  * Initialize new memory area.
@@ -110,6 +111,81 @@ void ma_insert(memarea_t *area, memmgr_t *mm)
 memarea_t *ma_coalesce(memarea_t *area, memmgr_t *mm)
 {
 	return NULL;
+}
+
+/*
+ * Split memory area and unmap unused memory.
+ */
+
+void ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
+{
+	ma_valid(area);
+	assert(area->flags & MA_FLAG_MMAP);
+
+	assert((offset + pages) * PAGE_SIZE < area->size);
+
+	/* Not a real splitting - just cutting off pages at the end of area */
+	if ((offset + pages) * PAGE_SIZE == area->size) {
+		pm_mmap_free((void *)((uint32_t)area + offset), pages);
+
+		area->size -= pages * PAGE_SIZE;
+
+		ma_touch(area);
+
+		return;
+	}
+
+	/* Not a real splitting - just cutting off pages at the beginning of area */
+	if (offset == 0) {
+		memarea_t *oldarea = area;
+
+		area = (memarea_t *)((uint32_t)area + pages * PAGE_SIZE);
+
+		memcpy(area, oldarea, sizeof(memarea_t));
+
+		area->size -= pages * PAGE_SIZE;
+
+		ma_touch(area);
+
+		if (area->next) {
+			area->next->prev = area;
+
+			ma_touch(area->next);
+		}
+
+		if (area->prev) {
+			area->prev->next = area;
+
+			ma_touch(area->prev);
+		}
+
+		pm_mmap_free((void *)area, pages);
+
+		return;
+	}
+
+	/* Now unmapped pages are really inside area */
+	memarea_t *newarea = (memarea_t *)((uint32_t)area + (offset + pages) * PAGE_SIZE);
+
+	memcpy(newarea, area, sizeof(memarea_t));
+
+	/* set up new area */
+	newarea->size = area->size - (offset + pages) * PAGE_SIZE;
+	newarea->prev = area;
+
+	ma_touch(newarea);
+
+	if (newarea->next) {
+		newarea->next->prev = newarea;
+
+		ma_touch(newarea->next);
+	}
+
+	/* correct data in splitted area */
+	area->size = offset * PAGE_SIZE;
+	area->next = newarea;
+
+	ma_touch(area);
 }
 
 /*
