@@ -4,7 +4,9 @@
  * Page manager: sbrk implementation.
  */
 
-//#define NDEBUG
+#ifndef DBG_SYSMEM
+#define NDEBUG
+#endif
 
 #include "sysmem.h"
 

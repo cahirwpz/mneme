@@ -14,7 +14,7 @@ static void mb_insert(memblock_t *newblk, memblock_t *guard)
 	mb_valid(guard);
 	assert(mb_is_guard(guard));
 
-	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
+	DEBUG("will insert block [$%.8x; %u; $%.2x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
 
 	/* search the list for place where new block will be placed */
 	memblock_t *blk = guard;
@@ -54,7 +54,7 @@ static void mb_insert(memblock_t *newblk, memblock_t *guard)
 
 	mb_touch(blk);
 
-	DEBUG("inserted after block [$%.8x; %u; $%x]\n", (uint32_t)blk, blk->size, blk->flags);
+	DEBUG("inserted after block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 }
 
 /*

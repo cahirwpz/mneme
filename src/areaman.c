@@ -48,7 +48,7 @@ void ma_add(memarea_t *newarea, memarea_t *mm)
 	ma_valid(newarea);
 	assert(ma_is_guard(mm));
 
-	DEBUG("will add area [$%.8x; %u; $%x] to memory manager\n", (uint32_t)newarea, newarea->size, newarea->flags);
+	DEBUG("will add area [$%.8x; %u; $%.2x] to memory manager\n", (uint32_t)newarea, newarea->size, newarea->flags);
 
 	/* search the list for place where new area will be placed */
 	memarea_t *area = mm;

@@ -4,6 +4,10 @@
  * Page manager: mmap implementation.
  */
 
+#ifndef DBG_SYSMEM
+#define NDEBUG
+#endif
+
 #include "sysmem.h"
 
 #include <sys/mman.h>

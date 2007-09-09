@@ -103,7 +103,7 @@ int main(int argc, char **argv)
 			blocks.array[blocks.last--] = NULL;
 		}
 
-		//mm_print(&mm);
+		// mm_print(&mm);
 
 		i++;
 	}

@@ -41,6 +41,10 @@ static inline bool ma_is_mmap(memarea_t *area) {
 	return (area->flags & MA_FLAG_MMAP);
 }
 
+static inline bool ma_is_ready(memarea_t *area) {
+	return (area->flags & MA_FLAG_READY);
+}
+
 /* Checksum functions for memory area structure */
 
 static inline uint16_t ma_checksum(memarea_t *area)
