@@ -3,11 +3,10 @@
 #include <unistd.h>
 #include <semaphore.h>
 
-#include "sysmem.h"
-#include "memmgr.h"
+#include "memman-ao.h"
 
 static bool ma_initialized = FALSE;
-static struct memarea *ma = NULL;
+static struct memarea mm;
 static sem_t ma_sem;
 
 static void ldwrapper_exit()
@@ -24,9 +23,7 @@ void *malloc(size_t size)
 
 		atexit(&ldwrapper_exit);
 
-		ma = ma_init(16 * PAGE_SIZE);
-
-		assert(ma != NULL);
+		mm_init(&mm);
 	}
 
 	while (__sync_and_and_fetch(&ma_initialized, TRUE) == FALSE) {
@@ -35,7 +32,7 @@ void *malloc(size_t size)
 
 	sem_wait(&ma_sem);
 
-	void *area = ma_alloc(ma, size);
+	void *area = mm_alloc(&mm, size);
 
 	sem_post(&ma_sem);
 
@@ -60,7 +57,7 @@ void free(void *ptr)
 	if (ptr != NULL) {
 		sem_wait(&ma_sem);
 
-		ma_free(ma, ptr);
+		mm_free(&mm, ptr);
 
 		sem_post(&ma_sem);
 	}

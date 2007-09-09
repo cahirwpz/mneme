@@ -1,86 +1,8 @@
-#include "common.h"
-#include "sysmem.h"
-#include "memmgr.h"
-
-#include <stdio.h>
-
-#define MB_GRANULARITY_BITS		4
-#define MB_GRANULARITY			(1 << MB_GRANULARITY_BITS)
-#define MB_GRANULARITY_MASK		(MB_GRANULARITY - 1)
-
-#define MB_FLAG_USED	1
-#define MB_FLAG_PAD		2
-#define MB_FLAG_FIRST	4
-#define MB_FLAG_LAST	8
-#define MB_FLAG_GUARD	16
-
 /*
- * Memory block structure
+ * Block manager implementation - address ordered list.
  */
 
-struct memblock
-{
-	uint16_t checksum;
-	uint16_t flags;
-	uint32_t size;
-
-	struct memblock *next;	/* if (mb_is_guard(blk)) 'next' points to first free block or is loopback pointer */
-	struct memblock *prev;	/* if (mb_is_guard(blk)) 'prev' points always to last block */
-} __attribute__((aligned(16)));
-
-typedef struct memblock memblock_t;
-
-/*
- * Few inlines to make code more readable :)
- */
-
-static inline bool mb_is_guard(memblock_t *blk) {
-	return (blk->flags & MB_FLAG_GUARD);
-}
-
-static inline bool mb_is_used(memblock_t *blk) {
-	return (blk->flags & MB_FLAG_USED);
-}
-
-static inline bool mb_is_last(memblock_t *blk) {
-	return (blk->flags & MB_FLAG_LAST);
-}
-
-static inline memblock_t *mb_from_memarea(memarea_t *area) {
-	return (memblock_t *)ALIGN((uint32_t)(area + 1), MB_GRANULARITY);
-}
-
-/*
- * Calculate checksum of memory block structure.
- */
-
-static uint16_t mb_checksum(memblock_t *blk)
-{
-	int bytes = (mb_is_used(blk) ? offsetof(memblock_t, next) : sizeof(memblock_t)) - sizeof(uint16_t);
-
-	return (((uint32_t)blk) >> 16) ^ (((uint32_t)blk) & 0xFFFF) ^ checksum((uint16_t *)&blk->flags, bytes >> 1);
-}
-
-/*
- * Recalculate memory block checksum.
- */
-
-static inline void mb_touch(memblock_t *blk)
-{
-	blk->checksum = mb_checksum(blk);
-}
-
-/*
- * Check corectness of memory block checksum.
- */
-
-static inline void mb_valid(memblock_t *blk)
-{
-	if (mb_checksum(blk) != blk->checksum) {
-		fprintf(stderr, "invalid block: [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
-		abort();
-	}
-}
+#include "blkman-ao.h"
 
 /*
  * Insert block into list of free blocks.
@@ -290,7 +212,7 @@ static memblock_t *mb_coalesce(memblock_t *blk)
  * Print memory blocks and statistics.
  */
 
-static void mb_print(memblock_t *guard)
+void mb_print(memblock_t *guard)
 {
 	/* check if it is guard block */
 	mb_valid(guard);
@@ -339,7 +261,7 @@ static void mb_print(memblock_t *guard)
  * Create initial block in given memory area.
  */
 
-static void mb_init(memblock_t *guard, uint32_t size)
+void mb_init(memblock_t *guard, uint32_t size)
 {
 	/* first memory block to be managed */
 	memblock_t *blk = guard + 1;
@@ -369,7 +291,7 @@ static void mb_init(memblock_t *guard, uint32_t size)
  * Find block in given memory area and reserve it for use by caller.
  */
 
-static void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
+void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 {
 	/* check if it is guard block */
 	mb_valid(guard);
@@ -447,7 +369,7 @@ static void *mb_aligned_alloc(memblock_t *guard, uint32_t size, uint32_t alignme
  * Free block in memory area reffered by given pointer.
  */
 
-static void mb_free(memblock_t *guard, void *memory)
+void mb_free(memblock_t *guard, void *memory)
 {
 	/* check if it is guard block */
 	mb_valid(guard);
@@ -475,7 +397,7 @@ static void mb_free(memblock_t *guard, void *memory)
  * Shrink last memory block if it's not used.
  */
 
-static uint32_t mb_can_shrink(memblock_t *guard)
+uint32_t mb_can_shrink(memblock_t *guard)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -485,7 +407,7 @@ static uint32_t mb_can_shrink(memblock_t *guard)
 	return (!mb_is_used(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
 }
 
-static void mb_shrink(memblock_t *guard, uint32_t pages)
+void mb_shrink(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -507,7 +429,7 @@ static void mb_shrink(memblock_t *guard, uint32_t pages)
  * Extend sbrk memory area with 'pages' number of pages.
  */
 
-static void mb_expand(memblock_t *guard, uint32_t pages)
+void mb_expand(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -544,63 +466,3 @@ static void mb_expand(memblock_t *guard, uint32_t pages)
 
 	mb_touch(guard);
 }
-
-/* ========================================================================= */
-
-void *mm_alloc(memarea_t *mm, uint32_t size)
-{
-	ma_valid(mm);
-	assert(ma_is_guard(mm));
-
-	memarea_t  *area  = mm;
-	memblock_t *guard = mb_from_memarea(area);
-
-	if (!(area->flags & MA_FLAG_READY)) {
-		mb_init(guard, area->size - ((uint32_t)guard - (uint32_t)area));
-
-		area->flags |= MA_FLAG_READY;
-		ma_touch(area);
-	} 
-
-	mb_valid(guard);
-
-	void *memory = NULL;
-
-	if (!(memory = mb_alloc(guard, size, FALSE)))
-		if (ma_expand(area, SIZE_IN_PAGES(size))) {
-			mb_expand(guard, SIZE_IN_PAGES(size));
-			memory = mb_alloc(guard, size, TRUE);
-		}
-
-	return memory;
-}
-
-void mm_free(memarea_t *mm, void *memory)
-{
-	memarea_t *area = mm;
-
-	mb_free(mb_from_memarea(area), memory);
-
-	int32_t pages = mb_can_shrink(mb_from_memarea(area)) - 3;
-
-	if ((pages > 0) && ma_shrink(area, pages))
-		mb_shrink(mb_from_memarea(area), pages);
-}
-
-/*
- * Print memory areas.
- */
-
-void mm_print(memarea_t *mm)
-{
-	memarea_t *area = mm;
-
-	while (area != NULL) {
-		ma_valid(area);
-
-		mb_print(mb_from_memarea(area));
-
-		area = area->next;
-	}
-}
-

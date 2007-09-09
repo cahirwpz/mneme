@@ -2,8 +2,7 @@
  * Random malloc / free test.
  */
 
-#include "common.h"
-#include "memmgr.h"
+#include "memman-ao.h"
 #include <stdio.h>
 
 #define MAX_BLOCK_NUM	(1 << 16)
@@ -64,7 +63,6 @@ int main(int argc, char **argv)
 	srand(seed);
 
 	mm_init(&mm);
-	ma_add(ma_new(PM_SBRK, 4 * PAGE_SIZE), &mm);
 
 	for (i = 0; i < ops; )
 	{

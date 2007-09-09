@@ -27,9 +27,7 @@ typedef struct memarea memarea_t;
 #define MA_FLAG_SHM		8
 #define MA_FLAG_GUARD	16
 
-/*
- * Few inlines to make code more readable :)
- */
+/* Few inlines to make code more readable :) */
 
 static inline bool ma_is_guard(memarea_t *area) {
 	return (area->flags & MA_FLAG_GUARD);

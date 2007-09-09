@@ -1,4 +1,4 @@
-#include "memmgr.h"
+#include "areaman.h"
 #include <string.h>
 
 /*
@@ -48,7 +48,7 @@ void ma_add(memarea_t *newarea, memarea_t *mm)
 	ma_valid(newarea);
 	assert(ma_is_guard(mm));
 
-	DEBUG("will add area [$%.8x; %u; $%x] to memory manager\n", (uint32_t)area, area->size, area->flags);
+	DEBUG("will add area [$%.8x; %u; $%x] to memory manager\n", (uint32_t)newarea, newarea->size, newarea->flags);
 
 	/* search the list for place where new area will be placed */
 	memarea_t *area = mm;
@@ -229,19 +229,7 @@ bool ma_expand(memarea_t *area, uint32_t pages)
 
 void ma_init_manager(memarea_t *mm)
 {
-	DEBUG("Initializing memory manager.\n");
-
-#ifdef PM_USE_SBRK
-	pm_sbrk_init();
-#endif
-
-#ifdef PM_USE_MMAP
-	pm_mmap_init();
-#endif
-
-#ifdef PM_USE_SHM
-	pm_shm_init();
-#endif
+	DEBUG("Initializing memory area manager.\n");
 
 	mm->next  = mm;
 	mm->prev  = mm;
