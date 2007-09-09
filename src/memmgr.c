@@ -39,74 +39,58 @@ struct memarea *ma_new(pm_type_t type, uint32_t size)
 }
 
 /*
- * Add new memory area to memory manager.
+ * Add new memory area to memory area manager.
  */
 
-void ma_insert(memarea_t *area, memmgr_t *mm)
+void ma_add(memarea_t *newarea, memarea_t *mm)
 {
-	ma_valid(mm->areas);
-	ma_valid(area);
+	ma_valid(mm);
+	ma_valid(newarea);
+	assert(ma_is_guard(mm));
 
 	DEBUG("will add area [$%.8x; %u; $%x] to memory manager\n", (uint32_t)area, area->size, area->flags);
 
-	/* check whether to insert before first area */
-	if (mm->areas > area) {
-		area->next = mm->areas;
-		area->prev = NULL;
-
-		ma_touch(area);
-		
-		mm->areas->prev = area;
-		mm->areas	    = area;
-
-		ma_touch(area->next);
-
-		return;
-	}
-
 	/* search the list for place where new area will be placed */
-	memarea_t *currarea = mm->areas;
+	memarea_t *area = mm;
 
 	/* iterate till next area exists and has earlier address */
 	while (TRUE) {
-		assert(currarea != area);
+		assert(area != newarea);
 
-		ma_valid(currarea);
+		ma_valid(area);
 
-		if ((currarea->next == NULL) || (currarea->next > area))
+		if (ma_is_guard(area->next) || (area->next > newarea))
 			break;
 
-		currarea = currarea->next;
+		area = area->next;
 	}
 
-	/* area - memory area being inserted */
-	area->next	= currarea->next;
-	area->prev	= currarea;
+	/* newarea - memory area being inserted */
+	newarea->next = area->next;
+	newarea->prev = area;
+
+	ma_touch(newarea);
+
+	/* newarea->next - memory area before which new area is inserted */
+	ma_valid(newarea->next);
+		
+	newarea->next->prev = newarea;
+
+	ma_touch(newarea->next);
+
+	/* area - memory area after which new area is inserted */
+	area->next = newarea;
 
 	ma_touch(area);
 
-	/* area->next - memory area before which new area is inserted */
-	if (area->next) {
-		ma_valid(area->next);
-		
-		area->next->prev = area;
-
-		ma_touch(area->next);
-	}
-
-	/* currarea - memory area after which new area is inserted */
-	currarea->next = area;
-
-	ma_touch(currarea);
-
-	DEBUG("inserted after area [$%.8x; %u; $%x]\n", (uint32_t)currarea, currarea->size, currarea->flags);
+	DEBUG("inserted after area [$%.8x; %u; $%x]\n", (uint32_t)area, area->size, area->flags);
 }
 
 /*
  * Coalesce memory area with adhering areas.
  */
 
-memarea_t *ma_coalesce(memarea_t *area, memmgr_t *mm)
+memarea_t *ma_coalesce(memarea_t *area)
 {
 	return NULL;
 }
@@ -118,7 +102,7 @@ memarea_t *ma_coalesce(memarea_t *area, memmgr_t *mm)
 void ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
 {
 	ma_valid(area);
-	assert(area->flags & MA_FLAG_MMAP);
+	assert(ma_is_mmap(area));
 
 	assert((offset + pages) * PAGE_SIZE < area->size);
 
@@ -194,7 +178,7 @@ bool ma_shrink(memarea_t *area, uint32_t pages)
 {
 	ma_valid(area);
 
-	assert(area->flags & MA_FLAG_SBRK);
+	assert(ma_is_sbrk(area));
 	assert(pages > 0);
 
 	DEBUG("shrinking area $%.8x - %.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
@@ -218,7 +202,7 @@ bool ma_expand(memarea_t *area, uint32_t pages)
 {
 	ma_valid(area);
 
-	assert(area->flags & MA_FLAG_SBRK);
+	assert(ma_is_sbrk(area));
 	assert(pages > 0);
 
 	DEBUG("expanding area $%.8x - $%.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
@@ -240,10 +224,10 @@ bool ma_expand(memarea_t *area, uint32_t pages)
 }
 
 /*
- * Initialize memory manager.
+ * Initialize memory area manager.
  */
 
-void mm_init(memmgr_t *mm)
+void ma_init_manager(memarea_t *mm)
 {
 	DEBUG("Initializing memory manager.\n");
 
@@ -259,5 +243,10 @@ void mm_init(memmgr_t *mm)
 	pm_shm_init();
 #endif
 
-	mm->areas = ma_new(PM_SBRK, 4 * PAGE_SIZE);
+	mm->next  = mm;
+	mm->prev  = mm;
+	mm->flags = MA_FLAG_GUARD;
+	mm->size  = 0;
+
+	ma_touch(mm);
 }

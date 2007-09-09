@@ -1,5 +1,5 @@
-#ifndef __MEMMGR_H
-#define __MEMMGR_H
+#ifndef __AREAMAN_H
+#define __AREAMAN_H
 
 #include "common.h"
 #include "sysmem.h"
@@ -19,21 +19,29 @@ struct memarea				/* size of this structure will be aligned to 16 bytes boundary
 
 typedef struct memarea memarea_t;
 
-/* Memory manager structure */
-
-struct memmgr
-{
-	struct memarea *areas;
-};
-
-typedef struct memmgr memmgr_t;
-
 /* Flags definition */
 
 #define MA_FLAG_READY	1
 #define MA_FLAG_MMAP	2
 #define MA_FLAG_SBRK	4
 #define MA_FLAG_SHM		8
+#define MA_FLAG_GUARD	16
+
+/*
+ * Few inlines to make code more readable :)
+ */
+
+static inline bool ma_is_guard(memarea_t *area) {
+	return (area->flags & MA_FLAG_GUARD);
+}
+
+static inline bool ma_is_sbrk(memarea_t *area) {
+	return (area->flags & MA_FLAG_SBRK);
+}
+
+static inline bool ma_is_mmap(memarea_t *area) {
+	return (area->flags & MA_FLAG_MMAP);
+}
 
 /* Checksum functions for memory area structure */
 
@@ -58,21 +66,15 @@ static inline void ma_valid(memarea_t *area)
 }
 
 /* Function prototypes */
-
-struct memarea *ma_new(pm_type_t type, uint32_t size);
+void ma_init_manager(memarea_t *mm);
+void ma_add(memarea_t *area, memarea_t *mm);
+memarea_t *ma_new(pm_type_t type, uint32_t size);
 
 /* sbrk memory area procedures */
 bool ma_shrink(memarea_t *area, uint32_t pages);
 bool ma_expand(memarea_t *area, uint32_t pages);
 
 /* mmap memory area procedures */
-void ma_insert(memarea_t *area, memmgr_t *mm);
 void ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
-
-/* memory manager procedures */
-void mm_init(struct memmgr *mm);
-void *mm_alloc(struct memmgr *mm, uint32_t size);
-void mm_free(struct memmgr *mm, void *memory);
-void mm_print(struct memmgr *mm);
 
 #endif

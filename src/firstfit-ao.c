@@ -88,10 +88,11 @@ static inline void mb_valid(memblock_t *blk)
 
 static void mb_insert(memblock_t *newblk, memblock_t *guard)
 {
-	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
-
 	mb_valid(newblk);
 	mb_valid(guard);
+	assert(mb_is_guard(guard));
+
+	DEBUG("will insert block [$%.8x; %u; $%x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
 
 	/* search the list for place where new block will be placed */
 	memblock_t *blk = guard;
@@ -126,7 +127,7 @@ static void mb_insert(memblock_t *newblk, memblock_t *guard)
 
 	mb_touch(blk->next);
 
-	/* currblk - block after which new block is inserted */
+	/* blk - block after which new block is inserted */
 	blk->next = newblk;
 
 	mb_touch(blk);
@@ -546,12 +547,12 @@ static void mb_expand(memblock_t *guard, uint32_t pages)
 
 /* ========================================================================= */
 
-void *mm_alloc(memmgr_t *mm, uint32_t size)
+void *mm_alloc(memarea_t *mm, uint32_t size)
 {
-	memarea_t *area = mm->areas;
+	ma_valid(mm);
+	assert(ma_is_guard(mm));
 
-	ma_valid(area);
-
+	memarea_t  *area  = mm;
 	memblock_t *guard = mb_from_memarea(area);
 
 	if (!(area->flags & MA_FLAG_READY)) {
@@ -574,9 +575,9 @@ void *mm_alloc(memmgr_t *mm, uint32_t size)
 	return memory;
 }
 
-void mm_free(memmgr_t *mm, void *memory)
+void mm_free(memarea_t *mm, void *memory)
 {
-	memarea_t *area = mm->areas;
+	memarea_t *area = mm;
 
 	mb_free(mb_from_memarea(area), memory);
 
@@ -590,9 +591,9 @@ void mm_free(memmgr_t *mm, void *memory)
  * Print memory areas.
  */
 
-void mm_print(memmgr_t *mm)
+void mm_print(memarea_t *mm)
 {
-	memarea_t *area = mm->areas;
+	memarea_t *area = mm;
 
 	while (area != NULL) {
 		ma_valid(area);

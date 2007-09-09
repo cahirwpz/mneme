@@ -16,7 +16,7 @@ static struct
 	uint32_t	last;
 } blocks;
 
-static memmgr_t mm;
+static memarea_t mm;
 
 void usage(char *progname)
 {
@@ -64,6 +64,7 @@ int main(int argc, char **argv)
 	srand(seed);
 
 	mm_init(&mm);
+	ma_add(ma_new(PM_SBRK, 4 * PAGE_SIZE), &mm);
 
 	for (i = 0; i < ops; )
 	{
