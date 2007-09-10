@@ -524,18 +524,18 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 }
 
 /*
- * Find the first free block that can split memory blocks list.
+ * Find the first free block that can split memory blocks list,
+ * next search can start from block next to returned block.
  */
 
-memblock_t *mb_list_find_split(memblock_t *blk, memblock_t **to_split, uint32_t *pages, uint32_t space)
+memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *pages, uint32_t space)
 {
 	mb_valid(blk);
 
 	if (mb_is_guard(blk))
 		blk = blk->next;
 
-	*to_split = NULL;
-	*pages	  = 0;
+	*pages = 0;
 
 	/* browse free blocks list */
 	while (TRUE) {
@@ -544,13 +544,12 @@ memblock_t *mb_list_find_split(memblock_t *blk, memblock_t **to_split, uint32_t 
 		if (mb_is_guard(blk))
 			break;
 
-		uint32_t cutpoint = ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
-		uint32_t endpoint = (uint32_t)blk + blk->size - space;
+		uint32_t cut_point = ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
+		uint32_t end_point = (uint32_t)blk + blk->size - (space + sizeof(memblock_t));
 
-		if ((cutpoint < endpoint) && (cutpoint + PAGE_SIZE <= endpoint)) {
+		if ((cut_point < end_point) && (cut_point + PAGE_SIZE <= end_point)) {
 			/* found at least one aligned free page :) */
-			*pages = SIZE_IN_PAGES(endpoint - cutpoint);
-			*to_split = blk;
+			*pages = SIZE_IN_PAGES(end_point - cut_point);
 
 			break;
 		}
@@ -561,6 +560,58 @@ memblock_t *mb_list_find_split(memblock_t *blk, memblock_t **to_split, uint32_t 
 	return blk;
 }
 
-void mb_list_split(memblock_t *first, memblock_t *to_split, memblock_t **second, uint32_t space)
+/*
+ * Split list of memory blocks using 'to_split' block. Return guard of second list.
+ */
+
+memblock_t *mb_list_split(memblock_t *first, memblock_t *to_split, uint32_t pages, uint32_t space)
 {
+	mb_valid(first);
+	mb_valid(to_split);
+	assert(mb_is_guard(first));
+	assert(!mb_is_guard(to_split));
+	assert(!mb_is_used(to_split));
+
+	uint32_t cut_start = ALIGN((uint32_t)first + sizeof(memblock_t), PAGE_SIZE);
+	uint32_t cut_end   = cut_start + pages * PAGE_SIZE;
+
+	/* set up guard of second list */
+	memblock_t *second = (memblock_t *)(cut_end + space);
+
+	second->flags = MB_FLAG_FIRST;
+	second->size  = first->size - (cut_end + space);
+	second->next  = mb_is_guard(to_split->next) ? second : to_split->next;
+	second->prev  = (first->prev == to_split) ? second : first->prev;
+
+	mb_touch(second);
+
+	/* correct pointers in second guard neighbours */
+	second->next->prev = second;
+
+	mb_touch(second->next);
+
+	second->prev->next = second;
+
+	mb_touch(second->prev);
+
+	/* mark first block of second list with MB_FLAG_FIRST */
+	memblock_t *blk = (memblock_t *)((uint32_t)second + sizeof(memblock_t));
+
+	blk->flags |= MB_FLAG_FIRST;
+
+	mb_touch(blk);
+
+	/* now correct first list */
+	first->prev = to_split;
+
+	mb_touch(first);
+
+	/* propely finish first list */
+	to_split->flags |= MB_FLAG_LAST;
+	to_split->next = first;
+	to_split->size = cut_start - (uint32_t)to_split;
+
+	mb_touch(to_split);
+
+	return second;
 }
