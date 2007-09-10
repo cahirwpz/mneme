@@ -24,7 +24,7 @@ struct memblock
 	uint32_t size;
 
 	struct memblock *next;	/* if (mb_is_guard(blk)) 'next' points to first free block or is loopback pointer */
-	struct memblock *prev;	/* if (mb_is_guard(blk)) 'prev' points always to last block */
+	struct memblock *prev;	/* if (mb_is_guard(blk)) 'prev' points to first last block or is loopback pointer */
 } __attribute__((aligned(MB_GRANULARITY)));
 
 typedef struct memblock memblock_t;
@@ -37,6 +37,10 @@ static inline bool mb_is_guard(memblock_t *blk) {
 
 static inline bool mb_is_used(memblock_t *blk) {
 	return (blk->flags & MB_FLAG_USED);
+}
+
+static inline bool mb_is_first(memblock_t *blk) {
+	return (blk->flags & MB_FLAG_FIRST);
 }
 
 static inline bool mb_is_last(memblock_t *blk) {

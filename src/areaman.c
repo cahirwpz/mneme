@@ -97,7 +97,7 @@ static void ma_pullout(memarea_t *area)
 	assert(!ma_is_guard(area));
 
 	DEBUG("pulling out area [$%.8x, prev: $%.8x, next: $%.8x] from list\n",
-		  (uint32_t)blk, (uint32_t)blk->prev, (uint32_t)blk->next);
+		  (uint32_t)area, (uint32_t)area->prev, (uint32_t)area->next);
 
 	/* correct pointer in previous area */
 	ma_valid(area->prev);

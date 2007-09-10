@@ -40,12 +40,7 @@ static void mb_insert(memblock_t *newblk, memblock_t *guard)
 	/* newblk->next - block before which new block is inserted */
 	mb_valid(newblk->next);
 
-	if (mb_is_guard(newblk->next)) {
-		if (newblk > newblk->next->prev)
-			newblk->next->prev = newblk;
-	} else {
-		blk->next->prev = newblk;
-	}
+	newblk->next->prev = newblk;
 
 	mb_touch(blk->next);
 
@@ -83,7 +78,7 @@ static void mb_split(memblock_t *blk, uint32_t size)
 	newblk->prev  = blk;
 	newblk->next  = blk->next;
 
-	if (blk->flags & MB_FLAG_LAST)
+	if (mb_is_last(blk))
 		newblk->flags |= MB_FLAG_LAST;
 
 	mb_touch(newblk);
@@ -92,20 +87,15 @@ static void mb_split(memblock_t *blk, uint32_t size)
 	blk->next = newblk;
 	blk->size = size;
 
-	if (blk->flags & MB_FLAG_LAST)
+	if (mb_is_last(blk))
 		blk->flags &= ~MB_FLAG_LAST;
 
 	mb_touch(blk);
 
+	/* correct pointer in next block */
 	mb_valid(newblk->next);
 
-	/* correct pointer in next block */
-	if (mb_is_guard(newblk->next)) {
-		if (newblk > newblk->next->prev)
-			newblk->next->prev = newblk;
-	} else {
-		newblk->next->prev = newblk;
-	}
+	newblk->next->prev = newblk;
 
 	mb_touch(newblk->next);
 
@@ -136,11 +126,9 @@ static void mb_pullout(memblock_t *blk)
 	/* correct pointer in next block */
 	mb_valid(blk->next);
 
-	if (!mb_is_guard(blk->next)) {
-		blk->next->prev = blk->prev;
+	blk->next->prev = blk->prev;
 
-		mb_touch(blk->next);
-	}
+	mb_touch(blk->next);
 
 	/* clear pointers in block being pulled out */
 	blk->next = NULL;
@@ -158,49 +146,43 @@ static memblock_t *mb_coalesce(memblock_t *blk)
 	mb_valid(blk);
 
 	/* coalesce with next block */
-	while (blk->next) {
+	while (!mb_is_guard(blk)) {
+		mb_valid(blk->next);
+
 		if ((uint32_t)blk + blk->size != (uint32_t)blk->next)
 			break;
 
+		/* 'next' cannot be guard, because of condition above */
 		memblock_t *next = blk->next;
 
 		mb_pullout(next);
 
 		blk->size += next->size;
 
-		if (next->flags & MB_FLAG_LAST)
+		if (mb_is_last(next))
 			blk->flags |= MB_FLAG_LAST;
-
-		if (mb_is_guard(blk->next) && (blk->next->prev == next)) {
-			blk->next->prev = blk;
-
-			mb_touch(blk->next);
-		}
 
 		mb_touch(blk);
 	}
 
 	/* coalesce with previous block */
-	while (blk->prev) {
+	while (!mb_is_guard(blk)) {
+		mb_valid(blk->prev);
+
 		if ((uint32_t)blk->prev + blk->prev->size != (uint32_t)blk)
 			break;
 
-		blk = blk->prev;
+		/* 'blk' nor 'next' cannot be guard, because of condition above */
+		memblock_t *next = blk;
 
-		memblock_t *next = blk->next;
+		blk = blk->prev;
 
 		mb_pullout(next);
 
 		blk->size += next->size;
 
-		if (next->flags & MB_FLAG_LAST)
+		if (mb_is_last(next))
 			blk->flags |= MB_FLAG_LAST;
-
-		if (mb_is_guard(blk->next) && (blk->next->prev == next)) {
-			blk->next->prev = blk;
-
-			mb_touch(blk->next);
-		}
 
 		mb_touch(blk);
 	}
@@ -230,11 +212,11 @@ void mb_print(memblock_t *guard)
 
 		const char *mark = "";
 
-		if (blk->flags & MB_FLAG_FIRST)
+		if (mb_is_first(blk))
 			mark = " : FIRST";
-		if (blk->flags & MB_FLAG_LAST)
+		if (mb_is_last(blk))
 			mark = " : LAST";
-		if ((blk->flags & MB_FLAG_FIRST) && (blk->flags & MB_FLAG_LAST))
+		if (mb_is_first(blk) && mb_is_last(blk))
 			mark = " : FIRST and LAST";
 
 		fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %d%s\033[0m\n", mb_is_used(blk) ? '1' : '2',
@@ -254,7 +236,7 @@ void mb_print(memblock_t *guard)
 
 	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", guard->size, used, free);
 	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
-	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
+	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
 }
 
 /*
@@ -304,9 +286,6 @@ void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 
 	/* browse free blocks list */
 	memblock_t *blk = (from_last) ? (guard->prev) : (guard->next);
-
-	if (from_last && mb_is_used(blk))
-		return NULL;
 
 	while (TRUE) {
 		mb_valid(blk);
@@ -402,9 +381,7 @@ uint32_t mb_list_can_shrink(memblock_t *guard)
 	mb_valid(guard);
 	mb_valid(guard->prev);
 
-	assert(mb_is_last(guard->prev));
-
-	return (!mb_is_used(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
+	return (mb_is_last(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
 }
 
 void mb_list_shrink(memblock_t *guard, uint32_t pages)
@@ -434,13 +411,30 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 	mb_valid(guard);
 	mb_valid(guard->prev);
 
-	assert(mb_is_last(guard->prev));
+	assert(mb_is_guard(guard));
+
 	assert(pages > 0);
 
 	memblock_t *blk = guard->prev;
 
-	if (mb_is_used(blk)) {
-		memblock_t *newblk = (memblock_t *)((uint32_t)blk + blk->size);
+	if (mb_is_last(blk)) {
+		blk->size += pages * PAGE_SIZE;
+
+		mb_touch(blk);
+	} else {
+		memblock_t *newblk = (memblock_t *)((uint32_t)guard + guard->size);
+
+		if (mb_is_guard(blk))
+			blk = (memblock_t *)((uint32_t)blk + sizeof(memblock_t));
+
+		/* OPTIMIZE: Unfortunately 'blk' is not last block, it must be found! */
+		while ((uint32_t)blk + blk->size < (uint32_t)guard + guard->size) {
+			mb_valid(blk);
+
+			blk = (memblock_t *)((uint32_t)blk + blk->size);
+		}
+
+		assert(mb_is_last(blk));
 
 		blk->flags &= ~MB_FLAG_LAST;
 
@@ -456,10 +450,6 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 
 		/* insert new block into list of free blocks */
 		mb_insert(newblk, guard);
-	} else {
-		blk->size += pages * PAGE_SIZE;
-
-		mb_touch(blk);
 	}
 
 	guard->size += pages * PAGE_SIZE;
