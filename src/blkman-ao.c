@@ -3,6 +3,7 @@
  */
 
 #include "blkman-ao.h"
+#include <string.h>
 
 /*
  * Insert block into list of free blocks.
@@ -373,6 +374,34 @@ void mb_free(memblock_t *guard, void *memory)
 }
 
 /*
+ * Find last block in area managed by block manager.
+ */
+
+static memblock_t *mb_find_last(memblock_t *guard)
+{
+	mb_valid(guard);
+	assert(mb_is_guard(guard));
+
+	memblock_t *blk = guard->prev;
+
+	if (!mb_is_last(blk)) {
+		if (mb_is_guard(blk))
+			blk = (memblock_t *)((uint32_t)blk + sizeof(memblock_t));
+
+		/* OPTIMIZE: Unfortunately 'blk' is not last block, it must be found! */
+		while ((uint32_t)blk + blk->size < (uint32_t)guard + guard->size) {
+			mb_valid(blk);
+
+			blk = (memblock_t *)((uint32_t)blk + blk->size);
+		}
+
+		assert(mb_is_last(blk));
+	}
+
+	return blk;
+}
+
+/*
  * Shrink last memory block if it's not used.
  */
 
@@ -415,26 +444,10 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 
 	assert(pages > 0);
 
-	memblock_t *blk = guard->prev;
+	memblock_t *blk = mb_find_last(guard);
 
-	if (mb_is_last(blk)) {
-		blk->size += pages * PAGE_SIZE;
-
-		mb_touch(blk);
-	} else {
+	if (mb_is_used(blk)) {
 		memblock_t *newblk = (memblock_t *)((uint32_t)guard + guard->size);
-
-		if (mb_is_guard(blk))
-			blk = (memblock_t *)((uint32_t)blk + sizeof(memblock_t));
-
-		/* OPTIMIZE: Unfortunately 'blk' is not last block, it must be found! */
-		while ((uint32_t)blk + blk->size < (uint32_t)guard + guard->size) {
-			mb_valid(blk);
-
-			blk = (memblock_t *)((uint32_t)blk + blk->size);
-		}
-
-		assert(mb_is_last(blk));
 
 		blk->flags &= ~MB_FLAG_LAST;
 
@@ -450,6 +463,10 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 
 		/* insert new block into list of free blocks */
 		mb_insert(newblk, guard);
+	} else {
+		blk->size += pages * PAGE_SIZE;
+
+		mb_touch(blk);
 	}
 
 	guard->size += pages * PAGE_SIZE;
@@ -461,77 +478,89 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
  * Merge two lists of memory blocks due to coalescing two memory areas.
  */
 
-void mb_list_merge(memblock_t *first_guard, memblock_t *second_guard)
+void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 {
-	mb_valid(first_guard);
-	mb_valid(second_guard);
+	mb_valid(first);
+	mb_valid(second);
 
 	/* a few checks */
-	assert(mb_is_guard(first_guard));
-	assert(mb_is_guard(second_guard));
+	assert(mb_is_guard(first));
+	assert(mb_is_guard(second));
 
-	assert(first_guard < second_guard);
+	assert(((uint32_t)first + first->size) == ((uint32_t)second - space));
+	assert(space >= sizeof(memblock_t));
 
-	/* check whether second free memory blocks list is empty */
-	if (!mb_is_guard(second_guard->next)) {
-		memblock_t *first_free = second_guard->next;
+	/* last block in first memory blocks area is not last in joined areas */
+	memblock_t *blk = (memblock_t *)((uint32_t)first + first->size);
 
-		/* find block to which append second memory blocks list */
-		memblock_t *last_free = NULL;
+	blk->flags &= ~MB_FLAG_LAST;
 
-		if (!mb_is_guard(first_guard->next)) {
-			if (!mb_is_used(first_guard->prev)) {
-				/* luckily, last block is free */
-				last_free = first_guard->prev;
-			} else {
-				/* have to traverse whole list :( */
-				last_free = first_guard->next;
+	mb_touch(blk);
 
-				while (!mb_is_guard(last_free))
-					last_free = last_free->next;
-			}
-		} else {
-			/* if no free block on first list, second list will be appended to first_guard */
-			last_free = first_guard;
-		}
+	/* turn second guard into ordinary free block and increase its size by 'space' */
+	memcpy((void *)((uint32_t)second - space), second, sizeof(memblock_t));
 
-		/* at last merge lists */
-		last_free->next = first_free;
-		first_free->prev = last_free;
+	second = (memblock_t *)((uint32_t)second - space);
 
-		mb_touch(last_free);
-		mb_touch(first_free);
+	second->flags		= 0;
+	second->size		= sizeof(memblock_t) + space;
+	second->next->prev	= second;
+	second->prev->next	= second;
 
-		/* WARNING: here is bug - last item for second list should point to first_guard!
-		 * I'm tired of not having pointer to last free block! */
-	}
+	mb_touch(second);
 
-	/* last block in first_guard is not valid anymore, mark it as ordinary
-	 * block and copy pointer to last block from second_guard */
-	first_guard->prev->flags &= ~MB_FLAG_LAST;
-	first_guard->prev = second_guard->prev;
+	/* merge lists */
+	second->prev->next = first;
+	second->prev       = first->prev;
 
-	mb_touch(first_guard);
+	mb_touch(second);
 
-	/* second_guard will be turned into degenerated free block (without storage
-	 * are due to small size) and hopefully will be merged with another free block */
-	memblock_t *newblk = second_guard;
+	first->prev->next = second;
+	first->prev       = second->prev;
 
-	newblk->size  = sizeof(memblock_t);
-	newblk->flags = 0;
-	newblk->next  = NULL;
-	newblk->prev  = NULL;
+	mb_touch(first);
 
-	mb_touch(newblk);
-
-	mb_insert(newblk, first_guard);
-	mb_coalesce(newblk);
+	mb_coalesce(second);
 }
 
 /*
- * Find the largest free block that can split memory blocks list.
+ * Find the first free block that can split memory blocks list.
  */
 
-uint32_t mb_list_can_split(memblock_t *guard, memblock_t **to_split)
+memblock_t *mb_list_find_split(memblock_t *blk, memblock_t **to_split, uint32_t *pages, uint32_t space)
+{
+	mb_valid(blk);
+
+	if (mb_is_guard(blk))
+		blk = blk->next;
+
+	*to_split = NULL;
+	*pages	  = 0;
+
+	/* browse free blocks list */
+	while (TRUE) {
+		mb_valid(blk);
+
+		if (mb_is_guard(blk))
+			break;
+
+		uint32_t cutpoint = ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
+		uint32_t endpoint = (uint32_t)blk + blk->size - space;
+
+		if ((cutpoint < endpoint) && (cutpoint + PAGE_SIZE <= endpoint)) {
+			/* found at least one aligned free page :) */
+			*pages = SIZE_IN_PAGES(endpoint - cutpoint);
+			*to_split = blk;
+
+			break;
+		}
+
+		blk = blk->next;
+	}
+
+	return blk;
+}
+
+void mb_list_split(memblock_t *first, memblock_t *to_split, memblock_t **second, uint32_t space)
 {
 }

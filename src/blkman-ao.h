@@ -87,6 +87,7 @@ void mb_free(memblock_t *guard, void *memory);
 uint32_t mb_list_can_shrink(memblock_t *guard);
 void mb_list_shrink(memblock_t *guard, uint32_t pages);
 void mb_list_expand(memblock_t *guard, uint32_t pages);
-void mb_list_merge(memblock_t *first_guard, memblock_t *second_guard);
+void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space);
+memblock_t *mb_list_find_split(memblock_t *blk, memblock_t **to_split, uint32_t *pages, uint32_t space);
 
 #endif
