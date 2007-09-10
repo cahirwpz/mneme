@@ -4,7 +4,7 @@
  * Page manager: mmap implementation.
  */
 
-#ifndef DBG_SYSMEM
+#if !defined DBG_SYSMEM && !defined NDEBUG
 #define NDEBUG
 #endif
 

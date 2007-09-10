@@ -4,7 +4,7 @@
  * Page manager: sbrk emulation through implementation in constant-sized shared memory area.
  */
 
-#ifndef DBG_SYSMEM
+#if !defined DBG_SYSMEM && !defined NDEBUG
 #define NDEBUG
 #endif
 

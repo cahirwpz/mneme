@@ -87,12 +87,105 @@ void ma_add(memarea_t *newarea, memarea_t *mm)
 }
 
 /*
- * Coalesce memory area with adhering areas.
+ * Pull out the area from list of memory areas.
  */
 
-memarea_t *ma_coalesce(memarea_t *area)
+static void ma_pullout(memarea_t *area)
 {
-	return NULL;
+	ma_valid(area);
+
+	assert(!ma_is_guard(area));
+
+	DEBUG("pulling out area [$%.8x, prev: $%.8x, next: $%.8x] from list\n",
+		  (uint32_t)blk, (uint32_t)blk->prev, (uint32_t)blk->next);
+
+	/* correct pointer in previous area */
+	ma_valid(area->prev);
+
+	area->prev->next = area->next;
+
+	ma_touch(area->prev);
+
+	/* correct pointer in next area */
+	ma_valid(area->next);
+
+	area->next->prev = area->prev;
+
+	ma_touch(area->next);
+
+	/* clear pointers in block being pulled out */
+	area->next = NULL;
+	area->prev = NULL;
+
+	ma_touch(area);
+}
+
+/*
+ * Remove memory area from list and unmap its memory.
+ */
+
+void ma_remove(memarea_t *area)
+{
+	ma_valid(area);
+	assert(ma_is_mmap(area));
+
+	ma_pullout(area);
+
+	pm_mmap_free((void *)area, SIZE_IN_PAGES(area->size));
+}
+
+/*
+ * Coalesce memory area with adhering area.
+ */
+
+memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
+{
+	ma_valid(area);
+	assert(ma_is_mmap(area));
+
+	/* coalesce with next area */
+	ma_valid(area->next);
+
+	if (!ma_is_guard(area->next) && ma_is_mmap(area->next) &&
+		((uint32_t)area + area->size != (uint32_t)area->next))
+	{
+		memarea_t *next = area->next;
+
+		ma_pullout(next);
+
+		area->size += next->size;
+
+		ma_touch(area);
+
+		*direction = MA_COALESCE_RIGHT;
+
+		return area;
+	}
+
+	/* coalesce with previous area */
+	ma_valid(area->prev);
+
+	if (!ma_is_guard(area->prev) && ma_is_mmap(area->prev) &&
+		((uint32_t)area->prev + area->prev->size != (uint32_t)area))
+	{
+		memarea_t *next = area;
+
+		area = area->prev;
+
+		ma_pullout(next);
+
+		area->size += next->size;
+
+		ma_touch(area);
+
+		*direction = MA_COALESCE_LEFT;
+
+		return area;
+	}
+
+	*direction = MA_COALESCE_FAILED;
+
+	return area;
 }
 
 /*

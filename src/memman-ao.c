@@ -72,7 +72,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 		void *memory = NULL;
 
 		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(size)))) {
-			mb_expand(guard, SIZE_IN_PAGES(size));
+			mb_list_expand(guard, SIZE_IN_PAGES(size));
 			memory = mb_alloc(guard, size, TRUE);
 		}
 
@@ -104,10 +104,10 @@ void mm_free(memarea_t *mm, void *memory)
 			mb_free(guard, memory);
 
 			if (ma_is_sbrk(area)) {
-				int32_t pages = mb_can_shrink(guard) - 3;
+				int32_t pages = mb_list_can_shrink(guard) - 3;
 
 				if ((pages > 0) && ma_shrink(area, pages))
-					mb_shrink(guard, pages);
+					mb_list_shrink(guard, pages);
 			}
 
 			break;

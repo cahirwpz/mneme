@@ -19,6 +19,8 @@ struct memarea				/* size of this structure will be aligned to 16 bytes boundary
 
 typedef struct memarea memarea_t;
 
+typedef enum { MA_COALESCE_FAILED, MA_COALESCE_LEFT, MA_COALESCE_RIGHT } ma_coalesce_t;
+
 /* Flags definition */
 
 #define MA_FLAG_READY	1
@@ -78,5 +80,7 @@ bool ma_expand(memarea_t *area, uint32_t pages);
 
 /* mmap memory area procedures */
 void ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
+memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction);
+void ma_remove(memarea_t *area);
 
 #endif

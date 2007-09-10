@@ -123,7 +123,7 @@ static void mb_pullout(memblock_t *blk)
 
 	assert(!mb_is_guard(blk));
 
-	DEBUG("pulling out from free list block $%.8x, prev: $%.8x, next: $%.8x\n",
+	DEBUG("pulling out block [$%.8x, prev: $%.8x, next: $%.8x] from list\n",
 		  (uint32_t)blk, (uint32_t)blk->prev, (uint32_t)blk->next);
 
 	/* correct pointer in previous block */
@@ -397,7 +397,7 @@ void mb_free(memblock_t *guard, void *memory)
  * Shrink last memory block if it's not used.
  */
 
-uint32_t mb_can_shrink(memblock_t *guard)
+uint32_t mb_list_can_shrink(memblock_t *guard)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -407,7 +407,7 @@ uint32_t mb_can_shrink(memblock_t *guard)
 	return (!mb_is_used(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
 }
 
-void mb_shrink(memblock_t *guard, uint32_t pages)
+void mb_list_shrink(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -429,7 +429,7 @@ void mb_shrink(memblock_t *guard, uint32_t pages)
  * Extend sbrk memory area with 'pages' number of pages.
  */
 
-void mb_expand(memblock_t *guard, uint32_t pages)
+void mb_list_expand(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
@@ -465,4 +465,83 @@ void mb_expand(memblock_t *guard, uint32_t pages)
 	guard->size += pages * PAGE_SIZE;
 
 	mb_touch(guard);
+}
+
+/*
+ * Merge two lists of memory blocks due to coalescing two memory areas.
+ */
+
+void mb_list_merge(memblock_t *first_guard, memblock_t *second_guard)
+{
+	mb_valid(first_guard);
+	mb_valid(second_guard);
+
+	/* a few checks */
+	assert(mb_is_guard(first_guard));
+	assert(mb_is_guard(second_guard));
+
+	assert(first_guard < second_guard);
+
+	/* check whether second free memory blocks list is empty */
+	if (!mb_is_guard(second_guard->next)) {
+		memblock_t *first_free = second_guard->next;
+
+		/* find block to which append second memory blocks list */
+		memblock_t *last_free = NULL;
+
+		if (!mb_is_guard(first_guard->next)) {
+			if (!mb_is_used(first_guard->prev)) {
+				/* luckily, last block is free */
+				last_free = first_guard->prev;
+			} else {
+				/* have to traverse whole list :( */
+				last_free = first_guard->next;
+
+				while (!mb_is_guard(last_free))
+					last_free = last_free->next;
+			}
+		} else {
+			/* if no free block on first list, second list will be appended to first_guard */
+			last_free = first_guard;
+		}
+
+		/* at last merge lists */
+		last_free->next = first_free;
+		first_free->prev = last_free;
+
+		mb_touch(last_free);
+		mb_touch(first_free);
+
+		/* WARNING: here is bug - last item for second list should point to first_guard!
+		 * I'm tired of not having pointer to last free block! */
+	}
+
+	/* last block in first_guard is not valid anymore, mark it as ordinary
+	 * block and copy pointer to last block from second_guard */
+	first_guard->prev->flags &= ~MB_FLAG_LAST;
+	first_guard->prev = second_guard->prev;
+
+	mb_touch(first_guard);
+
+	/* second_guard will be turned into degenerated free block (without storage
+	 * are due to small size) and hopefully will be merged with another free block */
+	memblock_t *newblk = second_guard;
+
+	newblk->size  = sizeof(memblock_t);
+	newblk->flags = 0;
+	newblk->next  = NULL;
+	newblk->prev  = NULL;
+
+	mb_touch(newblk);
+
+	mb_insert(newblk, first_guard);
+	mb_coalesce(newblk);
+}
+
+/*
+ * Find the largest free block that can split memory blocks list.
+ */
+
+uint32_t mb_list_can_split(memblock_t *guard, memblock_t **to_split)
+{
 }

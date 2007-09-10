@@ -15,3 +15,8 @@ tst-random:	tst-random.lo libmymalloc.la
 clean:
 	rm -f *~ *.o *.lo *.la *.loT
 	rm -rf .libs tst-random
+
+lines:
+	@cat *.c *.h Makefile | sed '/^$$/d' | wc -l
+
+.PHONY:	lines clean

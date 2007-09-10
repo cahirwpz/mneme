@@ -74,13 +74,15 @@ static inline void mb_valid(memblock_t *blk)
 }
 
 /* Function prototypes */
-
 void mb_print(memblock_t *guard);
 void mb_init(memblock_t *guard, uint32_t size);
 void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last);
 void mb_free(memblock_t *guard, void *memory);
-uint32_t mb_can_shrink(memblock_t *guard);
-void mb_shrink(memblock_t *guard, uint32_t pages);
-void mb_expand(memblock_t *guard, uint32_t pages);
+
+/* Procedures used in conjuction with operations on memory areas */
+uint32_t mb_list_can_shrink(memblock_t *guard);
+void mb_list_shrink(memblock_t *guard, uint32_t pages);
+void mb_list_expand(memblock_t *guard, uint32_t pages);
+void mb_list_merge(memblock_t *first_guard, memblock_t *second_guard);
 
 #endif
