@@ -24,7 +24,7 @@ void mm_init(memarea_t *mm)
 #endif
 
 	ma_init_manager(mm);
-	ma_add(ma_new(PM_SBRK, 4 * PAGE_SIZE), mm);
+	ma_add(ma_new(PM_MMAP, 4 * PAGE_SIZE), mm);
 }
 
 /*
@@ -33,13 +33,13 @@ void mm_init(memarea_t *mm)
 
 void *mm_alloc(memarea_t *mm, uint32_t size)
 {
-	memarea_t *area;
+	DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
 
 	ma_valid(mm);
 	assert(ma_is_guard(mm));
 
 	/* try to find area that have enough space to store allocated block */
-	area = mm->next;
+	memarea_t *area = mm->next;
 
 	while (!ma_is_guard(area)) {
 		memblock_t *guard = mb_from_memarea(area);
@@ -62,6 +62,8 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 	}
 	
 	/* not enough memory - try to get some from operating system */
+	DEBUG("Not enough memory - trying to obtain a few pages from system.\n");
+
 	area = mm->next;
 
 	while (!ma_is_guard(area)) {
@@ -74,6 +76,43 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(size)))) {
 			mb_list_expand(guard, SIZE_IN_PAGES(size));
 			memory = mb_alloc(guard, size, TRUE);
+		}
+
+		if (ma_is_mmap(area)) {
+			memarea_t *newarea = ma_new(PM_MMAP, size);
+			
+			/* prepare new list of blocks */
+			memblock_t *guard = mb_from_memarea(newarea);
+
+			mb_init(guard, newarea->size - ((uint32_t)guard - (uint32_t)newarea));
+
+			newarea->flags |= MA_FLAG_READY;
+			ma_touch(newarea);
+
+			mb_valid(guard);
+
+			/* add it to area manager */
+			ma_add(newarea, mm);
+
+			ma_coalesce_t direction = MA_COALESCE_FAILED;
+
+			while (TRUE) {
+				memarea_t *area = newarea;
+				memarea_t *next = newarea->next;
+
+				newarea = ma_coalesce(newarea, &direction);
+
+				if (direction == MA_COALESCE_FAILED)
+					break;
+
+				if (direction == MA_COALESCE_RIGHT)
+					mb_list_merge(mb_from_memarea(area), mb_from_memarea(next), sizeof(memarea_t));
+
+				if (direction == MA_COALESCE_LEFT)
+					mb_list_merge(mb_from_memarea(newarea), mb_from_memarea(area), sizeof(memarea_t));
+			}
+
+			memory = mb_alloc(mb_from_memarea(newarea), size, FALSE);
 		}
 
 		if (memory)
@@ -93,6 +132,8 @@ void mm_free(memarea_t *mm, void *memory)
 {
 	ma_valid(mm);
 	assert(ma_is_guard(mm));
+
+	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
 	memarea_t *area = mm->next;
 

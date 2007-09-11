@@ -280,8 +280,6 @@ void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
 	mb_valid(guard);
 	assert(mb_is_guard(guard));
 
-	DEBUG("requested block of size %u\n", size);
-
 	/* calculate block size */
 	size = ALIGN(size + offsetof(memblock_t, next), MB_GRANULARITY);
 
@@ -398,6 +396,8 @@ static memblock_t *mb_find_last(memblock_t *guard)
 		assert(mb_is_last(blk));
 	}
 
+	DEBUG("last block in list at $%.8x is: [$%.8x; %u; $%.2x]\n", (uint32_t)guard, (uint32_t)blk, blk->size, blk->flags);
+
 	return blk;
 }
 
@@ -417,6 +417,8 @@ void mb_list_shrink(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
+
+	DEBUG("will shrink list of block at $%.8x by %u pages\n", (uint32_t)guard, pages);
 
 	assert(mb_is_last(guard->prev));
 	assert(pages > 0);
@@ -439,6 +441,8 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
+
+	DEBUG("will expand list of block at $%.8x by %u pages\n", (uint32_t)guard, pages);
 
 	assert(mb_is_guard(guard));
 
@@ -480,8 +484,13 @@ void mb_list_expand(memblock_t *guard, uint32_t pages)
 
 void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 {
+	memblock_t *blk;
+
 	mb_valid(first);
 	mb_valid(second);
+
+	DEBUG("will merge two lists of blocks: [$%.8x; %u; $%.2x] and [$%.8x; %u; $%.2x]\n",
+		  (uint32_t)first, first->size, first->flags, (uint32_t)second, second->size, second->flags);
 
 	/* a few checks */
 	assert(mb_is_guard(first));
@@ -490,11 +499,14 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 	assert(((uint32_t)first + first->size) == ((uint32_t)second - space));
 	assert(space >= sizeof(memblock_t));
 
-	/* last block in first memory blocks area is not last in joined areas */
-	memblock_t *blk = (memblock_t *)((uint32_t)first + first->size);
-
+	/* last block in first memory blocks' list is not last in joined list */
+	blk = mb_find_last(first);
 	blk->flags &= ~MB_FLAG_LAST;
+	mb_touch(blk);
 
+	/* first block in second memory blocks' list is not first in joined list */
+	blk = (memblock_t *)((uint32_t)second + sizeof(memblock_t));
+	blk->flags &= ~MB_FLAG_FIRST;
 	mb_touch(blk);
 
 	/* turn second guard into ordinary free block and increase its size by 'space' */
@@ -502,25 +514,33 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 
 	second = (memblock_t *)((uint32_t)second - space);
 
-	second->flags		= 0;
-	second->size		= sizeof(memblock_t) + space;
-	second->next->prev	= second;
-	second->prev->next	= second;
+	/* sum size of two lists */
+	first->size		+= second->size + space;
 
-	mb_touch(second);
+	/* set up second block as free */
+	second->flags	= 0;
+	second->size	= sizeof(memblock_t) + space;
 
 	/* merge lists */
 	second->prev->next = first;
-	second->prev       = first->prev;
+	second->next->prev = second;
 
-	mb_touch(second);
+	/* last free block on first list */
+	memblock_t *last = first->prev;
 
-	first->prev->next = second;
-	first->prev       = second->prev;
+	first->next->next = second;
+	first->prev = second->prev;
+	second->prev = last;
 
 	mb_touch(first);
+	mb_touch(first->prev);
+	mb_touch(second);
+	mb_touch(second->next);
+	mb_touch(second->prev);
 
 	mb_coalesce(second);
+
+	DEBUG("merged into: [$%.8x; %u; $%.2x]\n", (uint32_t)first, first->size, first->flags);
 }
 
 /*

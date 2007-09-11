@@ -96,8 +96,7 @@ static void ma_pullout(memarea_t *area)
 
 	assert(!ma_is_guard(area));
 
-	DEBUG("pulling out area [$%.8x, prev: $%.8x, next: $%.8x] from list\n",
-		  (uint32_t)area, (uint32_t)area->prev, (uint32_t)area->next);
+	DEBUG("pulling out area [$%.8x, %u, $%.2x] from list\n", (uint32_t)area, area->size, area->flags);
 
 	/* correct pointer in previous area */
 	ma_valid(area->prev);
@@ -132,6 +131,8 @@ void ma_remove(memarea_t *area)
 	ma_pullout(area);
 
 	pm_mmap_free((void *)area, SIZE_IN_PAGES(area->size));
+
+	DEBUG("removed area at $%.8x\n", (uint32_t)area);
 }
 
 /*
@@ -143,11 +144,13 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
 	ma_valid(area);
 	assert(ma_is_mmap(area));
 
+	DEBUG("will try to coalesce area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+
 	/* coalesce with next area */
 	ma_valid(area->next);
 
 	if (!ma_is_guard(area->next) && ma_is_mmap(area->next) &&
-		((uint32_t)area + area->size != (uint32_t)area->next))
+		((uint32_t)area + area->size == (uint32_t)area->next))
 	{
 		memarea_t *next = area->next;
 
@@ -159,6 +162,9 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
 
 		*direction = MA_COALESCE_RIGHT;
 
+		DEBUG("coalesced with right neighbour [$%.8x; $%x; $%.2x]\n", (uint32_t)next, next->size, next->flags);
+		DEBUG("coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+
 		return area;
 	}
 
@@ -166,7 +172,7 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
 	ma_valid(area->prev);
 
 	if (!ma_is_guard(area->prev) && ma_is_mmap(area->prev) &&
-		((uint32_t)area->prev + area->prev->size != (uint32_t)area))
+		((uint32_t)area->prev + area->prev->size == (uint32_t)area))
 	{
 		memarea_t *next = area;
 
@@ -180,8 +186,13 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
 
 		*direction = MA_COALESCE_LEFT;
 
+		DEBUG("coalesced with left neighbour [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+		DEBUG("coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+
 		return area;
 	}
+
+	DEBUG("coalescing failed!\n");
 
 	*direction = MA_COALESCE_FAILED;
 
