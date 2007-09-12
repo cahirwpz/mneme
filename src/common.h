@@ -9,7 +9,7 @@ typedef enum { FALSE, TRUE } bool;
 
 #define ALIGN(data, size)		(((uint32_t)data + (size - 1)) & ~(size - 1))
 
-#ifndef NDEBUG
+#if VERBOSE == 1
 #define DEBUG(format, args...) fprintf(stderr, "%s:%d " format, __func__, __LINE__, ##args)
 #else
 #define DEBUG(format, args...)

@@ -195,6 +195,13 @@ static memblock_t *mb_coalesce(memblock_t *blk)
 		mb_touch(blk);
 	}
 
+	{
+		uint32_t *ptr = (uint32_t *)((uint32_t)blk + sizeof(memblock_t));
+		
+		while (ptr < (uint32_t *)((uint32_t)blk + blk->size))
+			*ptr++ = 0xDEADC0DE;
+	}
+
 	return blk;
 }
 
@@ -212,24 +219,49 @@ void mb_print(memblock_t *guard)
 	/* find first block */
 	memblock_t *blk = guard + 1;
 
-	fprintf(stderr, "\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)guard + guard->size - 1));
+	fprintf(stderr, "\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)guard + guard->size));
 
 	uint32_t used = 0, free = 0, largest = 0;
+
+	bool error = FALSE;
+
+	memblock_t *first_free = guard, *last_free = guard;
 
 	while ((uint32_t)blk < (uint32_t)guard + guard->size) {
 		mb_valid(blk);
 
+		if (!mb_is_used(blk)) {
+			if (first_free == guard)
+				first_free = last_free = blk;
+			else
+				last_free = blk;
+		}
+
 		const char *mark = "";
 
-		if (mb_is_first(blk))
+		if (mb_is_first(blk)) {
 			mark = " : FIRST";
-		if (mb_is_last(blk))
+			if ((uint32_t)blk != (uint32_t)guard + sizeof(memblock_t))
+				error = TRUE;
+		}
+
+		if (mb_is_last(blk)) {
 			mark = " : LAST";
+			if ((uint32_t)blk + blk->size != (uint32_t)guard + guard->size)
+				error = TRUE;
+		}
+
 		if (mb_is_first(blk) && mb_is_last(blk))
 			mark = " : FIRST and LAST";
 
-		fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %d%s\033[0m\n", mb_is_used(blk) ? '1' : '2',
-				(uint32_t)blk, ((uint32_t)blk + blk->size - 1), blk->size, mark);
+		if (mb_is_used(blk)) {
+			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %d%s\033[0m\n", mb_is_used(blk) ? '1' : '2',
+					(uint32_t)blk, ((uint32_t)blk + blk->size - 1), blk->size, mark);
+		} else {
+			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %d%s : $%.8x $%8x\033[0m\n",
+					mb_is_used(blk) ? '1' : '2', (uint32_t)blk, ((uint32_t)blk + blk->size),
+					blk->size, mark, (uint32_t)blk->prev, (uint32_t)blk->next);
+		}
 
 		if (mb_is_used(blk)) {
 			used += blk->size;
@@ -246,6 +278,10 @@ void mb_print(memblock_t *guard)
 	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", guard->size, used, free);
 	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
 	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
+
+	assert(first_free == guard->next);
+	assert(last_free == guard->prev);
+	assert(error == FALSE);
 }
 
 /**
@@ -464,7 +500,7 @@ void mb_list_shrink_at_end(memblock_t *guard, uint32_t pages)
 
 	assert(mb_is_last(guard->prev));
 	assert(pages > 0);
-	assert(guard->prev->size - pages * PAGE_SIZE > sizeof(memblock_t));
+	assert(guard->prev->size - pages * PAGE_SIZE >= sizeof(memblock_t));
 
 	guard->prev->size -= pages * PAGE_SIZE;
 
@@ -505,13 +541,22 @@ void mb_list_shrink_at_beginning(memblock_t **to_shrink, uint32_t pages, uint32_
 
 		newguard = (memblock_t *)((uint32_t)guard + pages * PAGE_SIZE);
 
-		/* copy guard in new place */
-		memcpy(newguard, guard, sizeof(memblock_t));
+		/* copy data to new guard block and correct pointers */
+		newguard->size		 = guard->size - pages * PAGE_SIZE;
+		newguard->flags		 = guard->flags;
 
-		/* correct pointers in newguard and its neighbours */
-		newguard->size		-= pages * PAGE_SIZE;
-		newguard->prev->next = newguard;
-		newguard->next->prev = newguard;
+		if (guard == guard->next) {
+			newguard->prev = newguard;
+			newguard->next = newguard;
+		} else {
+			newguard->prev = guard->prev;
+			newguard->next = guard->next;
+			newguard->prev->next = newguard;
+			newguard->next->prev = newguard;
+
+			mb_touch(newguard->prev);
+			mb_touch(newguard->next);
+		}
 
 		mb_touch(newguard);
 
@@ -634,36 +679,45 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 	blk->flags &= ~MB_FLAG_FIRST;
 	mb_touch(blk);
 
-	/* turn second guard into ordinary free block and increase its size by 'space' */
-	memcpy((void *)((uint32_t)second - space), second, sizeof(memblock_t));
-
-	second = (memblock_t *)((uint32_t)second - space);
-
 	/* sum size of two lists */
-	first->size		+= second->size + space;
+	first->size	+= second->size + space;
 
-	/* set up second block as free */
-	second->flags	= 0;
-	second->size	= sizeof(memblock_t) + space;
+	/* turn second guard into ordinary free block and increase its size by 'space' */
+	blk = (memblock_t *)((uint32_t)second - space);
 
-	/* merge lists */
-	second->prev->next = first;
-	second->next->prev = second;
+	blk->flags = 0;
+	blk->size  = sizeof(memblock_t) + space;
+	
+	if (second == second->next) {
+		blk->next   = blk;
+		blk->prev   = blk;
+	} else {
+		blk->prev = second->prev;
+		blk->next = second->next;
 
-	/* last free block on first list */
+		blk->prev->next = blk;
+		blk->next->prev = blk;
+
+		mb_touch(blk->next);
+	}
+
 	memblock_t *last = first->prev;
 
-	first->prev->next = second;
-	first->prev = second->prev;
-	second->prev = last;
+	blk->prev->next = first;
+	first->prev 	= blk->prev;
+	blk->prev 		= last;
+	last->next		= blk;
+
+	DEBUG("first: [$%.8x; %u; $%.2x]\n", (uint32_t)first, first->size, first->flags);
+	DEBUG("last:  [$%.8x; %u; $%.2x]\n", (uint32_t)last, last->size, last->flags);
+	DEBUG("blk:   [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
 	mb_touch(first);
 	mb_touch(first->prev);
-	mb_touch(second);
-	mb_touch(second->prev);
-	mb_touch(second->next);
+	mb_touch(last);
+	mb_touch(blk);
 
-	mb_coalesce(second);
+	mb_coalesce(blk);
 
 	DEBUG("merged into: [$%.8x; %u; $%.2x]\n", (uint32_t)first, first->size, first->flags);
 }

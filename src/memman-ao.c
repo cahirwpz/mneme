@@ -46,6 +46,8 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 	while (!ma_is_guard(area)) {
 		memblock_t *guard = mb_from_memarea(area);
 
+		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+
 		if (!ma_is_ready(area)) {
 			mb_init(guard, area->size - ((uint32_t)guard - (uint32_t)area));
 
@@ -102,6 +104,8 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 				memarea_t *area = newarea;
 				memarea_t *next = newarea->next;
 
+				mm_print(mm);
+
 				newarea = ma_coalesce(newarea, &direction);
 
 				if (direction == MA_COALESCE_FAILED)
@@ -156,15 +160,14 @@ void mm_free(memarea_t *mm, void *memory)
 			if (ma_is_mmap(area)) {
 				uint32_t pages;
 
-				mb_print(guard);
+				//mb_print(guard);
 
 				/* is area completely empty (has exactly one block and it's free) */
 				if ((area->next != area->prev) && (guard->next->flags & MB_FLAG_FIRST) &&
 					(guard->next->flags & MB_FLAG_LAST))
 				{
-						assert(ma_remove(area));
-
-						break;
+					assert(ma_remove(area));
+					break;
 				}
 
 				/* can area be shrinked at the end ? */
@@ -174,7 +177,7 @@ void mm_free(memarea_t *mm, void *memory)
 					mb_list_shrink_at_end(guard, pages);
 					assert(ma_shrink_at_end(area, pages));
 
-					mb_print(guard);
+					//mb_print(guard);
 				}
 
 				/* can area be shrinked at the beginning ? */
@@ -184,12 +187,12 @@ void mm_free(memarea_t *mm, void *memory)
 					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
 					assert(ma_shrink_at_beginning(&area, pages));
 
-					mb_print(guard);
+					//mb_print(guard);
 				}
 
+#if 0
 
 				/* can area be splitted ? */
-#if 0
 				uint32_t offset;
 
 				free = mb_list_find_split(free, &offset, &pages, sizeof(memarea_t));
@@ -218,6 +221,7 @@ void mm_free(memarea_t *mm, void *memory)
 
 void mm_print(memarea_t *mm)
 {
+#if VERBOSE > 0
 	ma_valid(mm);
 	assert(ma_is_guard(mm));
 
@@ -230,4 +234,5 @@ void mm_print(memarea_t *mm)
 
 		area = area->next;
 	}
+#endif
 }
