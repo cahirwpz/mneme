@@ -5,8 +5,10 @@
 #include "blkman-ao.h"
 #include <string.h>
 
-/*
+/**
  * Insert block into list of free blocks.
+ * @param newblk
+ * @param guard
  */
 
 static void mb_insert(memblock_t *newblk, memblock_t *guard)
@@ -53,8 +55,10 @@ static void mb_insert(memblock_t *newblk, memblock_t *guard)
 	DEBUG("inserted after block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 }
 
-/*
+/**
  * Split block in two blocks. First will be of length "size".
+ * @param blk
+ * @param size
  */
 
 static void mb_split(memblock_t *blk, uint32_t size)
@@ -104,8 +108,9 @@ static void mb_split(memblock_t *blk, uint32_t size)
 		  (uint32_t)blk, blk->size, blk->flags, (uint32_t)newblk, newblk->size, newblk->flags);
 }
 
-/*
+/**
  * Pull out the block from list of free blocks.
+ * @param blk
  */
 
 static void mb_pullout(memblock_t *blk)
@@ -138,8 +143,10 @@ static void mb_pullout(memblock_t *blk)
 	mb_touch(blk);
 }
 
-/*
+/**
  * Coalesce free block with adhering free blocks.
+ * @param blk
+ * @return 
  */
 
 static memblock_t *mb_coalesce(memblock_t *blk)
@@ -191,8 +198,9 @@ static memblock_t *mb_coalesce(memblock_t *blk)
 	return blk;
 }
 
-/*
+/**
  * Print memory blocks and statistics.
+ * @param guard
  */
 
 void mb_print(memblock_t *guard)
@@ -240,8 +248,10 @@ void mb_print(memblock_t *guard)
 	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)guard->next, (uint32_t)guard->prev);
 }
 
-/*
+/**
  * Create initial block in given memory area.
+ * @param guard
+ * @param size
  */
 
 void mb_init(memblock_t *guard, uint32_t size)
@@ -270,8 +280,12 @@ void mb_init(memblock_t *guard, uint32_t size)
 	DEBUG("first block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 }
 
-/*
+/**
  * Find block in given memory area and reserve it for use by caller.
+ * @param guard
+ * @param size
+ * @param from_last
+ * @return 
  */
 
 void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last)
@@ -343,11 +357,13 @@ static void *mb_aligned_alloc(memblock_t *guard, uint32_t size, uint32_t alignme
 }
 #endif
 
-/*
+/**
  * Free block in memory area reffered by given pointer.
+ * @param guard
+ * @param memory
  */
 
-void mb_free(memblock_t *guard, void *memory)
+memblock_t *mb_free(memblock_t *guard, void *memory)
 {
 	/* check if it is guard block */
 	mb_valid(guard);
@@ -368,11 +384,14 @@ void mb_free(memblock_t *guard, void *memory)
 
 	/* insert on free list and coalesce */
 	mb_insert(blk, guard);
-	mb_coalesce(blk);
+	
+	return mb_coalesce(blk);
 }
 
-/*
+/**
  * Find last block in area managed by block manager.
+ * @param guard
+ * @return 
  */
 
 static memblock_t *mb_find_last(memblock_t *guard)
@@ -401,24 +420,47 @@ static memblock_t *mb_find_last(memblock_t *guard)
 	return blk;
 }
 
-/*
- * Shrink last memory block if it's not used.
+/**
+ * Check if there is unused room at the end of blocks' list.
+ * @param guard
+ * @return
  */
 
-uint32_t mb_list_can_shrink(memblock_t *guard)
+uint32_t mb_list_can_shrink_at_end(memblock_t *guard)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
 
-	return (mb_is_last(guard->prev)) ? SIZE_IN_PAGES(guard->prev->size - sizeof(memblock_t)) : 0;
+	return (mb_is_last(guard->prev)) ? (guard->prev->size - sizeof(memblock_t)) / PAGE_SIZE : 0;
 }
 
-void mb_list_shrink(memblock_t *guard, uint32_t pages)
+/**
+ * Check if there is unused room at the beginning of blocks' list.
+ * @param guard
+ * @param space
+ * @return
+ */
+
+uint32_t mb_list_can_shrink_at_beginning(memblock_t *guard, uint32_t space)
+{
+	mb_valid(guard);
+	mb_valid(guard->next);
+
+	return (mb_is_first(guard->next)) ? guard->next->size / PAGE_SIZE : 0;
+}
+
+/**
+ * Shrink blocks' list from the end.
+ * @param guard
+ * @param pages
+ */
+
+void mb_list_shrink_at_end(memblock_t *guard, uint32_t pages)
 {
 	mb_valid(guard);
 	mb_valid(guard->prev);
 
-	DEBUG("will shrink list of block at $%.8x by %u pages\n", (uint32_t)guard, pages);
+	DEBUG("will shrink list of blocks at $%.8x from right side by %u pages\n", (uint32_t)guard, pages);
 
 	assert(mb_is_last(guard->prev));
 	assert(pages > 0);
@@ -431,6 +473,84 @@ void mb_list_shrink(memblock_t *guard, uint32_t pages)
 	guard->size -= pages * PAGE_SIZE;
 
 	mb_touch(guard);
+}
+
+/**
+ * Shrink blocks' list from the beginning.
+ * @param guard
+ * @param pages
+ * @param space
+ */
+
+void mb_list_shrink_at_beginning(memblock_t **to_shrink, uint32_t pages, uint32_t space)
+{
+	memblock_t *guard	 = *to_shrink;
+	memblock_t *newguard = NULL;
+
+	mb_valid(guard);
+	mb_valid(guard->next);
+	assert(mb_is_guard(guard));
+
+	DEBUG("will shrink list of blocks at $%.8x from left side by %u pages\n", (uint32_t)guard, pages);
+
+	assert(mb_is_first(guard->next));
+	assert(pages > 0);
+	
+	/* Two posibilities: first free block can be removed or shrinked */
+	assert(guard->next->size - pages * PAGE_SIZE >= 0);
+
+	if (guard->next->size - pages * PAGE_SIZE == 0) {
+		/* remove first block */
+		mb_pullout(guard->next);
+
+		newguard = (memblock_t *)((uint32_t)guard + pages * PAGE_SIZE);
+
+		/* copy guard in new place */
+		memcpy(newguard, guard, sizeof(memblock_t));
+
+		/* correct pointers in newguard and its neighbours */
+		newguard->size		-= pages * PAGE_SIZE;
+		newguard->prev->next = newguard;
+		newguard->next->prev = newguard;
+
+		mb_touch(newguard);
+
+		/* mark the block after newguard as MB_FLAG_FIRST */
+		memblock_t *blk = (memblock_t *)((uint32_t)newguard + sizeof(memblock_t));
+		blk->flags |= MB_FLAG_FIRST;
+		mb_touch(blk);
+	} else {
+		newguard = (memblock_t *)((uint32_t)guard + pages * PAGE_SIZE);
+
+		memblock_t *newfirst = (memblock_t *)((uint32_t)guard->next + pages * PAGE_SIZE);
+
+		/* copy guard and first block in new place */
+		memcpy(newguard, guard, sizeof(memblock_t) + sizeof(memblock_t));
+
+		/* correct pointers in newguard and its neighbours */
+		newguard->size		-= pages * PAGE_SIZE;
+		newguard->next		 = newfirst;
+		newguard->prev->next = newguard;
+
+		if (guard->next == guard->prev)
+			newguard->prev = newfirst;
+
+		mb_touch(newguard->prev);
+		mb_touch(newguard);
+
+		/* correct pointers in newfirst and its neighbours */
+		newfirst->size		-= pages * PAGE_SIZE;
+		newfirst->prev		 = newguard;
+		newfirst->next->prev = newfirst;
+
+		mb_touch(newfirst);
+		mb_touch(newfirst->next);
+	}
+
+	DEBUG("new guard: [$%.8x; %u; %.2x] [prev: $%.8x; next: $%.8x]\n",
+		  (uint32_t)newguard, newguard->size, newguard->flags, (uint32_t)newguard->prev, (uint32_t)newguard->next);
+
+	*to_shrink = newguard;
 }
 
 /*
@@ -548,7 +668,7 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
  * next search can start from block next to returned block.
  */
 
-memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *pages, uint32_t space)
+memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *offset, uint32_t *pages, uint32_t space)
 {
 	mb_valid(blk);
 
@@ -557,6 +677,8 @@ memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *pages, uint32_t space)
 
 	*pages = 0;
 
+	DEBUG("start searching for split-block from: [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
+
 	/* browse free blocks list */
 	while (TRUE) {
 		mb_valid(blk);
@@ -564,17 +686,25 @@ memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *pages, uint32_t space)
 		if (mb_is_guard(blk))
 			break;
 
-		uint32_t cut_point = ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
+		uint32_t cut_point = mb_is_first(blk) ? ((uint32_t)blk - sizeof(memblock_t) - space) : ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
 		uint32_t end_point = (uint32_t)blk + blk->size - (space + sizeof(memblock_t));
 
 		if ((cut_point < end_point) && (cut_point + PAGE_SIZE <= end_point)) {
 			/* found at least one aligned free page :) */
-			*pages = SIZE_IN_PAGES(end_point - cut_point);
+			*pages  = SIZE_IN_PAGES(end_point - cut_point);
+			*offset = cut_point - (uint32_t)blk; 
 
 			break;
 		}
 
 		blk = blk->next;
+	}
+
+	if (*pages > 0) {
+		DEBUG("split-block found: [$%.8x; %u; $%.2x], will cut [$%.8x; $%x]\n",
+			  (uint32_t)blk, blk->size, blk->flags, (uint32_t)blk + *offset, *pages * PAGE_SIZE);
+	} else {
+		DEBUG("split-block not found\n");
 	}
 
 	return blk;

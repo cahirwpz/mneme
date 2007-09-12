@@ -123,16 +123,19 @@ static void ma_pullout(memarea_t *area)
  * Remove memory area from list and unmap its memory.
  */
 
-void ma_remove(memarea_t *area)
+bool ma_remove(memarea_t *area)
 {
 	ma_valid(area);
 	assert(ma_is_mmap(area));
 
 	ma_pullout(area);
 
-	pm_mmap_free((void *)area, SIZE_IN_PAGES(area->size));
+	if (!pm_mmap_free((void *)area, SIZE_IN_PAGES(area->size)))
+		return FALSE;
 
 	DEBUG("removed area at $%.8x\n", (uint32_t)area);
+
+	return TRUE;
 }
 
 /*
@@ -203,52 +206,16 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
  * Split memory area and unmap unused memory.
  */
 
-void ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
+memarea_t *ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
 {
 	ma_valid(area);
 	assert(ma_is_mmap(area));
 
+	DEBUG("will split area [$%.8x; %u; $%.2x] with interval $%.8x - $%.8x\n",
+		  (uint32_t)area, area->size, area->flags,
+		  (uint32_t)area + offset * PAGE_SIZE, (uint32_t)area + (pages + offset) * PAGE_SIZE);
+
 	assert((offset + pages) * PAGE_SIZE < area->size);
-
-	/* Not a real splitting - just cutting off pages at the end of area */
-	if ((offset + pages) * PAGE_SIZE == area->size) {
-		pm_mmap_free((void *)((uint32_t)area + offset), pages);
-
-		area->size -= pages * PAGE_SIZE;
-
-		ma_touch(area);
-
-		return;
-	}
-
-	/* Not a real splitting - just cutting off pages at the beginning of area */
-	if (offset == 0) {
-		memarea_t *oldarea = area;
-
-		area = (memarea_t *)((uint32_t)area + pages * PAGE_SIZE);
-
-		memcpy(area, oldarea, sizeof(memarea_t));
-
-		area->size -= pages * PAGE_SIZE;
-
-		ma_touch(area);
-
-		if (area->next) {
-			area->next->prev = area;
-
-			ma_touch(area->next);
-		}
-
-		if (area->prev) {
-			area->prev->next = area;
-
-			ma_touch(area->prev);
-		}
-
-		pm_mmap_free((void *)area, pages);
-
-		return;
-	}
 
 	/* Now unmapped pages are really inside area */
 	memarea_t *newarea = (memarea_t *)((uint32_t)area + (offset + pages) * PAGE_SIZE);
@@ -272,30 +239,87 @@ void ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
 	area->next = newarea;
 
 	ma_touch(area);
+
+	DEBUG("area splitted to [$%.8x; %u; $%.2x] and [$%.8x; %u; $%.2x]\n",
+		  (uint32_t)area, area->size, area->flags, (uint32_t)newarea, newarea->size, newarea->flags);
+
+	return area;
 }
 
-/*
- * Shrink sbrk memory area by 'pages' number of pages.
+/**
+ * Shrink memory area by 'pages' number of pages.
  */
 
-bool ma_shrink(memarea_t *area, uint32_t pages)
+bool ma_shrink_at_end(memarea_t *area, uint32_t pages)
 {
 	ma_valid(area);
-
-	assert(ma_is_sbrk(area));
+	assert(ma_is_sbrk(area) || ma_is_mmap(area));
 	assert(pages > 0);
 
-	DEBUG("shrinking area $%.8x - %.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
+	DEBUG("will shrink area [$%.8x; %u; $%.2x] at the end by %u pages\n",
+		  (uint32_t)area, area->size, area->flags, pages);
 
-	if (pm_sbrk_free((void *)((uint32_t)area + area->size - (pages * PAGE_SIZE)), pages)) {
-		area->size -= pages * PAGE_SIZE;
+	void *address = (void *)((uint32_t)area + area->size - (pages * PAGE_SIZE));
+	bool result	  = FALSE;
 
-		ma_touch(area);
+	if (ma_is_sbrk(area))
+		result = pm_sbrk_free(address, pages);
 
-		return TRUE;
+	if (ma_is_mmap(area))
+		result = pm_mmap_free(address, pages);
+
+	if (!result) {
+		DEBUG("cannot unmap memory\n");
+		return FALSE;
 	}
 
-	return FALSE;
+	area->size -= pages * PAGE_SIZE;
+
+	ma_touch(area);
+
+	DEBUG("shrinked area [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+
+	return TRUE;
+}
+
+/**
+ *
+ */
+
+bool ma_shrink_at_beginning(memarea_t **to_shrink, uint32_t pages)
+{
+	memarea_t *area = *to_shrink;
+
+	ma_valid(area);
+
+	assert(ma_is_mmap(area));
+	assert(pages > 0);
+
+	DEBUG("will shrink area [$%.8x; %u; $%.2x] at the beginning by %u pages\n",
+		  (uint32_t)area, area->size, area->flags, pages);
+
+	memarea_t *newarea = (memarea_t *)((uint32_t)area + pages * PAGE_SIZE);
+
+	memcpy(newarea, area, sizeof(memarea_t));
+
+	if (!pm_mmap_free((void *)area, pages)) {
+		DEBUG("cannot unmap memory\n");
+		return FALSE;
+	}
+
+	newarea->size		-= pages * PAGE_SIZE;
+	newarea->next->prev  = newarea;
+	newarea->prev->next  = newarea;
+
+	ma_touch(newarea);
+	ma_touch(newarea->prev);
+	ma_touch(newarea->next);
+
+	*to_shrink = newarea;
+
+	DEBUG("area shrinked to [$%.8x; %u; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
+
+	return TRUE;
 }
 
 /*

@@ -26,5 +26,5 @@ void *pm_mmap_alloc(uint32_t n)
 
 bool pm_mmap_free(void *start, uint32_t n)
 {
-	return munmap(start, PAGE_SIZE * n);
+	return (munmap(start, PAGE_SIZE * n) == 0);
 }

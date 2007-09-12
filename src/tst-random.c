@@ -9,6 +9,8 @@
 #define MAX_MEM_USED	(1 << 20)
 #define MAX_BLOCK_SIZE	(1 << 14)
 
+#define MM_PRINT_AT_ITERATION 1
+
 static struct
 {
 	void		*array[MAX_BLOCK_NUM];
@@ -103,12 +105,15 @@ int main(int argc, char **argv)
 			blocks.array[blocks.last--] = NULL;
 		}
 
-		// mm_print(&mm);
-
+#if MM_PRINT_AT_ITERATION == 1
+		 mm_print(&mm);
+#endif
 		i++;
 	}
 	
+#if MM_PRINT_AT_ITERATION == 0
 	mm_print(&mm);
+#endif
 
 	return 0;
 }

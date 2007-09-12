@@ -75,12 +75,13 @@ void ma_add(memarea_t *area, memarea_t *mm);
 memarea_t *ma_new(pm_type_t type, uint32_t size);
 
 /* sbrk memory area procedures */
-bool ma_shrink(memarea_t *area, uint32_t pages);
+bool ma_shrink_at_end(memarea_t *area, uint32_t pages);
+bool ma_shrink_at_beginning(memarea_t **area, uint32_t pages);
 bool ma_expand(memarea_t *area, uint32_t pages);
+bool ma_remove(memarea_t *area);
 
 /* mmap memory area procedures */
-void ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
+memarea_t *ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
 memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction);
-void ma_remove(memarea_t *area);
 
 #endif

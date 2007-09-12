@@ -81,13 +81,19 @@ static inline void mb_valid(memblock_t *blk)
 void mb_print(memblock_t *guard);
 void mb_init(memblock_t *guard, uint32_t size);
 void *mb_alloc(memblock_t *guard, uint32_t size, bool from_last);
-void mb_free(memblock_t *guard, void *memory);
+memblock_t *mb_free(memblock_t *guard, void *memory);
 
 /* Procedures used in conjuction with operations on memory areas */
-uint32_t mb_list_can_shrink(memblock_t *guard);
-void mb_list_shrink(memblock_t *guard, uint32_t pages);
+uint32_t mb_list_can_shrink_at_beginning(memblock_t *guard, uint32_t space);
+uint32_t mb_list_can_shrink_at_end(memblock_t *guard);
+
+void mb_list_shrink_at_beginning(memblock_t **guard, uint32_t pages, uint32_t space);
+void mb_list_shrink_at_end(memblock_t *guard, uint32_t pages);
+
+memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *offset, uint32_t *pages, uint32_t space);
+memblock_t *mb_list_split(memblock_t *first, memblock_t *to_split, uint32_t pages, uint32_t space);
+
 void mb_list_expand(memblock_t *guard, uint32_t pages);
 void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space);
-memblock_t *mb_list_split(memblock_t *first, memblock_t *to_split, uint32_t pages, uint32_t space);
 
 #endif

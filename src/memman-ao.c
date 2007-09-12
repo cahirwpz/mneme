@@ -142,13 +142,61 @@ void mm_free(memarea_t *mm, void *memory)
 
 		/* does pointer belong to this area ? */
 		if (((uint32_t)memory > (uint32_t)guard) && ((uint32_t)memory < (uint32_t)guard + guard->size)) {
-			mb_free(guard, memory);
+			memblock_t *free = mb_free(guard, memory);
 
 			if (ma_is_sbrk(area)) {
-				int32_t pages = mb_list_can_shrink(guard) - 3;
+				int32_t pages = mb_list_can_shrink_at_end(guard) - 3;
 
-				if ((pages > 0) && ma_shrink(area, pages))
-					mb_list_shrink(guard, pages);
+				if ((pages > 0) && ma_shrink_at_end(area, pages))
+					mb_list_shrink_at_end(guard, pages);
+			}
+
+			if (ma_is_mmap(area)) {
+				uint32_t pages;
+
+				mb_print(guard);
+
+				/* is area completely empty (has exactly one block and it's free) */
+				if ((area->next != area->prev) && (guard->next->flags & MB_FLAG_FIRST) &&
+					(guard->next->flags & MB_FLAG_LAST))
+				{
+						assert(ma_remove(area));
+
+						break;
+				}
+
+				/* can area be shrinked at the beginning ? */
+				pages = mb_list_can_shrink_at_beginning(guard, sizeof(memarea_t));
+
+				if (pages > 0) {
+					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
+					assert(ma_shrink_at_beginning(&area, pages));
+				}
+
+				mb_print(guard);
+
+				/* can area be shrinked at the end ? */
+				pages = mb_list_can_shrink_at_end(guard);
+
+				if (pages > 0) {
+					mb_list_shrink_at_end(guard, pages);
+					assert(ma_shrink_at_end(area, pages));
+				}
+
+				mb_print(guard);
+
+				/* can area be splitted ? */
+#if 0
+				uint32_t offset;
+
+				free = mb_list_find_split(free, &offset, &pages, sizeof(memarea_t));
+
+				offset = SIZE_IN_PAGES(offset + (uint32_t)free - (uint32_t)area);
+
+				mb_list_split(mb_from_memarea(area), free, pages, sizeof(memarea_t));
+
+				area = ma_split(area, offset, pages);
+#endif
 			}
 
 			break;
