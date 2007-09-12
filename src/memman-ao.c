@@ -39,6 +39,8 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 	assert(ma_is_guard(mm));
 
 	/* try to find area that have enough space to store allocated block */
+	DEBUG("browsing memory areas' list\n");
+
 	memarea_t *area = mm->next;
 
 	while (!ma_is_guard(area)) {
@@ -79,7 +81,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 		}
 
 		if (ma_is_mmap(area)) {
-			memarea_t *newarea = ma_new(PM_MMAP, size);
+			memarea_t *newarea = ma_new(PM_MMAP, size + sizeof(memblock_t) + sizeof(memarea_t) + offsetof(memblock_t, next));
 			
 			/* prepare new list of blocks */
 			memblock_t *guard = mb_from_memarea(newarea);
@@ -165,25 +167,26 @@ void mm_free(memarea_t *mm, void *memory)
 						break;
 				}
 
-				/* can area be shrinked at the beginning ? */
-				pages = mb_list_can_shrink_at_beginning(guard, sizeof(memarea_t));
-
-				if (pages > 0) {
-					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
-					assert(ma_shrink_at_beginning(&area, pages));
-				}
-
-				mb_print(guard);
-
 				/* can area be shrinked at the end ? */
 				pages = mb_list_can_shrink_at_end(guard);
 
 				if (pages > 0) {
 					mb_list_shrink_at_end(guard, pages);
 					assert(ma_shrink_at_end(area, pages));
+
+					mb_print(guard);
 				}
 
-				mb_print(guard);
+				/* can area be shrinked at the beginning ? */
+				pages = mb_list_can_shrink_at_beginning(guard, sizeof(memarea_t));
+
+				if (pages > 0) {
+					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
+					assert(ma_shrink_at_beginning(&area, pages));
+
+					mb_print(guard);
+				}
+
 
 				/* can area be splitted ? */
 #if 0

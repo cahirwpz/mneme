@@ -532,8 +532,10 @@ void mb_list_shrink_at_beginning(memblock_t **to_shrink, uint32_t pages, uint32_
 		newguard->next		 = newfirst;
 		newguard->prev->next = newguard;
 
-		if (guard->next == guard->prev)
-			newguard->prev = newfirst;
+		if (guard->next == guard->prev) {
+			newguard->prev       = newfirst;
+			newguard->next->next = newguard;
+		}
 
 		mb_touch(newguard->prev);
 		mb_touch(newguard);
@@ -549,6 +551,9 @@ void mb_list_shrink_at_beginning(memblock_t **to_shrink, uint32_t pages, uint32_
 
 	DEBUG("new guard: [$%.8x; %u; %.2x] [prev: $%.8x; next: $%.8x]\n",
 		  (uint32_t)newguard, newguard->size, newguard->flags, (uint32_t)newguard->prev, (uint32_t)newguard->next);
+	DEBUG("new first block: [$%.8x; %u; $%.2x] [prev: $%.8x; next: $%.8x]\n",
+		  (uint32_t)newguard->next, newguard->next->size, newguard->next->flags,
+		  (uint32_t)newguard->next->prev, (uint32_t)newguard->next->next);
 
 	*to_shrink = newguard;
 }
@@ -648,15 +653,15 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 	/* last free block on first list */
 	memblock_t *last = first->prev;
 
-	first->next->next = second;
+	first->prev->next = second;
 	first->prev = second->prev;
 	second->prev = last;
 
 	mb_touch(first);
 	mb_touch(first->prev);
 	mb_touch(second);
-	mb_touch(second->next);
 	mb_touch(second->prev);
+	mb_touch(second->next);
 
 	mb_coalesce(second);
 

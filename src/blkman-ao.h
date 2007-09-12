@@ -72,7 +72,8 @@ static inline void mb_touch(memblock_t *blk)
 static inline void mb_valid(memblock_t *blk)
 {
 	if (mb_checksum(blk) != blk->checksum) {
-		fprintf(stderr, "invalid block: [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
+		fprintf(stderr, "invalid block: [$%.8x; %u; $%.2x] [prev: $%.8x; next: $%.8x]\n",
+				(uint32_t)blk, blk->size, blk->flags, (uint32_t)blk->prev, (uint32_t)blk->next);
 		abort();
 	}
 }
