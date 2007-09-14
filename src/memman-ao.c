@@ -160,8 +160,6 @@ void mm_free(memarea_t *mm, void *memory)
 			if (ma_is_mmap(area)) {
 				uint32_t pages;
 
-				//mb_print(guard);
-
 				/* is area completely empty (has exactly one block and it's free) */
 				if ((area->next != area->prev) && (guard->next->flags & MB_FLAG_FIRST) &&
 					(guard->next->flags & MB_FLAG_LAST))
@@ -176,8 +174,6 @@ void mm_free(memarea_t *mm, void *memory)
 				if (pages > 0) {
 					mb_list_shrink_at_end(guard, pages);
 					assert(ma_shrink_at_end(area, pages));
-
-					//mb_print(guard);
 				}
 
 				/* can area be shrinked at the beginning ? */
@@ -186,23 +182,20 @@ void mm_free(memarea_t *mm, void *memory)
 				if (pages > 0) {
 					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
 					assert(ma_shrink_at_beginning(&area, pages));
-
-					//mb_print(guard);
 				}
-
-#if 0
 
 				/* can area be splitted ? */
 				uint32_t offset;
 
-				free = mb_list_find_split(free, &offset, &pages, sizeof(memarea_t));
+				free = mb_list_find_split(guard, &offset, &pages, sizeof(memarea_t));
 
-				offset = SIZE_IN_PAGES(offset + (uint32_t)free - (uint32_t)area);
+				if (pages > 0) {
+					offset = SIZE_IN_PAGES(offset + (uint32_t)free - (uint32_t)area);
 
-				mb_list_split(mb_from_memarea(area), free, pages, sizeof(memarea_t));
+					mb_list_split(mb_from_memarea(area), free, pages, sizeof(memarea_t));
 
-				area = ma_split(area, offset, pages);
-#endif
+					area = ma_split(area, offset, pages);
+				}
 			}
 
 			break;

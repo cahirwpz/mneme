@@ -729,6 +729,7 @@ void mb_list_merge(memblock_t *first, memblock_t *second, uint32_t space)
 
 memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *offset, uint32_t *pages, uint32_t space)
 {
+	assert(blk != NULL);
 	mb_valid(blk);
 
 	if (mb_is_guard(blk))
@@ -745,12 +746,14 @@ memblock_t *mb_list_find_split(memblock_t *blk, uint32_t *offset, uint32_t *page
 		if (mb_is_guard(blk))
 			break;
 
-		uint32_t cut_point = mb_is_first(blk) ? ((uint32_t)blk - sizeof(memblock_t) - space) : ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
-		uint32_t end_point = (uint32_t)blk + blk->size - (space + sizeof(memblock_t));
+		space += sizeof(memblock_t);
+
+		uint32_t cut_point = mb_is_first(blk) ? ((uint32_t)blk - space) : ALIGN((uint32_t)blk + sizeof(memblock_t), PAGE_SIZE);
+		uint32_t end_point = (uint32_t)blk + blk->size - space;
 
 		if ((cut_point < end_point) && (cut_point + PAGE_SIZE <= end_point)) {
 			/* found at least one aligned free page :) */
-			*pages  = SIZE_IN_PAGES(end_point - cut_point);
+			*pages  = (end_point - cut_point) / PAGE_SIZE;
 			*offset = cut_point - (uint32_t)blk; 
 
 			break;
@@ -781,14 +784,17 @@ memblock_t *mb_list_split(memblock_t *first, memblock_t *to_split, uint32_t page
 	assert(!mb_is_guard(to_split));
 	assert(!mb_is_used(to_split));
 
-	uint32_t cut_start = ALIGN((uint32_t)first + sizeof(memblock_t), PAGE_SIZE);
+	DEBUG("split block's list [$%.8x; %u; $%.2x] at block [$%.8x; %u; $%.2x] removing %u pages\n",
+		  (uint32_t)first, first->size, first->flags, (uint32_t)to_split, to_split->size, to_split->flags, pages);
+
+	uint32_t cut_start = ALIGN((uint32_t)to_split + sizeof(memblock_t), PAGE_SIZE);
 	uint32_t cut_end   = cut_start + pages * PAGE_SIZE;
 
 	/* set up guard of second list */
 	memblock_t *second = (memblock_t *)(cut_end + space);
 
-	second->flags = MB_FLAG_FIRST;
-	second->size  = first->size - (cut_end + space);
+	second->flags = MB_FLAG_GUARD;
+	second->size  = ((uint32_t)first + first->size) - (cut_end + space);
 	second->next  = mb_is_guard(to_split->next) ? second : to_split->next;
 	second->prev  = (first->prev == to_split) ? second : first->prev;
 
@@ -796,22 +802,33 @@ memblock_t *mb_list_split(memblock_t *first, memblock_t *to_split, uint32_t page
 
 	/* correct pointers in second guard neighbours */
 	second->next->prev = second;
-
-	mb_touch(second->next);
-
 	second->prev->next = second;
 
+	mb_touch(second->next);
 	mb_touch(second->prev);
 
-	/* mark first block of second list with MB_FLAG_FIRST */
+	/* check if there should be a leftover at the beginning of second */
 	memblock_t *blk = (memblock_t *)((uint32_t)second + sizeof(memblock_t));
 
-	blk->flags |= MB_FLAG_FIRST;
+	uint32_t size = (uint32_t)to_split + to_split->size - (uint32_t)blk;
 
-	mb_touch(blk);
+	if (size > 0) {
+		blk->size  = size;
+		blk->flags = MB_FLAG_FIRST;
+
+		mb_touch(blk);
+
+		mb_insert(blk, second);
+	} else {
+		/* mark first block of second list with MB_FLAG_FIRST */
+		blk->flags |= MB_FLAG_FIRST;
+
+		mb_touch(blk);
+	}
 
 	/* now correct first list */
 	first->prev = to_split;
+	first->size = cut_start - (uint32_t)first;
 
 	mb_touch(first);
 
