@@ -183,7 +183,7 @@ void mm_free(memarea_t *mm, void *memory)
 					assert(ma_shrink_at_beginning(&area, pages));
 				}
 
-#if 1
+#if 0
 				/* can area be splitted ? */
 				void *cut = NULL;
 
@@ -213,7 +213,7 @@ void mm_free(memarea_t *mm, void *memory)
 
 void mm_print(memarea_t *mm)
 {
-#if VERBOSE > 0
+/* #if VERBOSE > 0 */
 	ma_valid(mm);
 	assert(ma_is_guard(mm));
 
@@ -226,5 +226,5 @@ void mm_print(memarea_t *mm)
 
 		area = area->next;
 	}
-#endif
+/* #endif */
 }

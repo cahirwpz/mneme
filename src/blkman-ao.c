@@ -63,7 +63,7 @@ static void mb_insert(mb_list_t *list, mb_free_t *newblk)
  * @param size
  */
 
-static void mb_split(mb_free_t *blk, uint32_t size)
+static void mb_split(mb_list_t *list, mb_free_t *blk, uint32_t size)
 {
 	mb_valid(blk);
 
@@ -103,6 +103,12 @@ static void mb_split(mb_free_t *blk, uint32_t size)
 	newblk->next->prev = newblk;
 
 	mb_touch(newblk->next);
+
+	/* increase blocks' counter */
+	list->blkcnt++;
+	list->fmemcnt -= sizeof(mb_t);
+
+	mb_touch(list);
 
 	DEBUG("splitted blocks: [$%.8x; %u; $%.2x] [$%.8x; %u; $%.2x]\n",
 		  (uint32_t)blk, blk->size, blk->flags, (uint32_t)newblk, newblk->size, newblk->flags);
@@ -149,7 +155,7 @@ static void mb_pullout(mb_free_t *blk)
  * @return 
  */
 
-static mb_free_t *mb_coalesce(mb_free_t *blk)
+static mb_free_t *mb_coalesce(mb_list_t *list, mb_free_t *blk)
 {
 	mb_valid(blk);
 
@@ -175,6 +181,11 @@ static mb_free_t *mb_coalesce(mb_free_t *blk)
 			blk->flags |= MB_FLAG_LAST;
 
 		mb_touch(blk);
+
+		list->blkcnt--;
+		list->fmemcnt += sizeof(mb_t);
+
+		mb_touch(list);
 	}
 
 	/* coalesce with previous block */
@@ -197,6 +208,11 @@ static mb_free_t *mb_coalesce(mb_free_t *blk)
 			blk->flags |= MB_FLAG_LAST;
 
 		mb_touch(blk);
+
+		list->blkcnt--;
+		list->fmemcnt += sizeof(mb_t);
+		
+		mb_touch(list);
 	}
 
 #ifdef DEADMEMORY
@@ -225,7 +241,7 @@ void mb_print(mb_list_t *list)
 
 	fprintf(stderr, "\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)list + list->size));
 
-	uint32_t used = 0, free = 0, largest = 0;
+	uint32_t used = 0, free = 0, largest = 0, free_blocks = 0, used_blocks = 0;
 
 	bool error = FALSE;
 
@@ -261,20 +277,30 @@ void mb_print(mb_list_t *list)
 
 		if (mb_is_used(blk)) {
 			used += blk->size;
+			used_blocks++;
 		} else {
-			free += blk->size;
+			free += blk->size - sizeof(mb_t);
+			used += sizeof(mb_t);
 
 			if (largest < blk->size)
 				largest = blk->size;
+
+			free_blocks++;
 		}
 
 		blk = (mb_t *)((uint32_t)blk + blk->size);
 	}
 
-	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", list->size, used, free);
-	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, (1.0 - (float)largest / (float)free) * 100.0);
+	float fragmentation = (free != 0) ? ((float)(largest - sizeof(mb_t)) / (float)free) * 100.0 : 0.0;
+
+	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", list->size, used, list->fmemcnt);
+	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, fragmentation);
+	fprintf(stderr, "\033[0;36mBlocks: %u, free blocks: %u, used blocks: %u.\033[0m\n", list->blkcnt, list->blkcnt - list->ublkcnt, list->ublkcnt);
 	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
 
+	assert(list->blkcnt == used_blocks + free_blocks);
+	assert(list->ublkcnt == used_blocks);
+	assert(list->fmemcnt == free);
 	assert(first_free == list->next);
 	assert(last_free == list->prev);
 	assert(error == FALSE);
@@ -299,7 +325,7 @@ void mb_init(mb_list_t *list, uint32_t size)
 
 	list->fmemcnt = list->size - (sizeof(mb_t) + sizeof(mb_list_t));
 	list->blkcnt  = 1;
-	list->fblkcnt = 1;
+	list->ublkcnt = 0;
 
 	mb_touch(list);
 
@@ -355,7 +381,7 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)
 	DEBUG("found block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 	
 	/* try to split block and save the rest on the list */
-	mb_split(blk, size);
+	mb_split(list, blk, size);
 
 	/* block is ready to be pulled out of list */
 	mb_pullout(blk);
@@ -364,6 +390,12 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)
 	blk->flags |= MB_FLAG_USED;
 
 	mb_touch(blk);
+
+	/* increase amount of used blocks */
+	list->ublkcnt++;
+	list->fmemcnt -= blk->size - sizeof(mb_t);
+
+	mb_touch(list);
 
 	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
@@ -424,8 +456,14 @@ mb_free_t *mb_free(mb_list_t *list, void *memory)
 
 	/* insert on free list and coalesce */
 	mb_insert(list, fblk);
+
+	/* decrease amount of free blocks */
+	list->ublkcnt--;
+	list->fmemcnt += fblk->size - sizeof(mb_t);
+
+	mb_touch(list);
 	
-	return mb_coalesce(fblk);
+	return mb_coalesce(list, fblk);
 }
 
 /**
@@ -523,7 +561,8 @@ void mb_list_shrink_at_end(mb_list_t *list, uint32_t pages)
 
 	mb_touch(list->prev);
 
-	list->size -= pages * PAGE_SIZE;
+	list->size    -= pages * PAGE_SIZE;
+	list->fmemcnt -= pages * PAGE_SIZE;
 
 	mb_touch(list);
 }
@@ -559,8 +598,11 @@ void mb_list_shrink_at_beginning(mb_list_t **to_shrink, uint32_t pages, uint32_t
 		newlist = (mb_list_t *)((uint32_t)list + pages * PAGE_SIZE);
 
 		/* copy data to new guard block and correct pointers */
-		newlist->size  = list->size - pages * PAGE_SIZE;
-		newlist->flags = list->flags;
+		newlist->size    = list->size - pages * PAGE_SIZE;
+		newlist->flags   = list->flags;
+		newlist->blkcnt  = list->blkcnt - 1;
+		newlist->ublkcnt = list->ublkcnt;
+		newlist->fmemcnt = list->fmemcnt - pages * PAGE_SIZE + sizeof(mb_t);
 
 		if ((mb_free_t *)list == list->next) {
 			newlist->prev = (mb_free_t *)newlist;
@@ -593,6 +635,7 @@ void mb_list_shrink_at_beginning(mb_list_t **to_shrink, uint32_t pages, uint32_t
 		newlist->size		-= pages * PAGE_SIZE;
 		newlist->next		 = newfirst;
 		newlist->prev->next  = (mb_free_t *)newlist;
+		newlist->fmemcnt	-= pages * PAGE_SIZE;
 
 		if (list->next == list->prev) {
 			newlist->prev       = newfirst;
@@ -676,8 +719,9 @@ void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 	mb_valid(first);
 	mb_valid(second);
 
-	DEBUG("will merge two lists of blocks: [$%.8x; %u; $%.2x] and [$%.8x; %u; $%.2x]\n",
-		  (uint32_t)first, first->size, first->flags, (uint32_t)second, second->size, second->flags);
+	DEBUG("will merge following lists: [$%.8x; %u; $%.2x; %u; %u; %u] [$%.8x; %u; $%.2x; %u; %u; %u]\n",
+		  (uint32_t)first, first->size, first->flags, first->blkcnt, first->ublkcnt, first->fmemcnt,
+		  (uint32_t)second, second->size, second->flags, second->blkcnt, second->ublkcnt, second->fmemcnt);
 
 	/* a few checks */
 	assert(mb_is_guard(first));
@@ -699,13 +743,19 @@ void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 	mb_touch(blk);
 
 	/* sum size of two lists */
-	first->size	+= second->size + space;
+	first->size	   += second->size + space;
+	first->blkcnt  += second->blkcnt;
+	first->ublkcnt += second->ublkcnt;
+	first->fmemcnt += second->fmemcnt;
 
 	/* turn second guard into ordinary free block and increase its size by 'space' */
 	blk = (mb_free_t *)((uint32_t)second - space);
 
 	blk->flags = 0;
 	blk->size  = sizeof(mb_list_t) + space;
+
+	first->blkcnt++;
+	first->fmemcnt += blk->size - sizeof(mb_t);
 	
 	if ((mb_free_t *)second == second->next) {
 		blk->next = blk;
@@ -736,9 +786,10 @@ void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 	mb_touch(last);
 	mb_touch(blk);
 
-	mb_coalesce(blk);
+	mb_coalesce(first, blk);
 
-	DEBUG("merged into: [$%.8x; %u; $%.2x]\n", (uint32_t)first, first->size, first->flags);
+	DEBUG("merged into: [$%.8x; %u; $%.2x; %u; %u]\n",
+		  (uint32_t)first, first->size, first->flags, first->blkcnt, first->ublkcnt);
 }
 
 /**

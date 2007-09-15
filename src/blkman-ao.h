@@ -44,9 +44,9 @@ struct memory_block_list
 {
 	struct memory_block_free;
 
-	uint32_t fmemcnt;
 	uint16_t blkcnt;
-	uint16_t fblkcnt;
+	uint16_t ublkcnt;
+	uint32_t fmemcnt;
 } __attribute__((aligned(MB_GRANULARITY)));
 
 typedef struct memory_block_list mb_list_t;
@@ -124,8 +124,8 @@ static inline void mb_valid_internal(mb_t *blk)
 		if (mb_is_guard(blk)) {
 			mb_list_t *list = (mb_list_t *)blk;
 
-			fprintf(stderr, " [fmemcnt: %u; blkcnt: %u; fblkcnt: %u]",
-					list->fmemcnt, list->blkcnt, list->fblkcnt);
+			fprintf(stderr, " [fmemcnt: %u; blkcnt: %u; ublkcnt: %u]",
+					list->fmemcnt, list->blkcnt, list->ublkcnt);
 		}
 
 		fprintf(stderr, "\n");
