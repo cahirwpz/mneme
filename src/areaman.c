@@ -206,19 +206,21 @@ memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction)
  * Split memory area and unmap unused memory.
  */
 
-memarea_t *ma_split(memarea_t *area, uint32_t offset, uint32_t pages)
+memarea_t *ma_split(memarea_t *area, void *cut, uint32_t pages)
 {
 	ma_valid(area);
 	assert(ma_is_mmap(area));
 
 	DEBUG("will split area [$%.8x; %u; $%.2x] with interval $%.8x - $%.8x\n",
 		  (uint32_t)area, area->size, area->flags,
-		  (uint32_t)area + offset * PAGE_SIZE, (uint32_t)area + (pages + offset) * PAGE_SIZE);
+		  (uint32_t)cut, (uint32_t)cut + pages * PAGE_SIZE);
+
+	uint32_t offset = ((uint32_t)cut - (uint32_t)area) / PAGE_SIZE;
 
 	assert((offset + pages) * PAGE_SIZE < area->size);
 
 	/* Now unmapped pages are really inside area */
-	memarea_t *newarea = (memarea_t *)((uint32_t)area + (offset + pages) * PAGE_SIZE);
+	memarea_t *newarea = (memarea_t *)((uint32_t)cut + pages * PAGE_SIZE);
 
 	memcpy(newarea, area, sizeof(memarea_t));
 

@@ -44,22 +44,22 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 	memarea_t *area = mm->next;
 
 	while (!ma_is_guard(area)) {
-		memblock_t *guard = mb_from_memarea(area);
+		mb_list_t *list = mb_list_from_memarea(area);
 
 		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
 
 		if (!ma_is_ready(area)) {
-			mb_init(guard, area->size - ((uint32_t)guard - (uint32_t)area));
+			mb_init(list, area->size - ((uint32_t)list - (uint32_t)area));
 
 			area->flags |= MA_FLAG_READY;
 			ma_touch(area);
 		} 
 
-		mb_valid(guard);
+		mb_valid(list);
 
 		void *memory = NULL;
 
-		if ((memory = mb_alloc(guard, size, FALSE)))
+		if ((memory = mb_alloc(list, size, FALSE)))
 			return memory;
 
 		area = area->next;
@@ -71,29 +71,28 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 	area = mm->next;
 
 	while (!ma_is_guard(area)) {
-		memblock_t *guard = mb_from_memarea(area);
-
-		mb_valid(guard);
-
 		void *memory = NULL;
 
 		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(size)))) {
-			mb_list_expand(guard, SIZE_IN_PAGES(size));
-			memory = mb_alloc(guard, size, TRUE);
+			mb_list_t *list = mb_list_from_memarea(area);
+
+			mb_list_expand(list, SIZE_IN_PAGES(size));
+
+			memory = mb_alloc(list, size, TRUE);
 		}
 
 		if (ma_is_mmap(area)) {
-			memarea_t *newarea = ma_new(PM_MMAP, size + sizeof(memblock_t) + sizeof(memarea_t) + offsetof(memblock_t, next));
+			memarea_t *newarea = ma_new(PM_MMAP, size + sizeof(memarea_t) + sizeof(mb_list_t) + sizeof(mb_t));
 			
 			/* prepare new list of blocks */
-			memblock_t *guard = mb_from_memarea(newarea);
+			mb_list_t *list = mb_list_from_memarea(newarea);
 
-			mb_init(guard, newarea->size - ((uint32_t)guard - (uint32_t)newarea));
+			mb_init(list, newarea->size - ((uint32_t)list - (uint32_t)newarea));
 
 			newarea->flags |= MA_FLAG_READY;
 			ma_touch(newarea);
 
-			mb_valid(guard);
+			mb_valid(list);
 
 			/* add it to area manager */
 			ma_add(newarea, mm);
@@ -112,13 +111,13 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 					break;
 
 				if (direction == MA_COALESCE_RIGHT)
-					mb_list_merge(mb_from_memarea(area), mb_from_memarea(next), sizeof(memarea_t));
+					mb_list_merge(mb_list_from_memarea(area), mb_list_from_memarea(next), sizeof(memarea_t));
 
 				if (direction == MA_COALESCE_LEFT)
-					mb_list_merge(mb_from_memarea(newarea), mb_from_memarea(area), sizeof(memarea_t));
+					mb_list_merge(mb_list_from_memarea(newarea), mb_list_from_memarea(area), sizeof(memarea_t));
 			}
 
-			memory = mb_alloc(mb_from_memarea(newarea), size, FALSE);
+			memory = mb_alloc(mb_list_from_memarea(newarea), size, FALSE);
 		}
 
 		if (memory)
@@ -144,58 +143,58 @@ void mm_free(memarea_t *mm, void *memory)
 	memarea_t *area = mm->next;
 
 	while (TRUE) {
-		memblock_t *guard = mb_from_memarea(area);
+		mb_list_t *list = mb_list_from_memarea(area);
 
 		/* does pointer belong to this area ? */
-		if (((uint32_t)memory > (uint32_t)guard) && ((uint32_t)memory < (uint32_t)guard + guard->size)) {
-			memblock_t *free = mb_free(guard, memory);
+		if (((uint32_t)memory > (uint32_t)list) && ((uint32_t)memory < (uint32_t)list + list->size)) {
+			mb_free_t *free = mb_free(list, memory);
 
 			if (ma_is_sbrk(area)) {
-				int32_t pages = mb_list_can_shrink_at_end(guard) - 3;
+				int32_t pages = mb_list_can_shrink_at_end(list) - 3;
 
 				if ((pages > 0) && ma_shrink_at_end(area, pages))
-					mb_list_shrink_at_end(guard, pages);
+					mb_list_shrink_at_end(list, pages);
 			}
 
 			if (ma_is_mmap(area)) {
 				uint32_t pages;
 
 				/* is area completely empty (has exactly one block and it's free) */
-				if ((area->next != area->prev) && (guard->next->flags & MB_FLAG_FIRST) &&
-					(guard->next->flags & MB_FLAG_LAST))
+				if ((area->next != area->prev) && (list->next->flags & MB_FLAG_FIRST) &&
+					(list->next->flags & MB_FLAG_LAST))
 				{
 					assert(ma_remove(area));
 					break;
 				}
 
 				/* can area be shrinked at the end ? */
-				pages = mb_list_can_shrink_at_end(guard);
+				pages = mb_list_can_shrink_at_end(list);
 
 				if (pages > 0) {
-					mb_list_shrink_at_end(guard, pages);
+					mb_list_shrink_at_end(list, pages);
 					assert(ma_shrink_at_end(area, pages));
 				}
 
 				/* can area be shrinked at the beginning ? */
-				pages = mb_list_can_shrink_at_beginning(guard, sizeof(memarea_t));
+				pages = mb_list_can_shrink_at_beginning(list, sizeof(memarea_t));
 
 				if (pages > 0) {
-					mb_list_shrink_at_beginning(&guard, pages, sizeof(memarea_t));
+					mb_list_shrink_at_beginning(&list, pages, sizeof(memarea_t));
 					assert(ma_shrink_at_beginning(&area, pages));
 				}
 
+#if 1
 				/* can area be splitted ? */
-				uint32_t offset;
+				void *cut = NULL;
 
-				free = mb_list_find_split(guard, &offset, &pages, sizeof(memarea_t));
+				pages = mb_list_find_split(list, &free, &cut, sizeof(memarea_t));
 
 				if (pages > 0) {
-					offset = SIZE_IN_PAGES(offset + (uint32_t)free - (uint32_t)area);
+					mb_list_split(mb_list_from_memarea(area), free, pages, sizeof(memarea_t));
 
-					mb_list_split(mb_from_memarea(area), free, pages, sizeof(memarea_t));
-
-					area = ma_split(area, offset, pages);
+					area = ma_split(area, cut, pages);
 				}
+#endif
 			}
 
 			break;
@@ -223,7 +222,7 @@ void mm_print(memarea_t *mm)
 	while (!ma_is_guard(area)) {
 		ma_valid(area);
 
-		mb_print(mb_from_memarea(area));
+		mb_print(mb_list_from_memarea(area));
 
 		area = area->next;
 	}

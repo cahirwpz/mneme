@@ -81,7 +81,7 @@ bool ma_expand(memarea_t *area, uint32_t pages);
 bool ma_remove(memarea_t *area);
 
 /* mmap memory area procedures */
-memarea_t *ma_split(memarea_t *area, uint32_t offset, uint32_t pages);
+memarea_t *ma_split(memarea_t *area, void *cut, uint32_t pages);
 memarea_t *ma_coalesce(memarea_t *area, ma_coalesce_t *direction);
 
 #endif
