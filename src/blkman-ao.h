@@ -138,6 +138,7 @@ static inline void mb_valid_internal(mb_t *blk)
 void mb_print(mb_list_t *list);
 void mb_init(mb_list_t *list, uint32_t size);
 void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last);
+void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment);
 mb_free_t *mb_free(mb_list_t *list, void *memory);
 
 /* Procedures used in conjuction with operations on memory areas */

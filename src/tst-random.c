@@ -82,7 +82,7 @@ int main(int argc, char **argv)
 			if (s < 4)
 				s = 4;
 
-			blocks.array[blocks.last + 1] = mm_alloc(&mm, s);
+			blocks.array[blocks.last + 1] = mm_alloc(&mm, s, 0);
 
 			/* if couldn't allocate then give up */
 			if (blocks.array[blocks.last + 1] == NULL)

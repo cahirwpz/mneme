@@ -6,7 +6,7 @@
 
 /* function prototypes */
 void mm_init(memarea_t *mm);
-void *mm_alloc(memarea_t *mm, uint32_t size);
+void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment);
 void mm_free(memarea_t *mm, void *memory);
 void mm_print(memarea_t *mm);
 

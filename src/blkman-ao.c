@@ -402,27 +402,93 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)
 	return (void *)((uint32_t)blk + sizeof(mb_t));
 }
 
-#if 0
-static void *mb_aligned_alloc(memblock_t *guard, uint32_t size, uint32_t alignment)
+void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 {
 	/* check if it is guard block */
-	mb_valid(guard);
-	assert(mb_is_guard(guard));
+	mb_valid(list);
+	assert(mb_is_guard(list));
 
-	if (alignment < MB_GRANULARITY)
-		return ma_alloc(area, size);
+	if (alignment <= MB_GRANULARITY)
+		return mb_alloc(list, size, FALSE);
+
+	size = ALIGN(size, MB_GRANULARITY);
 
 	/* browse free blocks list */
-	memblock_t *blk = area->free;
+	uint32_t start = 0;
+	uint32_t base  = 0;
+	uint32_t end   = 0;
 
-	while (blk != NULL) {
+	mb_free_t *blk = list->next;
+
+	while (TRUE) {
 		mb_valid(blk);
 
-		if (blk->size >= size)
+		if (mb_is_guard(blk))
+			return NULL;
+
+		start = (uint32_t)blk;
+		base  = ALIGN(blk + sizeof(mb_t), alignment);
+		end   = (uint32_t)blk + blk->size;
+
+		if ((base + size <= end) &&
+			((base - start == sizeof(mb_t)) ||
+			 (base - start >= sizeof(mb_t) + sizeof(mb_free_t))))
 			break;
 
 		blk = blk->next;
 	}
+
+	/* now we're sure that we found place for our new aligned block,
+	 * however work is not done, even two new block have to be created */
+
+	/* split block to create new block from unused space after aligned block */
+	if (end - (base + size) >= sizeof(mb_free_t))
+		mb_split(list, blk, (base + size) - start);
+
+	/* split block to create new block from unused space before aligned block */
+	if (base - start >= sizeof(mb_t) + sizeof(mb_free_t)) {
+		mb_split(list, blk, base - start - sizeof(mb_t));
+
+		blk = blk->next;
+	}
+
+	assert((uint32_t)blk + sizeof(mb_t) == ALIGN(blk + sizeof(mb_t), alignment));
+
+	/* block is ready to be pulled out of list */
+	mb_pullout(blk);
+
+	/* mark block as used */
+	blk->flags |= MB_FLAG_USED;
+
+	mb_touch(blk);
+
+	/* increase amount of used blocks */
+	list->ublkcnt++;
+	list->fmemcnt -= blk->size - sizeof(mb_t);
+
+	mb_touch(list);
+
+	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
+
+	return (void *)((uint32_t)blk + sizeof(mb_t));
+}
+
+#if 0
+bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
+{
+	/* check if it is guard block */
+	mb_valid(list);
+	assert(mb_is_guard(list));
+
+	mb_t *blk = (mb_t *)((uint32_t)memory - sizeof(mb_t));
+
+	mb_valid(blk);
+
+	DEBUG("requested to resize block at $%.8x\n", (uint32_t)blk);
+
+	uint32_t old_size = blk->size;
+
+
 }
 #endif
 

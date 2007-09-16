@@ -31,7 +31,7 @@ void mm_init(memarea_t *mm)
  * Memory block allocation procedure.
  */
 
-void *mm_alloc(memarea_t *mm, uint32_t size)
+void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 {
 	DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
 
@@ -59,7 +59,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 
 		void *memory = NULL;
 
-		if ((memory = mb_alloc(list, size, FALSE)))
+		if ((memory = (alignment > 0) ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE)))
 			return memory;
 
 		area = area->next;
@@ -102,8 +102,6 @@ void *mm_alloc(memarea_t *mm, uint32_t size)
 			while (TRUE) {
 				memarea_t *area = newarea;
 				memarea_t *next = newarea->next;
-
-				mm_print(mm);
 
 				newarea = ma_coalesce(newarea, &direction);
 
