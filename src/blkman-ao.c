@@ -866,6 +866,42 @@ uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, u
 }
 
 /**
+ * Recalculate statistics.
+ * @param list
+ */
+
+static void mb_list_recalculate_statistics(mb_list_t *list)
+{
+	/* check if it is guard block */
+	mb_valid(list);
+	assert(mb_is_guard(list));
+
+	/* find first block */
+	mb_t *blk = (mb_t *)((uint32_t)list + sizeof(mb_list_t));
+
+	uint32_t used_blocks = 0, blocks = 0, free = 0;
+
+	while ((uint32_t)blk < (uint32_t)list + list->size) {
+		mb_valid(blk);
+
+		if (mb_is_used(blk))
+			used_blocks++;
+		else
+			free += blk->size - sizeof(mb_t);
+
+		blocks++;
+
+		blk = (mb_t *)((uint32_t)blk + blk->size);
+	}
+
+	list->fmemcnt = free;
+	list->ublkcnt = used_blocks;
+	list->blkcnt  = blocks;
+
+	mb_touch(list);
+}
+
+/**
  * Split list of memory blocks using 'to_split' block. Return guard of second list.
  * @param first
  * @param to_split
@@ -936,6 +972,10 @@ mb_list_t *mb_list_split(mb_list_t *first, mb_free_t *to_split, uint32_t pages, 
 	to_split->size = cut_start - (uint32_t)to_split;
 
 	mb_touch(to_split);
+
+	/* recalculate statistics */
+	mb_list_recalculate_statistics(first);
+	mb_list_recalculate_statistics(second);
 
 	return second;
 }
