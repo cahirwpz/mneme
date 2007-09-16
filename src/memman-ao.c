@@ -27,8 +27,12 @@ void mm_init(memarea_t *mm)
 	ma_add(ma_new(PM_MMAP, 4 * PAGE_SIZE), mm);
 }
 
-/*
+/**
  * Memory block allocation procedure.
+ * @param mm
+ * @param size
+ * @param alignment
+ * @return
  */
 
 void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
@@ -127,8 +131,40 @@ void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 	return NULL;
 }
 
-/*
+/**
+ * Resizing allocated block procedure.
+ * @param
+ * @param
+ * @return
+ */
+
+bool mm_realloc(memarea_t *mm, void *memory, uint32_t new_size)
+{
+	ma_valid(mm);
+	assert(ma_is_guard(mm));
+
+	DEBUG("\033[37;1mResizing block at $%.8x to %u bytes.\033[0m\n", (uint32_t)memory, new_size);
+
+	memarea_t *area = mm->next;
+
+	while (TRUE) {
+		mb_list_t *list = mb_list_from_memarea(area);
+
+		/* does pointer belong to this area ? */
+		if (((uint32_t)memory > (uint32_t)list) && ((uint32_t)memory < (uint32_t)list + list->size))
+			return mb_resize(list, memory, new_size);
+
+		area = area->next;
+
+		/* if that happens, user has given wrong pointer */
+		assert(!ma_is_guard(area));
+	}
+}
+
+/**
  * Memory block deallocation procedure.
+ * @param mm
+ * @param memory
  */
 
 void mm_free(memarea_t *mm, void *memory)

@@ -402,6 +402,14 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)
 	return (void *)((uint32_t)blk + sizeof(mb_t));
 }
 
+/**
+ * Find aligned block in given memory area and reserve it for use by caller.
+ * @param list
+ * @param size
+ * @param alignment
+ * @return 
+ */
+
 void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 {
 	/* check if it is guard block */
@@ -473,7 +481,14 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 	return (void *)((uint32_t)blk + sizeof(mb_t));
 }
 
-#if 0
+/**
+ * Resize given block.
+ * @param list
+ * @param memory
+ * @param new_size
+ * @return 
+ */
+
 bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 {
 	/* check if it is guard block */
@@ -484,13 +499,72 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 
 	mb_valid(blk);
 
-	DEBUG("requested to resize block at $%.8x\n", (uint32_t)blk);
+	uint32_t old_size = blk->size - sizeof(mb_t);
 
-	uint32_t old_size = blk->size;
+	new_size = ALIGN(new_size, MB_GRANULARITY);
 
+	DEBUG("resizing block at $%.8x from %u to %u.\n", (uint32_t)blk, old_size, new_size);
 
+	/* is resizing really needed ? */
+	if (old_size == new_size)
+		return TRUE;
+
+	/* find next block */
+	mb_t *next = (mb_t *)((uint32_t)blk + blk->size);
+
+	if ((uint32_t)blk + blk->size == (uint32_t)list + list->size)
+		next = NULL;
+
+	if (old_size > new_size) {
+		/* shrinking block */
+
+		if (old_size - new_size <= sizeof(mb_free_t))
+			return TRUE;
+
+		/* resize block */
+		blk->size = new_size;
+		mb_touch(blk);
+
+		/* create new free block from leftovers */
+		mb_free_t *new = (mb_free_t *)((uint32_t)blk + new_size);
+
+		new->flags = 0;
+		
+		if (!next) {
+			new->flags |= MB_FLAG_LAST;
+			blk->flags &= ~MB_FLAG_LAST;
+			
+			mb_touch(blk);
+		}
+
+		new->size  = old_size - new_size;
+		new->prev  = NULL;
+		new->next  = NULL;
+		mb_touch(new);
+
+		mb_insert(list, new);
+
+		list->fmemcnt = new->size - sizeof(mb_t);
+		list->blkcnt += 1;
+		mb_touch(list);
+
+		if (next && !mb_is_used(next))
+			mb_coalesce(list, new);
+	} else {
+		/* expanding block */
+
+		if (!next || mb_is_used(next) || (old_size + next->size < new_size))
+			return FALSE;
+
+		/* pointer to moved and shrinked block */
+		mb_free_t *new = (mb_free_t *)((uint32_t)blk + new_size);
+
+		/* first case: using whole next free block */
+		/* second case: shrinking second block */
+	}
+
+	return FALSE;
 }
-#endif
 
 /**
  * Free block in memory area reffered by given pointer.

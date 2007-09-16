@@ -10,6 +10,11 @@ static bool ma_initialized = FALSE;
 static struct memarea mm;
 static sem_t ma_sem;
 
+static void ldwrapper_exit()
+{
+	sem_destroy(&ma_sem);
+}
+
 static void ldwrapper_init() {
 	if (__sync_bool_compare_and_swap(&ma_initialized, FALSE, TRUE)) {
 		DEBUG("initialize subsystem\n");
@@ -24,11 +29,6 @@ static void ldwrapper_init() {
 	while (__sync_and_and_fetch(&ma_initialized, TRUE) == FALSE) {
 		DEBUG("waiting for initialization\n");
 	}
-}
-
-static void ldwrapper_exit()
-{
-	sem_destroy(&ma_sem);
 }
 
 void *malloc(size_t size)
@@ -88,9 +88,13 @@ void *realloc(void *ptr, size_t size)
 		return NULL;
 	}
 
-	fprintf(stderr, "realloc(%p, %u): not implemented!\n", ptr, size);
+	sem_wait(&ma_sem);
 
-	return NULL;
+	mm_realloc(&mm, ptr, size);
+
+	sem_post(&ma_sem);
+
+	return ptr;
 }
 
 void *memalign(size_t boundary, size_t size)
