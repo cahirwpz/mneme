@@ -5,16 +5,26 @@
 #include "memman-ao.h"
 #include <stdio.h>
 
-#define MAX_BLOCK_NUM	(1 << 16)
-#define MAX_MEM_USED	(1 << 20)
-#define MAX_BLOCK_SIZE	(1 << 14)
+#define MAX_BLOCK_NUM		(1 << 16)
+#define MAX_MEM_USED		(1 << 20)
+#define MAX_BLOCK_SIZE		(1 << 14)
+#define MAX_REALLOC_SIZE	(1 << 10)
+#define MAX_ALIGN_BITS		16
 
-#define MM_PRINT_AT_ITERATION 1
+#define MM_PRINT_AT_ITERATION 0
+
+struct block
+{
+	void    *ptr;
+	int32_t size;
+};
+
+typedef struct block block_t;
 
 static struct
 {
-	void		*array[MAX_BLOCK_NUM];
-	uint32_t	last;
+	block_t array[MAX_BLOCK_NUM];
+	int32_t last;
 } blocks;
 
 static memarea_t mm;
@@ -68,10 +78,28 @@ int main(int argc, char **argv)
 
 	for (i = 0; i < ops; )
 	{
-		int32_t op = rand();
+		uint32_t op = rand();
 
-		if (op <= (RAND_MAX >> 1)) {
-			/* If to many block don't allocate new one */
+		if (op <= 2 * (RAND_MAX >> 4)) {
+			/* case for mm_realloc */
+
+			if (blocks.last == -1)
+				continue;
+
+			int32_t i = rand() % (blocks.last + 1);
+			int32_t s = rand();
+
+			s = ((s * s) & (MAX_REALLOC_SIZE - 1)) - (MAX_REALLOC_SIZE >> 1);
+			
+			s += blocks.array[i].size;
+
+			if (s < 4)
+				s = 4;
+
+			if (mm_realloc(&mm, blocks.array[i].ptr, s))
+				blocks.array[blocks.last + 1].size = s;
+		} else if (op <= 3 * (RAND_MAX >> 4)) {
+			/* case for mm_alloc_aligned */
 			if (blocks.last == MAX_BLOCK_NUM)
 				continue;
 
@@ -82,29 +110,66 @@ int main(int argc, char **argv)
 			if (s < 4)
 				s = 4;
 
-			blocks.array[blocks.last + 1] = mm_alloc(&mm, s, 0);
+			uint32_t alignment = 1 << (rand() % (MAX_ALIGN_BITS + 1));
+
+			if (alignment < 16)
+				alignment = 16;
+
+			blocks.array[blocks.last + 1].ptr  = mm_alloc(&mm, s, alignment);
+			blocks.array[blocks.last + 1].size = s;
 
 			/* if couldn't allocate then give up */
-			if (blocks.array[blocks.last + 1] == NULL)
+			if (blocks.array[blocks.last + 1].ptr == NULL) {
+				DEBUG("mm_alloc aligned: out of memory!\n");
+				abort();
+			}
 				continue;
 
-			DEBUG("malloc(%d) = %p\n", s, blocks.array[blocks.last + 1]);
+			DEBUG("memalign(%d, %d) = %p\n", s, alignment, blocks.array[blocks.last + 1].ptr);
+
+			blocks.last++;
+		} else if (op <= 9 * (RAND_MAX >> 4)) {
+			/* case for mm_alloc */
+			if (blocks.last == MAX_BLOCK_NUM)
+				continue;
+
+			int32_t s = rand();
+
+			s = (s * s) & (MAX_BLOCK_SIZE - 1);
+
+			if (s < 4)
+				s = 4;
+
+			blocks.array[blocks.last + 1].ptr  = mm_alloc(&mm, s, 0);
+			blocks.array[blocks.last + 1].size = s;
+
+			/* if couldn't allocate then give up */
+			if (blocks.array[blocks.last + 1].ptr == NULL) {
+				DEBUG("mm_alloc: out of memory!\n");
+				abort();
+			}
+
+			DEBUG("malloc(%d) = %p\n", s, blocks.array[blocks.last + 1].ptr);
 
 			blocks.last++;
 		} else {
+			/* case for mm_free */
 			if (blocks.last == -1)
 				continue;
 
-			uint32_t i = rand() % (blocks.last + 1);
+			int32_t i = rand() % (blocks.last + 1);
 
-			mm_free(&mm, blocks.array[i]);
+			DEBUG("free(%p, %u)\n", blocks.array[i].ptr, blocks.array[i].size);
 
-			DEBUG("free(%p)\n", blocks.array[i]);
+			mm_free(&mm, blocks.array[i].ptr);
 
 			if (blocks.last != i)
 				blocks.array[i] = blocks.array[blocks.last];
 
-			blocks.array[blocks.last--] = NULL;
+			blocks.array[blocks.last].ptr  = NULL;
+			blocks.array[blocks.last].size = 0;
+
+			blocks.last--;
 		}
 
 #if MM_PRINT_AT_ITERATION == 1

@@ -7,9 +7,9 @@
 
 typedef enum { FALSE, TRUE } bool;
 
-#define ALIGN_UP(data, size)	(((uint32_t)(data) + (size - 1)) & ~(size - 1))
-#define ALIGN_DOWN(data, size)	((uint32_t)(data) & ~(size - 1))
-#define ALIGN(data, size)		ALIGN_UP(data, size)
+#define ALIGN_UP(data, size)	(((uint32_t)(data) + ((size) - 1)) & ~((size) - 1))
+#define ALIGN_DOWN(data, size)	((uint32_t)(data) & ~((size) - 1))
+#define ALIGN(data, size)		ALIGN_UP((data), (size))
 
 #if VERBOSE == 1
 #define DEBUG(format, args...) fprintf(stderr, "%s:%d " format, __func__, __LINE__, ##args)

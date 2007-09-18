@@ -1,6 +1,6 @@
 CC		=	libtool --mode=compile gcc -g -static -fms-extensions
 INCLUDE	=	-I./tests -I./tests/sysdeps/pthread -I./tests/sysdeps/generic 
-DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DVERBOSE=0 -DDEADMEMORY
+DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DVERBOSE=1 -DDEADMEMORY
 CFLAGS	=	-O -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g -static 

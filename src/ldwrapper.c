@@ -38,6 +38,7 @@ void *malloc(size_t size)
 	sem_wait(&ma_sem);
 
 	void *area = mm_alloc(&mm, size, 0);
+	//mm_print(&mm);
 
 	sem_post(&ma_sem);
 
@@ -65,6 +66,7 @@ void free(void *ptr)
 		sem_wait(&ma_sem);
 
 		mm_free(&mm, ptr);
+		//mm_print(&mm);
 
 		sem_post(&ma_sem);
 	}
@@ -90,9 +92,12 @@ void *realloc(void *ptr, size_t size)
 
 	sem_wait(&ma_sem);
 
-	mm_realloc(&mm, ptr, size);
+	bool res = mm_realloc(&mm, ptr, size);
+	//mm_print(&mm);
 
 	sem_post(&ma_sem);
+
+	fprintf(stderr, "realloc(%p, %u) = %s\n", ptr, size, res ? "true" : "false");
 
 	return ptr;
 }
@@ -104,6 +109,7 @@ void *memalign(size_t boundary, size_t size)
 	sem_wait(&ma_sem);
 
 	void *area = mm_alloc(&mm, size, boundary);
+	//mm_print(&mm);
 
 	sem_post(&ma_sem);
 

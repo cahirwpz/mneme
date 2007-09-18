@@ -63,22 +63,24 @@ static void mb_insert(mb_list_t *list, mb_free_t *newblk)
  * @param size
  */
 
-static void mb_split(mb_list_t *list, mb_free_t *blk, uint32_t size)
+static void mb_split(mb_list_t *list, mb_free_t **splitted, uint32_t size, bool second)
 {
+	mb_free_t *blk = *splitted;
+
 	mb_valid(blk);
 
 	assert(!mb_is_used(blk) && !mb_is_guard(blk));
 	assert((size & MB_GRANULARITY_MASK) == 0);
 
 	/* split the block if it is large enough */
-	if (blk->size - size <= sizeof(mb_free_t))
+	if (blk->size - size < sizeof(mb_free_t))
 		return;
 
 	/* calculate new block address */
-	mb_free_t *newblk = (mb_free_t *)((uint32_t)blk + size);
+	mb_free_t *newblk = (mb_free_t *)((uint32_t)blk + (second ? (blk->size - size) : size));
 
 	/* initalize new block */
-	newblk->size  = blk->size - size;
+	newblk->size  = second ? size : (blk->size - size);
 	newblk->flags = 0;
 	newblk->prev  = blk;
 	newblk->next  = blk->next;
@@ -90,7 +92,7 @@ static void mb_split(mb_list_t *list, mb_free_t *blk, uint32_t size)
 
 	/* shrink block and correct pointer */
 	blk->next = newblk;
-	blk->size = size;
+	blk->size = second ? (blk->size - size) : size;
 
 	if (mb_is_last(blk))
 		blk->flags &= ~MB_FLAG_LAST;
@@ -112,6 +114,8 @@ static void mb_split(mb_list_t *list, mb_free_t *blk, uint32_t size)
 
 	DEBUG("splitted blocks: [$%.8x; %u; $%.2x] [$%.8x; %u; $%.2x]\n",
 		  (uint32_t)blk, blk->size, blk->flags, (uint32_t)newblk, newblk->size, newblk->flags);
+
+	*splitted = second ? newblk : blk;
 }
 
 /**
@@ -278,6 +282,9 @@ void mb_print(mb_list_t *list)
 		if (mb_is_used(blk)) {
 			used += blk->size;
 			used_blocks++;
+
+			if (blk->size < sizeof(mb_t) + MB_GRANULARITY)
+				error = TRUE;
 		} else {
 			free += blk->size - sizeof(mb_t);
 			used += sizeof(mb_t);
@@ -381,7 +388,7 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)
 	DEBUG("found block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 	
 	/* try to split block and save the rest on the list */
-	mb_split(list, blk, size);
+	mb_split(list, &blk, size, mb_is_first(blk));
 
 	/* block is ready to be pulled out of list */
 	mb_pullout(blk);
@@ -435,8 +442,8 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 			return NULL;
 
 		start = (uint32_t)blk;
-		base  = ALIGN(blk + sizeof(mb_t), alignment);
-		end   = (uint32_t)blk + blk->size;
+		base  = ALIGN(start + sizeof(mb_t), alignment);
+		end   = start + blk->size;
 
 		if ((base + size <= end) &&
 			((base - start == sizeof(mb_t)) ||
@@ -449,18 +456,31 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 	/* now we're sure that we found place for our new aligned block,
 	 * however work is not done, even two new block have to be created */
 
+	DEBUG("will split block [$%.8x; %u; $%.2x] for use by aligned memory\n", (uint32_t)blk, blk->size, blk->flags);
+
 	/* split block to create new block from unused space after aligned block */
-	if (end - (base + size) >= sizeof(mb_free_t))
-		mb_split(list, blk, (base + size) - start);
+	if (end - (base + size) >= sizeof(mb_free_t)) {
+		mb_split(list, &blk, end - (base + size), TRUE);
+
+		DEBUG("splitted 'after' block: [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
+
+		blk = blk->prev;
+	}
+
+	DEBUG("%d\n", (base - sizeof(mb_t)) - start);
 
 	/* split block to create new block from unused space before aligned block */
 	if (base - start >= sizeof(mb_t) + sizeof(mb_free_t)) {
-		mb_split(list, blk, base - start - sizeof(mb_t));
+		mb_split(list, &blk, (base - sizeof(mb_t)) - start, FALSE);
+
+		DEBUG("splitted 'before' block: [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
 		blk = blk->next;
 	}
 
-	assert((uint32_t)blk + sizeof(mb_t) == ALIGN(blk + sizeof(mb_t), alignment));
+	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
+
+	assert((uint32_t)blk + sizeof(mb_t) == ALIGN((uint32_t)blk + sizeof(mb_t), alignment));
 
 	/* block is ready to be pulled out of list */
 	mb_pullout(blk);
@@ -475,8 +495,6 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)
 	list->fmemcnt -= blk->size - sizeof(mb_t);
 
 	mb_touch(list);
-
-	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
 	return (void *)((uint32_t)blk + sizeof(mb_t));
 }
@@ -494,14 +512,15 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 	/* check if it is guard block */
 	mb_valid(list);
 	assert(mb_is_guard(list));
+	assert(new_size > 0);
 
 	mb_t *blk = (mb_t *)((uint32_t)memory - sizeof(mb_t));
 
 	mb_valid(blk);
 
-	uint32_t old_size = blk->size - sizeof(mb_t);
+	uint32_t old_size = blk->size;
 
-	new_size = ALIGN(new_size, MB_GRANULARITY);
+	new_size = ALIGN(new_size + sizeof(mb_t), MB_GRANULARITY);
 
 	DEBUG("resizing block at $%.8x from %u to %u.\n", (uint32_t)blk, old_size, new_size);
 
@@ -510,10 +529,13 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 		return TRUE;
 
 	/* find next block */
-	mb_t *next = (mb_t *)((uint32_t)blk + blk->size);
+	mb_t *next = NULL;
 
-	if ((uint32_t)blk + blk->size == (uint32_t)list + list->size)
-		next = NULL;
+	if ((uint32_t)blk + blk->size < (uint32_t)list + list->size) {
+		next = (mb_t *)((uint32_t)blk + blk->size);
+	
+		DEBUG("found next block [$%.8x; %u; $%.2x]\n", (uint32_t)next, next->size, next->flags);
+	}
 
 	if (old_size > new_size) {
 		/* shrinking block */
@@ -544,8 +566,8 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 
 		mb_insert(list, new);
 
-		list->fmemcnt = new->size - sizeof(mb_t);
-		list->blkcnt += 1;
+		list->fmemcnt += new->size - sizeof(mb_t);
+		list->blkcnt  += 1;
 		mb_touch(list);
 
 		if (next && !mb_is_used(next))
@@ -553,14 +575,58 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)
 	} else {
 		/* expanding block */
 
-		if (!next || mb_is_used(next) || (old_size + next->size < new_size))
+		if (!next || mb_is_used(next) || (old_size + next->size <= new_size))
 			return FALSE;
 
-		/* pointer to moved and shrinked block */
-		mb_free_t *new = (mb_free_t *)((uint32_t)blk + new_size);
+		uint32_t diff = new_size - old_size;
 
-		/* first case: using whole next free block */
-		/* second case: shrinking second block */
+		DEBUG("expanding block at $%.8x by %u bytes.\n", (uint32_t)blk, diff);
+
+		DEBUG("next_size %u; diff %u.\n", next->size, diff);
+
+		if (next->size - diff < sizeof(mb_free_t)) {
+			if (mb_is_last(next))
+				blk->flags |= MB_FLAG_LAST;
+
+			blk->size += next->size;
+
+			mb_touch(blk);
+
+			mb_pullout((mb_free_t *)next);
+
+			list->blkcnt--;
+			list->fmemcnt -= next->size - sizeof(mb_t);
+
+			mb_touch(list);
+		} else {
+			mb_free_t *moved = (mb_free_t *)((uint32_t)blk + new_size);
+
+			DEBUG("moving block $%.8x to $%.8x.\n", (uint32_t)next, (uint32_t)moved);
+
+			moved->prev  = ((mb_free_t *)next)->prev;
+			moved->next  = ((mb_free_t *)next)->next;
+
+			moved->size  = next->size - diff;
+			moved->flags = next->flags;
+
+			moved->prev->next = moved;
+			moved->next->prev = moved;
+
+			mb_touch(moved->prev);
+			mb_touch(moved->next);
+
+			mb_touch(moved);
+
+			DEBUG("moved block [$%.8x; %u; $%.2x]\n", (uint32_t)moved, moved->size, moved->flags);
+
+			blk->size = new_size;
+
+			mb_touch(blk);
+
+			list->fmemcnt -= diff;
+
+			mb_touch(list);
+		}
 	}
 
 	return FALSE;

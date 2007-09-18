@@ -24,7 +24,7 @@ void mm_init(memarea_t *mm)
 #endif
 
 	ma_init_manager(mm);
-	ma_add(ma_new(PM_MMAP, 4 * PAGE_SIZE), mm);
+	ma_add(ma_new(PM_MMAP, 4), mm);
 }
 
 /**
@@ -37,7 +37,11 @@ void mm_init(memarea_t *mm)
 
 void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 {
-	DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
+	if (alignment) {
+		DEBUG("\033[37;1mRequested block of size %u aligned to %u bytes boundary.\033[0m\n", size, alignment);
+	} else {
+		DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
+	}
 
 	ma_valid(mm);
 	assert(ma_is_guard(mm));
@@ -63,7 +67,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 
 		void *memory = NULL;
 
-		if ((memory = (alignment > 0) ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE)))
+		if ((memory = alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE)))
 			return memory;
 
 		area = area->next;
@@ -77,7 +81,16 @@ void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 	while (!ma_is_guard(area)) {
 		void *memory = NULL;
 
-		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(size)))) {
+		uint32_t expand_size = size;
+
+		if (ma_is_sbrk(area))
+			expand_size += sizeof(mb_t);
+		if (ma_is_mmap(area))
+			expand_size += sizeof(memarea_t) + sizeof(mb_list_t) + sizeof(mb_t);
+		if (alignment)
+			expand_size += PAGE_SIZE + alignment;
+
+		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(expand_size)))) {
 			mb_list_t *list = mb_list_from_memarea(area);
 
 			mb_list_expand(list, SIZE_IN_PAGES(size));
@@ -86,7 +99,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 		}
 
 		if (ma_is_mmap(area)) {
-			memarea_t *newarea = ma_new(PM_MMAP, size + sizeof(memarea_t) + sizeof(mb_list_t) + sizeof(mb_t));
+			memarea_t *newarea = ma_new(PM_MMAP, SIZE_IN_PAGES(expand_size));
 			
 			/* prepare new list of blocks */
 			mb_list_t *list = mb_list_from_memarea(newarea);
@@ -217,7 +230,7 @@ void mm_free(memarea_t *mm, void *memory)
 					assert(ma_shrink_at_beginning(&area, pages));
 				}
 
-#if 1
+#if 0
 				/* can area be splitted ? */
 				void *cut = NULL;
 

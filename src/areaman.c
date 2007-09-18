@@ -1,33 +1,36 @@
 #include "areaman.h"
 #include <string.h>
 
-/*
+/**
  * Initialize new memory area.
+ * @param type
+ * @param pages
+ * @return
  */
 
-struct memarea *ma_new(pm_type_t type, uint32_t size)
+struct memarea *ma_new(pm_type_t type, uint32_t pages)
 {
 	memarea_t *area = NULL;
 
 	switch (type)
 	{
 		case PM_SBRK:
-	 		area = (memarea_t *)pm_sbrk_alloc(SIZE_IN_PAGES(size));
+	 		area = (memarea_t *)pm_sbrk_alloc(pages);
 			area->flags = MA_FLAG_SBRK;
 			break;
 
 		case PM_MMAP:
-	 		area = (memarea_t *)pm_mmap_alloc(SIZE_IN_PAGES(size));
+	 		area = (memarea_t *)pm_mmap_alloc(pages);
 			area->flags = MA_FLAG_MMAP;
 			break;
 
 		case PM_SHM:
-	 		area = (memarea_t *)pm_shm_alloc(SIZE_IN_PAGES(size));
+	 		area = (memarea_t *)pm_shm_alloc(pages);
 			area->flags = MA_FLAG_SHM;
 			break;
 	}
 
-	area->size  = PAGE_SIZE * SIZE_IN_PAGES(size);
+	area->size  = PAGE_SIZE * pages;
 	area->prev  = NULL;
 	area->next  = NULL;
 

@@ -72,7 +72,7 @@ static inline void ma_valid(memarea_t *area)
 /* Function prototypes */
 void ma_init_manager(memarea_t *mm);
 void ma_add(memarea_t *area, memarea_t *mm);
-memarea_t *ma_new(pm_type_t type, uint32_t size);
+memarea_t *ma_new(pm_type_t type, uint32_t pages);
 
 /* sbrk memory area procedures */
 bool ma_shrink_at_end(memarea_t *area, uint32_t pages);
