@@ -902,13 +902,17 @@ void mb_list_expand(mb_list_t *list, uint32_t pages)
 
 		/* insert new block into list of free blocks */
 		mb_insert(list, newblk);
+
+		list->blkcnt  += 1;
+		list->fmemcnt -= sizeof(mb_t);
 	} else {
 		blk->size += pages * PAGE_SIZE;
 
 		mb_touch(blk);
 	}
 
-	list->size += pages * PAGE_SIZE;
+	list->size    += pages * PAGE_SIZE;
+	list->fmemcnt += pages * PAGE_SIZE;
 
 	mb_touch(list);
 }

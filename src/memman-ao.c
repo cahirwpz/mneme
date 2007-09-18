@@ -24,7 +24,7 @@ void mm_init(memarea_t *mm)
 #endif
 
 	ma_init_manager(mm);
-	ma_add(ma_new(PM_MMAP, 4), mm);
+	ma_add(ma_new(PM_SBRK, 4), mm);
 }
 
 /**
@@ -93,7 +93,7 @@ void *mm_alloc(memarea_t *mm, uint32_t size, uint32_t alignment)
 		if (ma_is_sbrk(area) && (ma_expand(area, SIZE_IN_PAGES(expand_size)))) {
 			mb_list_t *list = mb_list_from_memarea(area);
 
-			mb_list_expand(list, SIZE_IN_PAGES(size));
+			mb_list_expand(list, SIZE_IN_PAGES(expand_size));
 
 			memory = mb_alloc(list, size, TRUE);
 		}

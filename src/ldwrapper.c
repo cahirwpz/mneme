@@ -5,6 +5,12 @@
 #include <errno.h>
 
 #include "memman-ao.h"
+#include "ldwrapper.h"
+
+void (*__free_hook) (void *PTR, const void *CALLER) = NULL;
+void *(*__malloc_hook) (size_t SIZE, const void *CALLER) = NULL;
+void *(*__realloc_hook) (void *PTR, size_t SIZE, const void *CALLER) = NULL;
+void *(*__memalign_hook)(size_t SIZE, size_t ALIGNMENT, const void *CALLER) = NULL;
 
 static bool ma_initialized = FALSE;
 static struct memarea mm;
@@ -38,7 +44,6 @@ void *malloc(size_t size)
 	sem_wait(&ma_sem);
 
 	void *area = mm_alloc(&mm, size, 0);
-	//mm_print(&mm);
 
 	sem_post(&ma_sem);
 
@@ -66,7 +71,6 @@ void free(void *ptr)
 		sem_wait(&ma_sem);
 
 		mm_free(&mm, ptr);
-		//mm_print(&mm);
 
 		sem_post(&ma_sem);
 	}
@@ -81,6 +85,8 @@ void cfree(void *ptr)
 
 void *realloc(void *ptr, size_t size)
 {
+	assert(ma_initialized == TRUE);
+
 	if (ptr == NULL)
 		return malloc(size);
 
@@ -93,13 +99,22 @@ void *realloc(void *ptr, size_t size)
 	sem_wait(&ma_sem);
 
 	bool res = mm_realloc(&mm, ptr, size);
-	//mm_print(&mm);
 
 	sem_post(&ma_sem);
 
-	fprintf(stderr, "realloc(%p, %u) = %s\n", ptr, size, res ? "true" : "false");
+	void *newptr = ptr;
 
-	return ptr;
+	if (!res) {
+		newptr = malloc(size);
+
+		memcpy(newptr, ptr, sizeof(size));
+
+		free(ptr);
+	}
+
+	fprintf(stderr, "realloc(%p, %u) = %p\n", ptr, size, newptr);
+
+	return newptr;
 }
 
 void *memalign(size_t boundary, size_t size)
@@ -109,7 +124,6 @@ void *memalign(size_t boundary, size_t size)
 	sem_wait(&ma_sem);
 
 	void *area = mm_alloc(&mm, size, boundary);
-	//mm_print(&mm);
 
 	sem_post(&ma_sem);
 
@@ -137,4 +151,15 @@ int mallopt(int param, int value)
 	fprintf(stderr, "mallopt: not implemented!\n");
 
 	return -1;
+}
+
+struct mallinfo mallinfo(void)
+{
+	fprintf(stderr, "mallinfo: not implemented!\n");
+
+	struct mallinfo empty;
+
+	memset((void *)&empty, 0, sizeof(struct mallinfo));
+
+	return empty;
 }
