@@ -12,8 +12,10 @@
 \usepackage{fancyhdr}
 \usepackage{tabularx}
 \usepackage{enumitem}
+\usepackage{listings}
 \usepackage{graphicx}
 \pagestyle{fancy}
+\lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm}
 
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
@@ -60,6 +62,8 @@ modyfikowalne na potrzeby programisty. Celem tej pracy jest zaimplementowanie
 allokatora pamięci działającego w pamięci dzielonej procesu. Specyfika tego
 problemu zostanie przestawiona w dziale \textbf{Implementacja}.
 
+% --=[ Wstęp teoretyczny ]=-----------------------------------------------------
+
 \section{Wstęp teoretyczny}
 
 Zarządcy pamięci są algorytmami tak powszechnymi, że niemal nie zauważa się ich
@@ -68,55 +72,6 @@ zwalnianie obszarów za czarne skrzynki -- nie wiedząc, że pod spodem tkwią
 często zaawansowane algorytmy, a czasem również dość nieefektywne w pewnych
 przypadkach. Celem tego rodziału jest przedstawienie podstawowych koncepcji
 związanych z dostępem do pamięci i jej zarządzaniem.
-
-\subsection{Architektura zarządzanej pamięci}
-
-Do rozważań nad efektywną implementacją alokatora wydaje się być niezbędna
-elementarna znajomość architektury współczesnych systemów komputerowych.
-Programista implementujący własny manadżer pamięci musi wiedzieć, na co zwracać
-uwagę i czego unikać, by programy z niego korzystające działały wydajnie.
-
-\begin{figure}
-\centering
-\includegraphics[width=0.75\textwidth]{cpu-diagram}
-\caption{Uproszczony diagram architektury komputera}
-\end{figure}
-
-\parbox{\textwidth}{
-Większość teraźniejszych procesorów posiada wbudowaną jednostkę MMU (ang.
-Memory Management Unit), realizującą:
-\par\vspace{2mm}
-\begin{itemize}[label=\textbullet]
-	\item System uprawnień dostępu do pamięci (ang. memory protection).
-	\item Pamięć wirtualną poprzez mechanizm wymiany (ang. swapping).
-	\item Pamięc logiczną poprzez mechanizm mapowania (ang. memory mapping).
-\end{itemize}
-}
-
-Oprócz tego procesor ma szereg mechanizmów do buforowania wyników obliczeń z
-użyciem pamięci podręcznej (ang. memory cache). Jest to najdroższy i najszybszy
-typ pamięci wykorzystywany w komputerach. Podstawową jednostką pamięci
-podręcznej jest linia (ang. cache line) -- w przypadku architektury Intel IA-32
-długość linii wynosi 64 bajty. Pamięć ta jest przezroczysta dla użytkownika --
-tj. nie może z niej bezpośrednio korzystać.
-
-
-\parbox{\textwidth}{
-Z punktu widzenia systemu operacyjnego istnieją trzy rodzaje pamięci:
-\par\vspace{2mm}
-\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
-	\textbf{fizyczna}	& czyli pamięć operacyjna bezpośrednio dostępna dla procesora. \\
-	\textbf{wirtualna}	& wszystka dostępna pamięć, która w jakiś sposób może być wykorzystana przez procesor. \\
-	\textbf{logiczna}	& czyli pamięć widziana bezpośrednio przez proces. \\
-\end{tabularx}
-}
-
-Jednostkami które widzi procesor to linia i strona.
-
-Tu należy się mała opowieść o tym jak działają współczesne procesory. Nieco o
-pamięci cache (linia, cache hit, cache miss) i zarządzaniu pamiecią
-(deskryptory pamięci, TLB). Da to wgląd czytelnikowi w problematykę lokalności
-algorytmu.
 
 \subsection{Intuicyjna definicja problemu}
 
@@ -206,7 +161,303 @@ ograniczenia problemu, można łatwo zapanować nad problemem lokalności w algo
 Najbardziej ogólny wariant algorytmu. Na potrzeby programistów jest on
 osiągalny przez wywołania malloc/free z biblioteki standardowej języka C.
 
-\section{Omówienie klasycznych mechanizmów}
+% --=[ Podstawy architektury pamięci ]=-----------------------------------------
+
+\section{Podstawy architektury pamięci}
+
+Przed przystąpieniem do realizacji jakiegokolwiek algorytmu zarządzania stertą
+należy dokładnie przeanalizować strukturę pamięci. Struktura pamięci to pojęcie
+bardzo ogólne określające kilka aspektów -- począwszy od sprzętowych po
+wywołania systemowe umożliwiające pobieranie oraz zwalnianie obiektów. Dopiero
+mając na uwadze wszystkie zagadnienia związane z organizacją pamięci można
+planować efektywny pod względem szybkości jak i zajmowanego miejsca menadżer
+pamięci.
+
+W tym rozdziale zostaną omówione podstawy i pojęcia związane z:
+\begin{itemize}
+\item organizacją sprzętową pamięci dla architektury sprzętowej Intel IA-32,
+\item przestrzeni adresowej programu i jej obłożenia w systemie Linux,
+\item interfejsem rezerwacji i zwalnianiem stron w systemach uniksowych,
+\item zagadnieniami wydajności pamięci w systemach jedno- i wieloprocesorowych,
+\item metodami synchronizacji dla programów wielowątkowych.
+\end{itemize}
+
+\subsection{Stronicowanie}
+
+Pamięć fizyczna jest to rodzaj pamięci widziany bezpośrednio przez procesor.
+Podstawową jednostką zarządzania tym rodzajem pamięci jest strona, będąca
+obszarem o następujących własnościach:
+
+\begin{itemize}
+\item pewnej z góry ustalonej wielkości (w przypadku procesorów Intel
+IA-32 jest to 4KiB lub 4MiB),
+\item adres jej początku jest podzielny przez długość strony,
+\item posiada zestaw uprawnień (do odczytu, do zapisu, itd.)
+\end{itemize}
+
+Nad pamięcią fizyczną system operacyjny, korzystając z jednostki zarządzania
+pamięcią procesora, buduje warstwę zwaną pamięcią logiczną. Zadanie to jest
+realizowane przez mechanizm translacji adresów -- często określany także
+mechanizmem stronicowania. Do translacji adresów procesor wykorzystuje opis
+pamięci logicznej składający się na wielopoziomowe tablice deskryptorów stron.
+
+\begin{figure}
+\centering
+\includegraphics[width=0.75\textwidth]{stronicowanie}
+\caption{Schemat translacji adresu dla architektury Intel IA-32}
+\end{figure}
+
+Procesor posiada rejestr PDBR, w którym składuje wskaźnik o adresie wyrównanym
+do granicy 4096 bajtów, do katalogu stron. Każda pozycja w katalogu stron to 32
+bitowe słowo. Zawiera ono 20 starszych bitów określających fizyczny adres
+początku tablicy stron i 12 młodszych bitów na dodatkowe dane. Analogicznie
+jest z deskryptorem strony, przy starsze 20 bitów podaje fizyczny adres
+początku strony.
+
+Kiedy program odwołuje się do pamięci logicznej procesor wykonuje następujące kroki:
+\begin{enumerate}
+\item rozbija adres na 3 części: 10-bitowy indeks w katalogu stron (PDE), 10-bitowy
+indeks w tablicy stron (PTE) i 12 bitowy indeks wewnątrz strony (PO),
+\item wyszukuje deskryptor katalogu zestawiając górne 20 bitów rejestru PDBR z
+indeksem PDE -- wyznaczając adres fizyczny początku katalogu stron,
+\item wyszukuje deskryptor strony zestawiając górne 20 bitów wyznaczające
+początek tablicy stron z indeksem PTE -- adres fizyczny początku strony,
+\item zestawia górne 20 bitów adresu fizycznego strony z indeksem PO i
+realizuje operację odczytu lub zapisu danych.
+\end{enumerate}
+
+Przy pomocy młodszych 12 bitów w deskryptorze strony realizuje się w systemach
+różne mechanizmy. Najbardziej znanymi mechanizmami są:
+\begin{itemize}
+\item \textit{ochrona pamięci} -- deskryptory stron przechowują bity uprawnień do
+czytania, pisania, wykonywania zawartości -- procesor sprawdza te bity w
+trakcie translacji adresu i w przypadku błędu dostępu generuje błąd
+stronicowania (ang. \textit{Page Fault}),
+\item \textit{pamięć wirtualna} -- dodatkowe bity w deskryptorze oznaczają czy
+strona znajduje się w pamięci fizycznej -- system operacyjny może dane strony
+przemieszczać do pamięci zewnętrznej i na odwrót, obsługując odpowiednio błąd
+stronicowania,
+\item \textit{mapowanie pamięci} -- mechanizm analogiczny do pamięci wirtualnej
+może służyć do mapowania plików na strony, dzięki temu programista może mieć
+swobodny dostęp do pliku,
+\item \textit{pamięć dzielona} -- system operacyjny umieszcza w pamięci logicznej kilku
+procesów te same strony pamięci fizycznej.
+\end{itemize}
+
+Zasadniczo dwóch terminów: \textit{pamięć logiczna} i \textit{pamięć wirtualna}
+mówiąc o mechaniźmie stronicowania często się nie rozróżnia i będę ich używać
+zamiennie.
+
+\subsection{Pamięć podręczna}
+
+W tematyce związanej z architekturami systemów komputerowych często pojawia się
+termin \textit{piramidy pamięci}. Porusza on zależność ilości pamięci od jej
+wydajności. I tak najszybsze są w podanej kolejności: rejestry procesora,
+pamięć cache, pamięć RAM, pamięć zewnętrzna (np.: twarde dyski). Niestety w
+wyżej wymienionej kolejności rośnie również ilość danych, które te źródła
+pamięci mogą przechowywać.
+
+Pamięć podręczna (ang. \textit{cache}) jest kilkukrotnie szybsza od procesora.
+Przechowuje najczęściej używane obszary, zakładając, że program przetwarzając
+dane wykazuje pewną lokalność dostępów do poszczególnych komórek.
+
+Pamięć podręczna przechowuje fragmenty pamięci RAM zwane liniami, którym
+przyporządkowane są dodatkowe informacje niezbędne do funkcjonowania pewnych
+szczególnych operacji dostępu. Kontroler szyny sprowadza i wydala z pamięci
+podręcznej całe linie.
+
+Podstawowymi właściwościami pamięci podręcznej są:
+\begin{itemize}
+\item szybkość -- ile cykli trzeba czekać na sprowadzenie danych jednostki
+obliczeniowej procesora,
+\item architektura -- bezpośrednio mapowana, wielodrożna, w pełni asocjacyjna,
+\item ilość -- im szybsza pamięć podręczna tym jej mniej. 
+\end{itemize}
+
+Pamięć cache jest dla programisty do pewnego stopnia przezroczysta. Nie jest to
+obszar bezpośrednio dostępny, a raczej bufor dla danych z pamięci RAM. Stosując
+odpowiednie instrukcje można wymusić na kontrolerze szyny by sprowadził do
+pamięci podręcznej linie o określonych adresach, bądź też wymusił wydalenie do
+pamięci pewnych linii. Metody te w języku angielski noszą nazwę
+\textit{prefetching} i \textit{cache invalidation}.
+
+Zjawiskiem niepożądanym z punktu widzenia wydajności są sytuacje, kiedy
+procesor próbuje korzystać z danych, które nie są w żadnej linii pamięci
+podręcznej -- w języku angielskim nazywa się je \textit{cache miss}. W takim
+przypadku procesor zamraża wykonywanie instrukcji do momentu kiedy dane będą
+dostępne -- może się to wiązać z koniecznością wymiany pewnej linii tzn.
+zapisania jej wartości do pamięci RAM, a następnie sprowadzenia w to miejsce
+innego obszaru. Pesymistyczny wariant to wiele cykli mocy obliczeniowej
+procesora zmarnowanych na oczekiwanie.
+
+Powrócmy na chwilę do stronicowania. Jeśli dobrze się przypatrzeć mechanizmowi
+to widać, że jest on kosztowny w sensie ilości operacji na pamięci. Każdy zapis
+czy odczyt wymusza na procesorze dodatkowe dwie operacje dostępu do pamięci
+celem obliczenia adresu fizycznego. Strony przechowujące katalogi i tablice
+deskryptorów mogą być buforowane i z reguły umożliwia się ich składowanie w
+pamięci podręcznej. Sytuacja, w której każdy odczyt pamięci przechowującej
+deskryptory generuje \textit{cache miss} powoduje jeszcze większy spadek
+wydajności. Dlatego jednostka zarządzania pamięcią posiada własną pamięć
+podręczną nazywaną \textit{Table Lookaside Buffer}. Przechowuje ona pewną ilość
+(z reguły kilkaset) deskryptorów stron umożliwiających natychmiastowe
+obliczenie adresu fizycznego. Sytuacja, w której TLB nie przechowuje informacji
+o stronie, do której odwołanie jest potrzebne, by dostarczyć dane dla
+instrukcji, nazywa się \textit{TLB miss}.
+
+\subsection{Przestrzeń adresowa w Linuksie}
+
+Przestrzeń adresowa procesu to wszystkie komórki pamięci, które można
+zaadresować w jednej chwili, ale nie koniecznie mieć do nich dostęp (w takim
+przypadku wystąpi przerwanie naruszenia ochrony pamięci). W systemach
+32-bitowych proces dysponuje przestrzenią adresową 4GB. Oznacza to nie ilość
+pamięci fizycznej jaka maksymalnie może być dostępna dla procesu, a wielkość
+danych, do których procesor może mieć dostęp w sposób bezpośredni, adresując
+komórki pamięci. To rozróżnienie jest istotne, gdyż mechanizm stronicowania
+jest bardzo elastyczny i umożliwia odwzorowanie przestrzeni adresowej na pamięć
+zewnętrzną, pliki, pamięć urządzeń wejścia-wyjścia, itd.
+
+Najnowsze systemy komputerowe mimo ograniczenia na przestrzeń adresową potrafią
+umożliwić procesowi dostęp do większej ilości pamięci fizycznej niż wynosi
+wielkość przestrzeni adresowej. Oczywiście mechanizm ten nie jest przezroczysty
+dla programisty i wymusza używanie techniki zwanej przesuwającym się oknem
+(ang. \textit{sliding window}) lub przełączaniem banków (ang. \textit bank
+switching) -- kawałkiem przestrzeni adresowej, w którym widać fragment jakiejś
+większej pamięci.
+
+W systemach uniksowych oczywiście nie cała przestrzeń adresowa jest dostępna
+dla procesu, jej część zajmuje jądro systemu. W tym fragmencie przestrzeni
+jądro udostępnia swoje publiczne struktury, może mapować bufory, dane otrzymane
+od urządzeń wejścia-wyjścia, itd.
+
+\begin{figure}
+\centering
+\includegraphics[height=0.5\textwidth]{linux-layout}
+\caption{Obłożenie przestrzeni adresowej procesu w systemie Linux}
+\end{figure}
+
+Na przestrzeń adresową procesu użytkownika w systemie Linux składają się
+następujące obszary:
+
+\begin{center}
+\begin{tabular}{|ccc|p{0.5\linewidth}|}
+\hline
+\textsc{początek} & & \textsc{koniec} & \textsc{znaczenie} \\
+\hline
+\hline
+\texttt{0x00000000} & -- & \texttt{0x07ffffff} & Obszar wyłapywania złych wskaźników -- dostęp zawsze zabroniony.\\
+\hline
+\texttt{0x08000000} & -- & \texttt{0x08xxxxxx} & Tu wczytywana jest sekcja \texttt{text} pliku ELF. Miejsce na kod i zainicjalizowane dane.\\
+\hline
+\texttt{0x08xxxxxx} & -- & \texttt{?}          & Obszar sterty. Może zmieniać rozmiar przy pomocy procedury brk.\\
+\hline
+\texttt{?}          & -- & \texttt{0xBFxxxxxx} & Obszar dla wywołania systemowego mmap. Tu będą mapowane pliki i inne obiekty.\\
+\hline
+\texttt{0xBFxxxxxx} & -- & \texttt{0xBFFFFFFF} & Stos programu.\\
+\hline
+\texttt{0xC0000000} & -- & \texttt{0xFFFFFFFF} & Przestrzeń na użytek jądra systemu -- do komunikacji z procesem.\\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{Metody rezerwacji stron w Linuksie}
+
+Jądro linuksa nie udostępnia programom wywołań systemowych pełniących rolę
+funkcji \texttt{malloc} i \texttt{free}. Zarządzanie ma o wiele bardziej
+niskopoziomową postać. Linux umożliwia wyłącznie pobieranie i zwracanie pewnej
+ilości stron poprzez umieszczanie ich w przestrzeni adresowej w obszarach do
+tego zarezerwowanych.
+
+Pierwszym i historycznie najstarszym wywołaniem jądra do przydzielania pamięci
+procesowi jest procedura \texttt{brk} i nakładka \texttt{sbrk}.
+
+\vspace{4ex}
+
+\begin{lstlisting}[caption={Prototypy procedur brk i sbrk.}]
+int   brk(void *end_data_segment);
+void *sbrk(intptr_t increment);
+\end{lstlisting}
+
+Procedura \texttt{brk} zmienia położenie wierzchołka sterty na zadany adres, o
+ile ma on sens -- w przypadku sukcesu zwraca $0$, w przeciwnym razie zwraca $-1$.
+
+Procedura \texttt{sbrk} przesuwa położenie wierzchołka sterty o zadaną ilość
+bajtów przy czym wielkość ta może być ujemna. Zwraca nowy adres wierzchołka
+sterty lub adres o wartości $-1$ w przypadku błędu.
+
+Obie funkcje są dostępne w większości systemów uniksowych. Zostały jednak
+usunięte ze standardu POSIX.1 i nie należy ich używać, jeśli kod ma być
+przenośny między różnymi platformami. Innymi słowy tą metodę pozyskiwania pamięci
+uważa się z przestarzałą i nie zaleca jej używania.
+
+Historycznie nowszą, a jednocześnie zalecaną, metodą rezerwacji i zwalniania
+spójnego obszaru stron pamięci stanowią wywołania \texttt{mmap} i
+\texttt{munmap}. Parametry funkcji zostaną wyjaśnione tylko dla przypadku
+przydziału i zwalniania pamięci fizycznej.
+
+\vspace{4ex}
+\begin{lstlisting}[caption={Prototypy procedur mmap i munmap.}]
+void *mmap(void *start, size_t length, int prot,
+           int flags, int fd, off_t offset);
+int munmap(void *start, size_t length);
+\end{lstlisting}
+
+Argumenty procedury \texttt{mmap} posiadają następujące znaczenie w przypadku
+żądania o przydział stron procesowi:
+\begin{center}
+\begin{tabular}{|l|p{0.75\linewidth}|}
+\hline
+\textsc{argument} & \textsc{znaczenie} \\
+\hline
+\hline
+\verb+start+  & Adres, pod który powinny być zmapowane nowe strony. Jeśli równy
+\texttt{NULL}, jądro samo wybierze odpowiednie miejsce w przestrzeni adresowej.
+W przeciwnym wypadku będzie starało się wykorzystać ten argument jako początek
+mapowania. Zaleca się ustawienie na \texttt{NULL}.\\
+\hline
+\verb+length+ & Rozmiar bloku pamięci -- musi być podzielny przez długość strony. \\
+\hline
+\verb+prot+   & Uprawnienia określające dostęp do stron. Jeśli proces chce
+czytać i zapisywać do tego obszaru, argument musi mieć wartość
+\verb+PROT_READ|PROT_WRITE+. \\
+\hline
+\verb+flags+  & Flaga \verb+MAP_ANONYMOUS+ powoduje zmapowanie pamięci
+wirtualnej zamiast pliku. Zawartość pamięci będzie wyzerowana. \\
+\hline
+\verb+fd+     & Uchwyt pliku -- obowiązuje jedynie w przypadku mapowania pliku.
+Ustawić na $-1$ dla zgodności z innymi systemami. \\
+\hline
+\verb+offset+ & Offset względem początku pliku -- jego wartość jest ignorowana. \\
+\hline
+\end{tabular}
+\end{center}
+
+W zależności od wartości \texttt{flags} wywołanie \texttt{mmap} może
+przydzielać strony o różnych właściwościach.
+
+\begin{center}
+\begin{tabular}{|l|p{0.75\linewidth}|}
+\hline
+\textsc{flaga} & \textsc{znaczenie} \\
+\hline
+\verb+MAP_PRIVATE+ & niedobro \\
+\hline
+\verb+MAP_SHARED+  & zło \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{4ex}
+\begin{lstlisting}[caption={Przykład pobrania i zwolnienia jednej strony.},xleftmargin=3ex,xrightmargin=3ex]
+void *area = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE,
+                  MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+
+if (area != NULL)
+    munmap(area, getpagesize());
+\end{lstlisting}
+
+% --=[ Omówienie klasycznych mechanizmów ]=-------------------------------------
+
+\section{Klasyczne menadżery}
 
 Podstawy, z których będę korzystał wymyślając własny algorytm.
 
@@ -222,23 +473,9 @@ Wybór najlepiej pasującego wolnego bloku.
 
 Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 
-\section{Zarządzanie pamięcią, a współpraca z jądrem systemu Linux}
-
-\begin{enumerate}
-\item mmap i munmap,
-\item mlock i munlock,
-\item madvise,
-\item mprotect,
-\item getpagesize,
-\item brk i sbrk.
-\end{enumerate}
-
-\section{Metody testowania wydajności manadżerów pamięci}
+\section{Testowania wydajności}
 
 Tu będzie o tym, że są dwie metody -- na chama (random) i ślady wykonania programów.
 
-\section{Implementacja}
-
 
 \end{document}
-
