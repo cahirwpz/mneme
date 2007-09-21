@@ -248,6 +248,11 @@ Zasadniczo dwóch terminów: \textit{pamięć logiczna} i \textit{pamięć wirtu
 mówiąc o mechaniźmie stronicowania często się nie rozróżnia i będę ich używać
 zamiennie.
 
+Nie sposób też pominąć istotną przewagę stronicowania nad innymi metodami
+sprzętowego zarządzania pamięcią. Mechanizm ten umożliwia systemowi
+operacyjnemu organizowanie rozrzuconych w pamięci fizycznej stron w jeden
+spójny obszar w pamięci logicznej.
+
 \subsection{Pamięć podręczna}
 
 W tematyce związanej z architekturami systemów komputerowych często pojawia się
@@ -365,14 +370,17 @@ Jądro linuksa nie udostępnia programom wywołań systemowych pełniących rol�
 funkcji \texttt{malloc} i \texttt{free}. Zarządzanie ma o wiele bardziej
 niskopoziomową postać. Linux umożliwia wyłącznie pobieranie i zwracanie pewnej
 ilości stron poprzez umieszczanie ich w przestrzeni adresowej w obszarach do
-tego zarezerwowanych.
+tego zarezerwowanych. Menadżer pamięci musi być zatem zaimplementowany przez
+pewną bibliotekę wgrywaną przez program w czasie startu.
+
+\subsubsection{Wywołanie systemowe \texttt{brk}}
 
 Pierwszym i historycznie najstarszym wywołaniem jądra do przydzielania pamięci
 procesowi jest procedura \texttt{brk} i nakładka \texttt{sbrk}.
 
 \vspace{4ex}
 
-\begin{lstlisting}[caption={Prototypy procedur brk i sbrk.}]
+\begin{lstlisting}[caption={Prototypy procedur \texttt{brk} i \texttt{sbrk}.}]
 int   brk(void *end_data_segment);
 void *sbrk(intptr_t increment);
 \end{lstlisting}
@@ -386,16 +394,40 @@ sterty lub adres o wartości $-1$ w przypadku błędu.
 
 Obie funkcje są dostępne w większości systemów uniksowych. Zostały jednak
 usunięte ze standardu POSIX.1 i nie należy ich używać, jeśli kod ma być
-przenośny między różnymi platformami. Innymi słowy tą metodę pozyskiwania pamięci
-uważa się z przestarzałą i nie zaleca jej używania.
+przenośny między różnymi platformami. Innymi słowy tą metodę pozyskiwania
+pamięci uważa się z przestarzałą i nie zaleca jej używania.
+
+Wywołanie \texttt{brk} ma też oczywistą wadę, powodującą nieefektywne
+wykorzystanie pamięci. Przypuścmy, że program wykonuje ciąg operacji:
+
+\begin{enumerate}
+\item zarezerwuj obszar $A$ o rozmiarze $n$,
+\item zarezerwuj obszar $B$ o rozmiarze $m$ o wiele mniejszym niż $n$,
+\item zwolnij obszar $A$,
+\item zarezerwuj obszar $C$ o rozmiarze $n + m$.
+\end{enumerate}
+
+Widać, że każda rezerwacja obszaru będzie musiała przesunąć wierzchołek sterty.
+Strony związane z obszarem $A$ nie mogą być zwrócone do systemu i ponownie
+wykorzystanie do utworzenia obszaru $C$. Używanie tego mechanizmu do rezerwacji
+dużych bloków jest nieefektywne i może powodować powstawanie nieużytków.
+
+\subsubsection{Wywołanie systemowe \texttt{mmap}}
 
 Historycznie nowszą, a jednocześnie zalecaną, metodą rezerwacji i zwalniania
 spójnego obszaru stron pamięci stanowią wywołania \texttt{mmap} i
-\texttt{munmap}. Parametry funkcji zostaną wyjaśnione tylko dla przypadku
-przydziału i zwalniania pamięci fizycznej.
+\texttt{munmap}. Zaletą tej metody pobierania pamięci z systemu operacyjnego
+jest możliwość skonstruowania lepszej metody radzenia sobie z nieużytkami.
+Zmapowany spójny obszar pamięci może być odmapowany fragmentarycznie. Jeśli
+tylko pojawi się wystarczająco długi niewykorzystywany obszar rozpoczynający
+się w adresie podzielnym przez rozmiar strony, program może go zwrócić do
+systemu. 
+
+Poniżej zostaną przedstawione i wyjaśnione parametry procedur dla przypadku
+przydziału i zwalniania pamięci wirtualnej.
 
 \vspace{4ex}
-\begin{lstlisting}[caption={Prototypy procedur mmap i munmap.}]
+\begin{lstlisting}[caption={Prototypy procedur \texttt{mmap} i \texttt{munmap}.}]
 void *mmap(void *start, size_t length, int prot,
            int flags, int fd, off_t offset);
 int munmap(void *start, size_t length);
@@ -432,21 +464,30 @@ Ustawić na $-1$ dla zgodności z innymi systemami. \\
 \end{center}
 
 W zależności od wartości \texttt{flags} wywołanie \texttt{mmap} może
-przydzielać strony o różnych właściwościach.
+przydzielać strony o różnych właściwościach. Objawiają się one w momencie
+wywołania procedury systemowej \texttt{fork}, która tworzy potomków procesu.
 
 \begin{center}
 \begin{tabular}{|l|p{0.75\linewidth}|}
 \hline
 \textsc{flaga} & \textsc{znaczenie} \\
 \hline
-\verb+MAP_PRIVATE+ & niedobro \\
+\verb+MAP_PRIVATE+ & Mapowanie prywatne. Proces posiada zmapowane strony na
+własność. Wykorzystywany jest mechanizm \texttt{copy-on-write}. Jeśli
+którykolwiek z potomków lub rodzic będzie chciał zmodyfikować stronę, to
+dostanie jej prywatną kopię na własny użytek. \\
 \hline
-\verb+MAP_SHARED+  & zło \\
+\verb+MAP_SHARED+  & Mapowanie dzielone. Proces dzieli zmapowany obszar pamięci
+między wszystkie procesy potomne stworzone. Wszystkie procesy widzą ten sam
+obszar pamięci wirtualnej i mogą się przez ten fragment pamięci komunikować. \\
 \hline
 \end{tabular}
 \end{center}
 
-\vspace{4ex}
+Poniżej zamieszczono listing prostego programu pobierający stronę pamięci z
+systemu operacyjnego na własny użytek.
+
+\vspace{2ex}
 \begin{lstlisting}[caption={Przykład pobrania i zwolnienia jednej strony.},xleftmargin=3ex,xrightmargin=3ex]
 void *area = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE,
                   MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
@@ -454,6 +495,66 @@ void *area = mmap(NULL, getpagesize(), PROT_READ|PROT_WRITE,
 if (area != NULL)
     munmap(area, getpagesize());
 \end{lstlisting}
+
+Ważną przewagą wywołania systemowego \texttt{mmap}, w stosunku do \texttt{brk},
+jest to, że korzystanie z tej metody pobierania pamięci nie powoduje konfliktów z
+menadżerem pamięci znajdującym się w bibliotece \texttt{libc}. Dzięki temu
+można w obrębie jednej przestrzeni adresowej korzystać z wielu niezależnych
+algorytmów rezerwacji bloków.
+
+\subsection{Fałszywe współdzielenie}
+
+Mikroprocesor wielordzeniowy nie jest już dziś niczym egzotycznym. Kiedyś były
+składnikami wyłącznie maszyn pełniących rolę serwerów bądź stacji roboczych do
+obliczeń naukowych. Większość architektur wieloprocesorowych lub
+wielordzeniowych zakłada dostęp do pamięci systemowej, która jest dzielona
+między procesorami. Procesory wykorzystują część pamięci na własne obliczenia,
+część przeznaczają na wymianę danych między sobą, czy komunikację i synchronizację.
+Każdy procesor posiada również własną pamięć podręczną.
+
+Może się zdarzyć, że procesory będą chciały się ze sobą skomunikować przy
+pomocy pewnego fragmentu pamięci. Proces taki pociąga za sobą wymianę linii
+pamięci podręcznej między rdzeniami. Dostęp przez dwa procesory do komórki
+pamięci $n$, która przechowuje pewną strukturę, może mieć następującą postać:
+
+\begin{enumerate}
+\item procesory $A$ i $B$ przechowują we swoich pamięciach podręcznych
+bieżącą zawartość $n$,
+\item procesor $A$ przygotowuje dane dla $B$ i aktualizuje zawartość $n$,
+\item protokół uspójniania pamięci podręcznej informuje $B$, że posiada
+nieaktualną wersję linii zawierającej $n$,
+\item $B$ żąda odczytu komórki $n$,
+\item $A$ synchronizuje zawartość linii przechowującej $n$ z pamiecią
+systemową,
+\item $B$ pobiera linię przechowującą $n$ do swojej pamięci podręcznej,
+\item $B$ posiada aktualną wersję linii przechowującej $n$ i może operować na
+jej zawartości.
+\end{enumerate}
+
+Proces ten jest dość czasochłonny, ale w przypadku komunikacji
+międzyprocesorowej niezbędny.
+
+Może się jednak zdarzyć, że jedna linia pamięci podręcznej przechowuje kilka
+struktur, lecz nie służą one do wymiany danych między procesorami -- są
+prywatnymi danymi pewnych wątków obliczeń działających na odrębnych procesorach.
+Zjawisko takie określa się mianem fałszywego współdzielenia (ang. \textit{false
+sharing}). Jest ono bardzo niepożądane, a w przypadku kiedy obejmuje duże
+obszary pamięci, prowadzi do poważnego obniżenia wydajności związanego z
+masowym przepływem danych między pamięciami podręcznymi procesorów. Sytuację
+taką określa się mianem zaśmiecania pamięci podręcznej (ang. \textit{cache
+trashing}), które, w dosłownym tego słowa sensie, rujnuje wydajność programu
+działającego na architekturze wieloprocesorowej.
+
+\subsection{Synchronizacja między wątkami i procesorami}
+
+\begin{enumerate}
+\item \verb+pthread_mutex_t+
+\item POSIX semaphores
+\item futex
+\item spinlocks
+\item operacje atomowe
+\end{enumerate}
+
 
 % --=[ Omówienie klasycznych mechanizmów ]=-------------------------------------
 
@@ -473,9 +574,196 @@ Wybór najlepiej pasującego wolnego bloku.
 
 Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 
-\section{Testowania wydajności}
+% --=[ Testowanie wydajności ]=-------------------------------------------------
 
-Tu będzie o tym, że są dwie metody -- na chama (random) i ślady wykonania programów.
+\section{Testowanie wydajności}
 
+\begin{enumerate}
+\item test z losowymi parami \textit{(długość życia, wielkość)} o równomiernym rozkładzie,
+\item j.w. ale wielowątkowy,
+\item test z losowymi parami \textit{(długość życia, wielkość)} o rozkładzie symulujacym rzeczywistość,
+\item j.w. ale wielowątkowy,
+\item ślady z wykonania programów,
+\item wnioski nt. zachowań spotykanych w programach
+\end{enumerate}
+
+% --=[ Implementacja ]=---------------------------------------------------------
+
+\section{Implementacja}
+
+\subsection{Założenia}
+
+\subsection{Zgodność ze standardem \texttt{POSIX}}
+
+Programiści, korzystający z menadżera sterty w standardowej bibliotece języka
+C, są przyzwyczajeni do tego, że posiadają pewien dobrze znany mechanizm
+udostępniający pewną funkcjonalność.
+
+W związku z tym implementacja ogólnego menadżera pamięci powinna być możliwie
+jak najbardziej zbliżona pod względem zachowania do tej określonej w
+standardzie \texttt{POSIX}.
+
+\subsubsection{Procedura \texttt{malloc}}
+
+Funkcja \texttt{malloc} zwraca wskaźnik do bloku pamięci o rozmiarze
+\texttt{size} bajtów lub wartość \texttt{NULL} w przeciwnym wypadku.
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototyp procedury \texttt{malloc}.}]
+void * malloc (size_t size);
+\end{lstlisting}
+
+Zwrócony wskaźnik w systemach $32$-bitowych musi być podzielny przez $8$, a w
+systemach $64$-bitowych przez $16$. W przypadku błędu zmienna systemowa
+\texttt{errno} musi być ustawiona na wartość \texttt{ENOMEM}. Zarezerwowana
+pamięć ma nieokreśloną zawartość. Nadpisanie obszaru znajdującego się
+bezpośrednio przed jak i za przydzielonym blokiem najprawdopodobniej uszkodzi
+prywatne struktury danych allokatora pamięci -- co doprowadzi do nieokreślonego
+zachowania menadżera pamięci.
+
+\subsubsection{Procedura \texttt{calloc}}
+
+Funkcja \texttt{calloc} zwraca wskaźnik do wyzerowanego bloku pamięci będącego
+w stanie pomieścić tablicę \texttt{count} elementów o rozmiarze
+\texttt{eltsize} lub wartość \texttt{NULL} w przeciwnym wypadku.
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototyp procedury \texttt{calloc}.}]
+void * calloc (size_t count, size_t eltsize);
+\end{lstlisting}
+
+Procedura ta zachowuję się podobnie jak \texttt{malloc}, poza gwarancją
+zainicjalizowania obszaru zerami. Implementacja tego wywołania może, ale nie
+musi, korzystać wewnętrznie z wywołania \texttt{malloc}.
+
+\subsubsection{Procedura \texttt{realloc}}
+
+Funkcja \texttt{realloc} zmienia rozmiar bloku wskazywanego przez argument
+\texttt{ptr} na \texttt{newsize} bajtów. Jeśli zwrócony adres jest równy
+\texttt{ptr} oznacza to, że zarządcy pamięci udało się zmienić rozmiar bloku w
+miejscu. W przeciwnym wypadku procedura \texttt{realloc} rezerwuje nowy blok o
+rozmiarze \texttt{newsize}, kopiuje do niego zawartość bloku wskazywanego przez
+\texttt{ptr} po czym zwalnia stary obszar.
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototyp procedury \texttt{realloc}.}]
+void * realloc (void *ptr, size_t newsize);
+\end{lstlisting}
+
+Jeśli \texttt{realloc} zwróci wskaźnik równy \texttt{NULL}, wtedy stary obszar
+wskazywany przez \texttt{ptr} zostaje w nienaruszonym stanie, a zmienna
+systemowa \texttt{errno} ma wartość \texttt{ENOMEM}.
+
+Funkcja \texttt{realloc} działa jak \texttt{malloc(newsize)}, jeśli argument
+\texttt{ptr} jest równy \texttt{NULL}, lub jako \texttt{free(ptr)}, jeśli
+argument \texttt{newsize} jest równy $0$.
+
+\subsubsection{Procedura \texttt{posix\_memalign}}
+
+Funkcja \texttt{posix\_memalign} rezerwuje blok pamięci o adresie podzielnym
+przez argument \texttt{alignment} (liczba ta musi być potęgą dwójki) oraz przez
+\texttt{sizeof(void *)} i o rozmiarze \texttt{size}. Zarezerwowany blok pamięci
+umieszczany jest w komórce pamięci wskazywanej przez \texttt{memptr} i funkcja
+zwraca $0$. W przypadku błędu funkcja zwraca: \texttt{EINVAL} jeśli
+\texttt{alignment} nie spełnia zadanych kryteriów lub \texttt{ENOMEM} jeśli nie
+ma wystarczającej ilości pamięci.
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototyp procedury \texttt{posix\_memalign}, \texttt{memalign} i \texttt{valloc}.},xleftmargin=0cm,xrightmargin=0cm]
+int posix_memalign (void **memptr, size_t alignment, size_t size);
+void * memalign (size_t boundary, size_t size);
+void * valloc (size_t size);
+\end{lstlisting}
+
+Funkcja \texttt{memalign} działa analogicznie do \texttt{posix\_memalign} --
+przy czym adres jest podzielny tylko przez \texttt{boundary} (będące potęgą
+dwójki), a początek zarezerwowanego bloku jest zwracany przez wartość funkcji.
+W przypadku błędu adres jest równy \texttt{NULL} i ustawiana jest zmienna
+systemowa \texttt{errno}.
+
+Funkcja \texttt{valloc} jest prostą nakładką na \texttt{memalign}, gdzie
+wartość argumentu \texttt{boundary} jest równa długości strony, którą można
+sprawdzić używając funkcji \texttt{getpagesize()}.
+
+Warto również zauważyć, że w systemach \textit{BSD} pamięć rezerwowana przez te
+procedury nie może być zwalniania przez procedurę \texttt{free}.
+
+\subsubsection{Procedura \texttt{free}}
+
+Funkcja \texttt{free} zwalnia blok pamięci, czyniąc przestrzeń przez niego
+wykorzystywaną zdatną do ponownego użycia.
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototyp procedury \texttt{free} i \texttt{cfree}.}]
+void free (void *ptr);
+void cfree (void *ptr);
+\end{lstlisting}
+
+Funkcja \texttt{cfree} jest synonimem \texttt{free} i istnieje wyłącznie ze
+względów historycznych -- dla kompatybilności z systemem \textit{SunOS}.
+
+Dostęp do bloku pamięci po jego zwolnieniu mimo, że jest operacją błędną to
+często jest możliwy. Istnieją narzędzia wykrywające takie anomalie. Deallokacja
+bloku pamięci uszkadza jego zawartość.
+
+Program nie musi zwalniać wszystkiej pamięci przed zakończeniem swego
+działania. Automatyczne zarządzanie zasobami odda wykorzystaną przez proces
+pamięć na użytek systemu operacyjnego.
+
+Jeśli wskaźnik \texttt{ptr} nie podaje początku bloku pamięci, czyli wartości
+zwróconej przez jakieś wywołanie \texttt{malloc}, lub podaje obszar już raz
+zwolniony, to zachowanie menadżera pamięci jest nieustalone i może
+zakończyć się przerwaniem działania programu.
+
+Jeśli wskaźnik \texttt{ptr} jest równy wartości \texttt{NULL}, to procedura
+\texttt{free} nie wykonuje żadnej operacji.
+
+\subsubsection{Pozostałe procedury menadżera zgodnego z \texttt{POSIX}}
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototypy pozostałych procedur i zmiennych.}]
+int mallopt (int param, int value);
+int mcheck (void (*abortfn)(void));
+struct mallinfo mallinfo (void);
+
+\end{lstlisting}
+
+\subsection{Menadżer stron -- \texttt{PAGEMAN}}
+
+\subsection{Zarządca dużych obszarów -- \texttt{MMAPMAN-AO}}
+
+Obszary o rozmiarze $\ge 32KiB$.
+
+\subsection{Zarządca małych obszarów -- \texttt{REAPS}}
+
+Obszary o rozmarze $< 24B$.
+
+\begin{figure}
+\centering
+\includegraphics[width=0.80\textwidth]{reaps}
+\caption{Graficzna reprezentacja struktury danych \texttt{reaps}}
+\end{figure}
+
+\subsection{Zarządca pozostałych obszarów -- \texttt{BLKMAN-AO}}
+
+Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
+
+\begin{figure}
+\centering
+\includegraphics[width=0.90\textwidth]{blkman}
+\caption{Graficzna reprezentacja struktury danych \texttt{blkman}}
+\end{figure}
+
+% --=[ Wnioski ]=---------------------------------------------------------------
+
+\section{Wnioski i kierunek badań}
+
+Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić:
+\begin{itemize}
+\item istotne dla wydajności dostępów do pamięci jest umieszczanie danych w
+adresach o naturalnych wartościach tj. $32$-bitowe słowo powinno być pod
+adresem podzielnym przez $4$,
+\item wywołania systemowe są operacjami kosztownymi i nie można ich robić zbyt często,
+\end{itemize}
 
 \end{document}
