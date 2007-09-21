@@ -15,7 +15,7 @@
 \usepackage{listings}
 \usepackage{graphicx}
 \pagestyle{fancy}
-\lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm}
+\lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
 
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
@@ -201,7 +201,7 @@ realizowane przez mechanizm translacji adresów -- często określany także
 mechanizmem stronicowania. Do translacji adresów procesor wykorzystuje opis
 pamięci logicznej składający się na wielopoziomowe tablice deskryptorów stron.
 
-\begin{figure}
+\begin{figure}[h]
 \centering
 \includegraphics[width=0.75\textwidth]{stronicowanie}
 \caption{Schemat translacji adresu dla architektury Intel IA-32}
@@ -334,7 +334,7 @@ dla procesu, jej część zajmuje jądro systemu. W tym fragmencie przestrzeni
 jądro udostępnia swoje publiczne struktury, może mapować bufory, dane otrzymane
 od urządzeń wejścia-wyjścia, itd.
 
-\begin{figure}
+\begin{figure}[h]
 \centering
 \includegraphics[height=0.5\textwidth]{linux-layout}
 \caption{Obłożenie przestrzeni adresowej procesu w systemie Linux}
@@ -730,25 +730,177 @@ struct mallinfo mallinfo (void);
 
 \subsection{Menadżer stron -- \texttt{PAGEMAN}}
 
-\subsection{Zarządca dużych obszarów -- \texttt{MMAPMAN-AO}}
+\subsection{Zarządca obszarów -- \texttt{AREAMAN}}
+
+\subsection{Zarządca dużych bloków -- \texttt{MMAPMAN-AO}}
 
 Obszary o rozmiarze $\ge 32KiB$.
 
-\subsection{Zarządca małych obszarów -- \texttt{REAPS}}
+\subsection{Zarządca małych bloków -- \texttt{HEAPBLKMAN}}
 
-Obszary o rozmarze $< 24B$.
+Zarządzania małymi blokami wymaga określenia osobnej strategii. Uwarunkowane
+jest to obserwacjami przeprowadzonymi na rzeczywistych programach.
 
-\begin{figure}
+Przede wszystkim należy się spodziewać, że program będzie masowo przydzielał
+małe obszary pamięci -- z reguły robi to intensywnie operując na dynamicznych
+strukturach danych. Wyobraźmy sobie program wczytujący dane do zbalansowanego
+drzewa binarnego: w trakcie konstrukcji dość rzadko będzie zwalniał rekordy
+będące węzłami drzewa (o ile w ogóle będzie to robił), następnie zostaną
+przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a wynik
+działania przekazany do następnej fazy obliczeń.
+
+Ponieważ spodziewamy się dużej ilości bloków małego rozmiaru, narzut pamięci na
+składowanie struktur potrzebnych dla zarządcy powinien być znikomy. Dobrze by
+było, gdyby zarezerwowane bloki nie przechowywały żadnych informacji poza
+danymi użytkownika. Można też z dużym prawdopodobieństwem stwierdzić, że
+zwalniany blok pamięci znajduje się już w jakiejś linii pamięci podręcznej.
+Pożądaną sytuacją byłoby, gdyby zaallokowany rekord bezpośrednio po oddaniu go
+na użytek programu był dostępny w pamięci podręcznej.
+
+Rezerwowane struktury są najprawdopodobniej wielkości podzielnej przez
+\texttt{sizeof(long int)} lub \texttt{sizeof(long long int)}, czyli odpowiednio
+$4$ lub $8$ bajtów. Jest to domyślna granica stosowana przez kompilatory.
+
+Pozostaje jeszcze zdefiniowanie wielkości małego bloku. W mojej implementacji
+występują trzy rodzaje wielkości małych bloków: $8$, $16$ i $24$. Bloki o
+długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$ bajtów, $n \in [9,16]$ do
+$16$ bajtów i $n \in [17,24]$ do $24$ bajtów.
+
+Struktura danych odpowiedzialna za przechowywanie niewielkich bloków pamięci
+jest to hybrydą stosu, listy dwukierunkowej i jednokierunkowej (która może być
+zastąpiona zrównoważonym drzewem binarnym).
+
+\begin{figure}[h]
 \centering
-\includegraphics[width=0.80\textwidth]{reaps}
-\caption{Graficzna reprezentacja struktury danych \texttt{reaps}}
+\includegraphics[width=0.80\textwidth]{heapblkman}
+\caption{Graficzna reprezentacja struktury danych \texttt{heapblkman}}
 \end{figure}
 
-\subsection{Zarządca pozostałych obszarów -- \texttt{BLKMAN-AO}}
+Wartownik obszaru jest polem o długości jednego bloku, ale co najmniej długości
+$16$ bajtów. Przechowuje następujące informacje:
+\begin{center}
+\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
+\hline
+\textsc{pole} & \textsc{znaczenie} \\
+\hline
+\hline
+\verb+flags+		& Zawiera flagi określające jakiego rozmiaru są bloki w tym
+obszarze pamięci (tj. \verb+FLAG_L8+, \verb+FLAG_L16+ i \verb+FLAG_L24+) oraz
+flagę wskazującą źródło allokacji następnych bloków (tj. \verb+FLAG_LRU+,
+\verb+FLAG_STACK+). \\
+\hline
+\verb+blkcnt+		& Ilość wszystkich bloków. \\
+\hline
+\verb+stack+		& Numer bloku, w którym znajduje się wierzchołek stosu. \\
+\hline
+\verb+lru_first+	& Numer bloku przechowującego początek listy ostatnio
+zwolnionych bloków pamięci. \\
+\hline
+\verb+lru_blkcnt+	& Ilość wszystkich bloków na liście ostatnio zwolnionych. \\
+\hline
+\verb+free+			& Numer bloku, w którym zaczyna się lista wolnych bloków,
+posortowanych malejąco pod względem adresu. \\
+\hline
+\end{tabular}
+\end{center}
+
+Wolne bloki mają odpowiednią długość dla danego obszaru i zawierają następujące pola:
+
+\begin{center}
+\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
+\hline
+\textsc{pole} & \textsc{znaczenie} \\
+\hline
+\hline
+\verb+younger+	& Indeks bloku, który został zwolniony wcześniej, na liście ostatnio zwolnionych bloków. \\
+\hline
+\verb+older+	& Indeks bloku, który został zwolniony później, na liście ostatnio zwolnionych bloków. \\
+\hline
+\verb+prev+		& Indeks bloku o młodszym adresie na liście wolnych bloków. \\
+\hline
+\verb+next+		& Indeks bloku o starszym adresie na liście wolnych bloków. \\
+\hline
+\end{tabular}
+\end{center}
+
+Ponieważ w implementacji tej struktury danych użyto indeksów typu
+\verb+uint16_t+, maksymalna ilość bloków w danym obszarze może wynieść $2^{16}
+- 1 = 65535$. Limituje to maksymalną ilość pamięci zarządzanej w obrębie
+jednego obszaru do odpowiednio dla bloków długości $8$ bajtów -- $512$
+\verb+KiB+, dla $16$ bajtów -- $1$ \verb+MiB+ i dla $24$ bajtów -- $1.5$
+\verb+MiB+. Indeksowanie bloków zaczyna się od liczby większej od zera, zaś
+zero jako indeks oznacza koniec listy.
+
+Powyżej wierzchołka stosu wszystkie wolne bloki są wolne, niezainicjalizowane i
+ich zawartość jest nieustalona. Poniżej wierzchołka stosu wszystkie bloki muszą
+być na obu listach i pole \verb+prev+ zawsze musi mieć mniejszą wartość niż
+indeks bloku, w którym się znajduje.
+
+\subsubsection{Operacje}
+
+Zarezerwowanie (\verb+alloc+) bloku jest operacją działającą w czasie stałym i
+może przebiegać dwoma torami:
+\begin{itemize}
+\item Jeśli bit \verb+FLAG_STACK+ jest zapalony oznacza to, że na stosie jest
+co najmniej jeden wolny blok. Zwiększany jest indeks wierzchołka stosu i
+zwracany odpowiedni adres. Jeśli stos został zapełniony bit \verb+FLAG_STACK+
+zostaje zgaszony.
+\item Jeśli bit \verb+FLAG_LRU+ jest zapalony, to na liście LRU znajduje się
+co najmniej jeden wolny blok. Zostaje on usunięty z obu list i zostaje zwrócony
+jego adres. Jeśli lista została opróżniona, bit \verb+FLAG_LRU+ zostaje
+zgaszony.
+\end{itemize}
+
+Zwalnianie (\verb+free+) bloku również może przebiegać dwutorowo:
+\begin{itemize}
+\item Jeśli zwalniany blok ma indeks o jeden mniejszy niż wierzchołek stosu,
+wtedy stos przesuwany jest na zwolniony blok i bit \verb+FLAG_STACK+ zostaje
+zapalony. Następnie sprawdza się czy blok bezpośrednio leżący pod wierzchołkiem
+stosu jest początkiem listy wolnych bloków. Jeśli tak to usuwany jest on z obu
+list, wierzchołek stosu zostaje przesunięty o jeden blok w dół i operacja
+zostaje powtórzona.
+\item Jeśli zwalniany blok ma indeks co najmniej o dwa mniejszy niż wierzchołek
+stosu, to blok jest dodawany na początek listy LRU i wstawiany na listę bloków
+posortowanych pod względem malejących adresów. Bit \verb+FLAG_LRU+ jest
+zapalany.
+\end{itemize}
+
+Pesymistyczna złożoność czasowa zwalniania bloku to $O(n)$, gdzie $n$ to
+długość listy wolnych bloków.
+
+W przypadku kiedy obie flagi \verb+FLAG_STACK+ i \verb+FLAG_LRU+ są zgaszone
+miejsce w danym obszarze się wyczerpało i należy ten obszar powiększyć, o ile
+istnieje taka możliwość (pole \verb+blkcnt+ nie przekroczy wartości $65535$).
+
+Obszar można rozszerzyć przyłączając do jego końca nowe strony pamięci przy
+użyciu procedury rozszerzania (\verb+expand_at_end+), która zwiększa ilość
+dostępnych bloków poprzez wydłużenie obszar za wierzchołkiem stosu. Menadżer
+pamięci korzystający z zarządcy małych bloków może również na zapas dodawać
+strony do danego obszaru.
+
+Kiedy obszar pamięci jest relatywnie długi i od końca wierzchołka stosu do
+końca obszaru jest jedna lub więcej niewykorzystywanych stron pamięci istnieje
+możliwość skurczenia obszaru (\verb+shrink_at_end+). Dzięki temu strony mogą
+być użyte do innych celów lub zwrócone do systemu operacyjnego.
+
+\subsubsection{Możliwe optymalizacje}
+
+Z opisu tej struktury danych dość jasno widać, że działa ona najszybciej w
+ciągu operacji \verb+alloc+, \verb+free+ o strukturze stosu. Zbyt
+optymistycznym jest by zakładać, że zdecydowana większość programów tak się
+zachowuje.
+
+Jednym z pomysłów na zwiększenie wydajności zarządcy małych bloków jest
+implementacja multibloków. Multiblok to zbiór przylegających do siebie wolnych
+bloków. Taki obiekt zachowywał by się na liście LRU i liście wolnych bloków
+posortowanych malejąco jak jeden wolny blok. Taka modyfikacja przyśpieszyłaby
+operację zwalniania obszaru w pierwszym przypadku.
+
+\subsection{Zarządca pozostałych bloków -- \texttt{BLKMAN-AO}}
 
 Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
 
-\begin{figure}
+\begin{figure}[h]
 \centering
 \includegraphics[width=0.90\textwidth]{blkman}
 \caption{Graficzna reprezentacja struktury danych \texttt{blkman}}
