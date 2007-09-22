@@ -62,6 +62,8 @@ modyfikowalne na potrzeby programisty. Celem tej pracy jest zaimplementowanie
 allokatora pamięci działającego w pamięci dzielonej procesu. Specyfika tego
 problemu zostanie przestawiona w dziale \textbf{Implementacja}.
 
+\newpage
+
 % --=[ Wstęp teoretyczny ]=-----------------------------------------------------
 
 \section{Wstęp teoretyczny}
@@ -160,6 +162,8 @@ ograniczenia problemu, można łatwo zapanować nad problemem lokalności w algo
 
 Najbardziej ogólny wariant algorytmu. Na potrzeby programistów jest on
 osiągalny przez wywołania malloc/free z biblioteki standardowej języka C.
+
+\newpage
 
 % --=[ Podstawy architektury pamięci ]=-----------------------------------------
 
@@ -555,6 +559,7 @@ działającego na architekturze wieloprocesorowej.
 \item operacje atomowe
 \end{enumerate}
 
+\newpage
 
 % --=[ Omówienie klasycznych mechanizmów ]=-------------------------------------
 
@@ -574,6 +579,8 @@ Wybór najlepiej pasującego wolnego bloku.
 
 Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 
+\newpage
+
 % --=[ Testowanie wydajności ]=-------------------------------------------------
 
 \section{Testowanie wydajności}
@@ -587,11 +594,19 @@ Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 \item wnioski nt. zachowań spotykanych w programach
 \end{enumerate}
 
+\subsection{Testy statystyczne}
+
+\subsection{Testy z wykorzystaniem śladów}
+
+\newpage
+
 % --=[ Implementacja ]=---------------------------------------------------------
 
 \section{Implementacja}
 
 \subsection{Założenia}
+
+\newpage
 
 \subsection{Zgodność ze standardem \texttt{POSIX}}
 
@@ -725,20 +740,202 @@ Jeśli wskaźnik \texttt{ptr} jest równy wartości \texttt{NULL}, to procedura
 int mallopt (int param, int value);
 int mcheck (void (*abortfn)(void));
 struct mallinfo mallinfo (void);
-
 \end{lstlisting}
+
+\newpage
 
 \subsection{Menadżer stron -- \texttt{PAGEMAN}}
 
-\subsection{Zarządca obszarów -- \texttt{AREAMAN}}
+Pobieranie i zwalnianie stron pamięci przy pomocy wywołania systemowego jest
+zadaniem czasochłonnym. Wymaga ono przebudowania pewnych struktur jądra oraz
+przeładowania katalogów i tablic deskryptorów. W systemach wieloprocesorowych
+taki proces może trwać wiele tysięcy cykli, gdyż dodatkowo wiąże się z
+uspójnieniem zawartości bufora \texttt{TLB}. Taki zabieg może wygenerować w
+rezultacie kilkaset tysięcy dostępów do obszarów składujących tablice
+deskryptorów, których potencjalnie brak w pamięci podręcznej lub linie je
+przechowujące są oznaczone jako nieaktualne.
+
+Każdą nieużywaną stronę zamiast odsyłać od razu do systemu operacyjnego można
+przechowywać w jakiejś strukturze danych i bez udziału systemu przydzielić
+powtórnie, do jednego z podrzędnych zarządców pamięci. Oczywiście nie można w
+nieskończoność kumulować nieużyków -- musi istnieć jakieś zdarzenie generujące
+ich oddawanie do systemu. Takim wyzwalaczem może być przekroczenie pewnej
+sumarycznej objętości nieużywanych stron np.: $2$ \verb+MiB+, albo próba
+rezerwacji dużego spójnego obszaru pamięci np.: powyżej $64$ stron.
+
+Przestrzeń adresowa i pamięć wirtualna należąca do procesu jest wspólna dla
+wszystkich wątków działających w jego obrębie. Zatem struktura przechowująca
+nieużytki będzie dzielona między wątki. Dostęp do takiego zasobu będzie musiał
+angażować pewne środki synchronizacji tj. semafory binarne lub blokady pętlowe.
+By zmniejszyć rywalizację o dostęp do struktury zasobu stosuje się
+dwupoziomowość. Istnieje jedna globalna lista nieużytków i jedna lokalna dla
+każdego z wątków. Obie mają różne kryteria odśmiecania, lista globalna może je
+zmieniać w zależności od ilości działających wątków. Komunikacja między
+komponentami przebiega od lokalnego menadżera, przez globalny, aż do wywołań
+systemu operacyjnego.
+
+Można się spodziewać, że w większości przypadków wątek budujący jakieś
+dynamiczne struktury danych będzie sam na nich operował, co najwyżej
+prezentując wyniki innym wątkom. Innymi słowy większość operacji \verb+free+
+wątek będzie wykonywał na blokach, które sam zarezerwował. Oczywiście nie może
+być to założeniem, ale praktyka pokazuje, że zachowanie sprzeczne z opisanym
+wyżej przyczynia się do wielu błędów i programiści pisząc programy unikają
+takich zachowań.
+
+Kiedy wątek kończy swoje działanie powinien zadbać o to, by pamięć, którą
+zarządza korzystając z prywatnych struktur, oddać na użytek globalnej listy
+nieużytków lub menadżera osieroconych bloków -- takich, które nie posiadają
+właściciela.
+
+Kłopotliwym wywołaniem systemowym w przypadku wielowątkowych aplikacji jest
+\texttt{fork}. Procedura ta klonuje proces, w obrębie którego może działać
+wiele wątków. Proces klonujący nazywa się rodzicem, a proces sklonowany --
+dzieckiem.  Dziecko posiada przestrzeń adresową i większość struktur danych
+identycznych jak rodzic. Niestety wątki nie są klonowane w stanie aktywnym, do
+procesu potomnego przechodzi tylko wątek, który wywołał funkcję \verb+fork+.
+Rodzi to dość subtelny problem -- blokady założone w przestrzeni adresowej
+rodzica nie mogą być zwolnione w dziecku, gdyż wątki odpowiedzialne za to
+zadanie nie istnieją. Za obsłużenie tej niewygodnej operacji odpowiada
+procedura \verb+pthread_at_fork+, przy pomocy której można zarejestrować
+wywołania, które nastąpią bezpośrednio przez wykonaniem \verb+fork+ i
+bezpośrednio po wykonaniu \verb+fork+ w procesach rodzica i dziecka.
+
+Jako strukturę danych do implementacji menadżera stron użyto tablicy list wraz
+z obiektami służącymi do synchronizacji wątków.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.60\textwidth]{pageman}
+\caption{Graficzna reprezentacja struktury danych \texttt{pageman}.}
+\end{figure}
+
+\subsubsection{Opis operacji}
+
+\subsubsection{Możliwe optymalizacje}
+
+Ciekawą i jednocześnie efektywną metodą na zwiększenie wydajności korzystania z
+globalnej listy nieużytków byłaby implementacja współdzielonej listy bez
+blokad. Implementacje takie bazują na operacji procesora \verb+CAS+ (ang.
+\textit{compare-and-swap} -- porównaj i zamień). Dzięki temu można byłoby
+wyeliminować kosztowną operację blokady semafora binarnego zabezpieczającego
+dostęp do struktury i umożliwić wątkom jednoczesne operowanie na listach
+wolnych obszarów.
+
+A może uprządkowana lista obszarów względem roznących adresów?
+
+Istotnym zagadnieniem jest też dobór progów odśmiecania list nieużytków.
+Należałoby przeprowadzić empiryczne badania programów i spróbować wyłowić
+często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
+
+\newpage
 
 \subsection{Zarządca dużych bloków -- \texttt{MMAPMAN-AO}}
 
-Obszary o rozmiarze $\ge 32KiB$.
+Duże bloki, które z reguły wymagają przestrzeni o rozmiarze kilkunastu stron
+pamięci i więcej, najefektywnie jest zarządzać niezależnie od mniejszych
+bloków. Jest ku temu kilka istotnych powodów.
+
+Z dużym prawdopodobieństwem bloki o dużych wielkościach będą wykorzystywane
+przez program przez długi okres czasu. Takich obiektów będzie niewielka ilość w
+porównaniu do bloków o mały rozmiarze. Narzut związany z generowanymi
+nieużytkami jest dość mały. Nie istnieją zatem istotne argumenty za tym, żeby
+przechowywać takie obiekty z blokami innych rozmiarów.
+
+Do organizowania obszarów dla większych obiektów można wykorzystywać sprzętowe
+strony większej wielkości np. $4$ \verb+MiB+. Dzięki temu intensywne
+wykorzystywanie dużego obszaru może generować mniej \texttt{TLB miss},
+przyczyniając się do poprawy wydajności programu.
+
+Czasem zdarza się, że program żąda bloku pamięci o adresie podzielnym przez
+określoną potegę dwójki przy pomocy funkcji \verb+memalign+. Implementacja tej
+procedury przy pomocy zarządcy \texttt{mmapman-ao} jest bardzo efektywna.
+Wszystkie nowo zarezerwowane obszary mają początek w adresie podzielnym przez
+rozmiar wielokrotności strony -- więc część funkcjonalności wywołania
+\verb+memalign+ dostajemy za darmo. Resztę można osiągnąć rezerwując
+odpowiednio większą ilość stron i odmapowując od początku obszaru te strony,
+których początki nie dzielą się przez zadaną liczbę.
+
+Jeśli obszarami o rozmiarze $<$ $32$ \verb+KiB+ zajmuje się osobny zarządca, to
+wielkość pól będzie mógł składować w danej typu \verb+int16_t+. Zyskujemy więc
+również na efektywności wykorzystania pamięci.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\textwidth]{mmapman-ao}
+\caption{Graficzna reprezentacja struktury danych \texttt{mmapman-ao}.}
+\end{figure}
+
+Struktura danych dla zarządcy jest zwykłą listą dwukierunkową przechowującą w
+każdym rekordzie dodatkowe dane -- między innymi adres początku okupowanego
+obszaru. Lista ta jest posortowana pod względem rosnących adresów.
+
+Nagłówek (czy raczej stopka) obszaru zawiera następujące informacje:
+\begin{center}
+\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
+\hline
+\textsc{pole} & \textsc{znaczenie} \\
+\hline
+\hline
+\verb+pages+ & Ilość stron zajmowanych przez obszar. \\
+\hline
+\verb+size+	 & Ilość bajtów zajmowanych przez blok wewnątrz obszaru. \\
+\hline
+\verb+prev+	 & Poprzedni nagłówek na liście zarządcy \texttt{mmapman-ao}. \\
+\hline
+\verb+next+	 & Następny nagłówek na liście zarządcy \texttt{mmapman-ao}. \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsubsection{Opis operacji}
+
+Rezerwacja bloku (\verb+alloc+) o rozmiarze $Size$ polega na pobraniu obszaru od
+menadżera stron, zainicjalizowaniu nagłówka i wstawieniu go na listę. Rozmiar
+rezerwowanego obszaru jest wyrównywany do wielkości podzielnej przez długość
+strony pamięci. Trzeba zadbać też o to, by na końcu obszaru znalazło się
+wystarczająco dużo przestrzeni by przechować nagłówek. Łączna ilość pamięci
+zajmowanej przez ten obszar to:
+$\left\lceil\frac{Size + HeaderSize}{PageSize}\right\rceil$ stron.
+
+Rezerwacja bloku o początku w adresie podzielnym przez potęgę dwójki
+(\verb+alloc_aligned+) nie różni się od \verb+alloc+ dla granicy wyrównania
+mniejszej, bądź równej wielkości strony. Dla większej wartości pobiera się 
+$\left\lceil\frac{Size + Alignment + HeaderSize}{PageSize}\right\rceil$
+stron, gdyż nie mamy wpływu na to w jakim dokładnie adresie zostanie zaczepiony
+nowy obszar. Wyżej podana ilość gwarantuje, że wewnątrz obszaru znajdziemy
+odpowiednią ilość miejsca pod adresem podzielnym przez granicę wyrównania.
+Następnie należy zwolnić niepotrzebne strony z początku oraz z końca obszaru,
+zinicjalizować nagłówek i wstawić obszar na listę.
+
+Operacja \verb+realloc+ może powiększyć zarezerwowany obszar o nieużytek
+występujący między końcem bloku, a początkiem nagłówka. Jeśli menadżer stron
+umożliwia określanie początku adresu pobieranego obszaru, to można
+zaimplementować procedurę \verb+expand_at_end+. Próbuje ona znaleźć określoną
+ilość wolnych stron zaczynających się bezpośrednio za naszym obszarem. Jeśli
+tak, to nowe strony są doczepiane do obszaru, zawartość nagłówka jest
+aktualizowana i przenoszona w nowe miejsce. Należy zaktualizować wskaźniki w
+sąsiadach nagłówka by odzwierciedlały jego nową pozycję. Kiedy \verb+realloc+
+pomniejsza dany blok, sprawdzane jest czy w obszarze jest nieużytek o rozmiarze
+co najmniej jednej strony. Jeśli tak, to wykorzystuje się procedurę
+\verb+shrink_at_end+. Przenosi ona nagłówek na koniec pierwszej strony,
+należącej do nieużytku, która jest go w stanie pomieścić. Następnie aktualizuje
+dane w nagłówku, zwalnia zbędne strony i aktualizuje wskaźniki w sąsiadach
+nagłówka.
+
+\subsubsection{Możliwe optymalizacje}
+
+Zdaje się, że jedyna możliwa ścieżka zwiększenia wydajności to zastąpienie
+listy nagłówków przy pomocy zbalansowanego drzewa. Ze względu na to, że ilość
+dużych bloków jest stosunkowo niewielka, taka optymalizacja jest nieopłacalna
+pod względem złożoności czasowej. Natomiast ciekawe jest to, że w przypadku
+operacji \verb+alloc+ zmniejszy się ilość dostępów do pamięci do logarytmicznej
+wielkości, w mniejszym stopniu obciążając pamięć podręczną.
+
+\newpage
 
 \subsection{Zarządca małych bloków -- \texttt{HEAPBLKMAN}}
 
-Zarządzania małymi blokami wymaga określenia osobnej strategii. Uwarunkowane
+Zarządzanie małymi blokami wymaga określenia osobnej strategii. Uwarunkowane
 jest to obserwacjami przeprowadzonymi na rzeczywistych programach.
 
 Przede wszystkim należy się spodziewać, że program będzie masowo przydzielał
@@ -836,7 +1033,7 @@ ich zawartość jest nieustalona. Poniżej wierzchołka stosu wszystkie bloki mu
 być na obu listach i pole \verb+prev+ zawsze musi mieć mniejszą wartość niż
 indeks bloku, w którym się znajduje.
 
-\subsubsection{Operacje}
+\subsubsection{Opis operacji}
 
 Zarezerwowanie (\verb+alloc+) bloku jest operacją działającą w czasie stałym i
 może przebiegać dwoma torami:
@@ -896,6 +1093,8 @@ bloków. Taki obiekt zachowywał by się na liście LRU i liście wolnych blokó
 posortowanych malejąco jak jeden wolny blok. Taka modyfikacja przyśpieszyłaby
 operację zwalniania obszaru w pierwszym przypadku.
 
+\newpage
+
 \subsection{Zarządca pozostałych bloków -- \texttt{BLKMAN-AO}}
 
 Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
@@ -905,6 +1104,16 @@ Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
 \includegraphics[width=0.90\textwidth]{blkman}
 \caption{Graficzna reprezentacja struktury danych \texttt{blkman}}
 \end{figure}
+
+\subsubsection{Opis operacji}
+
+\subsubsection{Możliwe optymalizacje}
+
+\newpage
+
+\subsection{Menadżer pamięci}
+
+\newpage
 
 % --=[ Wnioski ]=---------------------------------------------------------------
 

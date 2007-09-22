@@ -6,7 +6,7 @@ all:		mgr.pdf
 %.pdf: %.eps
 	epstopdf $<
 
-mgr.pdf:	mgr.tex stronicowanie.pdf linux-layout.pdf heapblkman.pdf blkman.pdf
+mgr.pdf:	mgr.tex stronicowanie.pdf linux-layout.pdf heapblkman.pdf mmapman-ao.pdf blkman.pdf pageman.pdf
 	pdflatex $<
 
 dist:	mgr.pdf
@@ -20,7 +20,7 @@ dist:	mgr.pdf
 
 clean:
 	rm -f mgr.{aux,log,ps,eps,dvi,pdf,toc}
-	rm -f {linux-layout,stronicowanie,heapblkman,blkman}.{pdf,eps}
+	rm -f {linux-layout,stronicowanie,heapblkman,blkman,mmapman-ao,pageman}.{pdf,eps}
 	rm -f *~ *.tmp
 
 # vim: ts=8 sw=8
