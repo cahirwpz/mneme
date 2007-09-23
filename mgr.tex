@@ -3,15 +3,17 @@
 \documentclass[12pt,a4paper,titlepage,twoside]{mwart}
 \usepackage{latexsym}
 \usepackage{polski}
-\usepackage{array}
+%\usepackage{array}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
-\usepackage{amsfonts}
+%\usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{a4wide}
 \usepackage{fancyhdr}
 \usepackage{tabularx}
-\usepackage{enumitem}
+%\usepackage{enumitem}
+\usepackage[iso]{isodateo}
+\usepackage{hyperref}
 \usepackage{listings}
 \usepackage{graphicx}
 \pagestyle{fancy}
@@ -19,7 +21,8 @@
 
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
-\title{Praca magisterska}
+\title{Wielowątkowy zarządca pamięci dzielonej}
+\date{}
 
 \frenchspacing
 
@@ -27,6 +30,31 @@
 
 \maketitle
 \cleardoublepage
+
+% --- Abstrakt -----------------------------------------------------------------
+
+\begin{abstract}
+\vspace{2ex}
+\begin{center}
+\begin{tabularx}{0.75\textwidth}{X}
+Najefektywniejszą metodą komunikacji między dwoma niezależnymi ścieżkami
+wykonania instrukcji jest wykorzystanie pamięci współdzielonej (ang.
+\textit{shared memory}). Procesy są to ścieżki wykonania kodu, które posiadają
+niezależne przestrzenie adresowe, a~utworzenie przestrzeni dzielonej między
+nimi wymaga odpowiednich mechanizmów systemu operacyjnego. Taki rodzaj pamięci
+nie podlega zarządzaniu w ramach menadżera pamięci standardowej biblioteki
+języka C. Jednak forma komunikacji między dwoma procesami może angażować
+wykorzystanie dynamicznej struktury danych korzystającej z procedur
+analogicznych do \texttt{malloc} i \texttt{free}. Istnieje tylko jedna
+publicznie dostępna biblioteka o otwartych źródłach realizująca to zadanie --
+\texttt{libmm}. Niestety allokator tam użyty cechuje niska wydajność operacji i
+duża fragmentacja. Celem tej pracy jest implementacja wydajnego mechanizmu
+zarządzania przestrzenią udostępnianą w ramach pamięci dzielonej. 
+\end{tabularx}
+\end{center}
+\end{abstract}
+
+% --- Spis treści --------------------------------------------------------------
 
 \tableofcontents
 \cleardoublepage
@@ -36,37 +64,173 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{1.2ex plus 0.5ex minus 0.2ex}
 
-\section{Motywacja}
+\section{Wstęp}
 
 Algorytmy zarządzania stertą towarzyszą informatyce od samych jej początków.
-Allokatorów sterty zaczęto używać, kiedy pojawiły się pierwsze dynamiczne
-struktury danych, takie jak listy i drzewa, a sama pamięć była na tyle duża, by
-zmieścić w niej większe problemy. Mimo, że minęło 50 lat od pojawienia się
-pierwszych algorytmów z tej klasy, dziedzina ta nadal nie jest wyczerpująco
-zbadana od strony praktycznej. Przyczyny są dwojakiej natury. Po pierwsze --
-duży wpływ na działanie allokatora ma specyfika sprzętu -- w szczególności
-wielowarstwowy model pamięci i wieloprocesorowość dzisiejszych komputerów. Po
-drugie -- programy allokujące pamięć z reguły korzystają z allokatora w pewien
-określony sposób, zdradzając przy tym ściśle określone wzorce.
+Menadżerów pamięci zaczęto używać, kiedy pojawiły się pierwsze dynamiczne
+struktury danych, takie jak listy i drzewa, a sama pamięć była na tyle duża by
+zmieścić w niej większe zadania.
 
-Ewolucja sprzętu spowodowała, że dobry algorytm zarządzania stertą 
-musi charakteryzować się niską fragmentacją, krótkim zamortyzowanym czasem
-przypadającym na jedną operację i wykorzystaniem lokalności bloków.
-Umiejętna implementacja korzystająca ze specyfiki pamięci ma również wpływ
-na prędkość algorytmów korzystających z allokatora.
+Ponieważ istnieje wiele wariantów problemu zarządzania pamięcią, należy
+zawięzić co jest rozumiane przez ten termin. W tej pracy tematem rozważań
+będzie niskopoziomowy menadżer pamięci bez odśmiecania -- taki jaki znamy z
+biblioteki standardowej języka C. Udostępnia on co najmniej dwie operacje:
+\texttt{malloc} i \texttt{free}. Raz przydzielony blok pamięci nie może się
+przemieszczać, ani być w jakikolwiek inny sposób modyfikowany przez algorytm
+zarządcy. Zagadnienie te zostanie dokładniej opisane w dziale
+\hyperlink{Teoria}{\textbf{Teoretyczne podstawy}}. Zostaną tam również
+wytłumaczone pewne terminy, które wydają się być niejasne i często, być może bez
+świadomości czytelnika, są używane zamiennie.
 
-System Linux posiada bardzo dobre algorytmy zarządzania stertą, zarówno te
-działające w przestrzeni użytkownika (biblioteka glibc i glib) jak i w
-przestrzeni jądra. Niestety nie są to ani algorytmy uniwersalne, ani łatwo
-modyfikowalne na potrzeby programisty. Celem tej pracy jest zaimplementowanie
-allokatora pamięci działającego w pamięci dzielonej procesu. Specyfika tego
-problemu zostanie przestawiona w dziale \textbf{Implementacja}.
+Problem allokacji pamięci jest od strony teoretycznej bardzo dobrze zbadany.
+Większość badań została przeprowadzona na przełomie lat 60-tych i 70-tych
+ubiegłego wieku. Skupiały się one głównie na analizie nieużytków powstałych w
+wyniku przeprowadzenia ciągu operacji na zarządzanym obszarze. Określiły górną
+granicę na fragmentację pamięci. Przeprowadzone wtedy badania odzwierciedlały
+główne problemy z jakimi borykano się wtedy w zadaniach obliczeniowych. Pamięć
+była bardzo kosztownym zasobem i było jej stosunkowo mało, więc poświęcano
+wydajność operacji przydzielania i zwalniania bloku na rzecz ogólnej ilości
+składowanych danych.
+
+Mimo, że minęło około 50 lat od pojawienia się pierwszych algorytmów
+zarządzania stertą, dziedzina ta nadal nie jest wyczerpująco poznana od strony
+praktycznej. Przyczyną tego jest nieustanna ewolucja sprzętu i zmiana realiów,
+jeśli chodzi o koszt zasobów.
+
+W ciągu ostatnich dwudziestu lat upowszechnił się w procesorach mechanizm
+stronicowania, pamięć podręczna i wielopotokowość. Od pięciu lat następuje
+dynamiczny rozwój procesorów wielordzeniowych. Za tymi zmianami próbują nadążyć
+systemy operacyjne udostępniając programom efektywne, lecz stosunkowo
+niskopoziomowe interfejsy --~w~ramach których nie mieszczą się niestety
+menadżery pamięci przestrzeni użytkownika.
+
+Ponieważ operacje zarządcy sterty są bardzo często wykorzystywane, to
+efektywność aplikacji pośrednio zależy od ich wydajności. Zależności te są o
+wiele bardziej złożone niż się wydaje. Miejsce przydziału bloku, sposób
+wykorzystania pamięci dostarczanej przez system operacyjny, przystosowanie do
+wielowątkowości i inne aspekty, mogą mieć wpływ nie tylko na wydajność operacji
+\texttt{malloc} i \texttt{free}. Umiejętna implementacja korzystająca ze
+specyfiki architektury ma również wpływ na prędkość algorytmów korzystających z
+allokatora. Innymi słowy -- nie sposób zbudować wydajny algorytm zarządzania
+pamięcią nie znając dobrze specyfiki architektury sprzętowej i zachowań systemu
+operacyjnego. Zagadnienia z tym związane poruszono w rozdziale
+\hyperlink{Architektura}{\textbf{Podstawy architektury pamięci}}.
+
+System \texttt{Linux} posiada stosunkowo dobre algorytmy zarządzania stertą,
+zarówno te działające w przestrzeni użytkownika (biblioteka \texttt{GNU libc} i
+\texttt{glib2}) jak i w przestrzeni jądra (\texttt{slab allocator}). Niestety
+nie są to ani algorytmy uniwersalne, ani łatwo modyfikowalne na potrzeby
+programisty. Dobry algorytm zarządzania pamięcią musi charakteryzować się niską
+fragmentacją, krótkim zamortyzowanym czasem przypadającym na jedną operację i
+wykorzystaniem zjawiska lokalności. Znajomość budowy dobrze znanych algorytmów
+wydaje się być niezbędna do tego, by przeanalizować rozwój allokatorów i tym
+samym rzucić światło na podstawy nowo konstruowanego menadżera. Kilka
+podstawowych strategi przydziału bloków zostało zaprezentowanych w rozdziale
+\hyperlink{Klasyka}{\textbf{Klasyczne menadżery pamięci}}.
+
+Większość analiz teoretycznych przeprowadzonych na menadżerach pamięci
+określała zachowania algorytmów dla losowych ciągów danych. Dane w znaczeniu
+tej klasy problemów to wielkość bloku i długość czasu jego życia -- czyli ilość
+operacji od momentu zarezerwowania bloku do jego zwolnienia. O ile testy
+zachowania menadżera pamięci na losowych danych mają sens, to w praktyce mają
+niewielkie znaczenie. Testy takie mogą pomóc wychwytywać pewnego rodzaju
+anomalie, czy po prostu błędy, dla ciągów danych, które w praktyce zdarzają się
+bardzo rzadko.
+
+Okazuje się, że programy korzystają z menadżera pamięci w pewien określony
+sposób, zdradzając przy tym ściśle określone wzorce. Allokatory można testować
+jako samodzielne programy i jako elementy innych programów. Często do testów
+wybiera się pewien zbiór aplikacji i obserwuje czas działania w zależności od
+algorymu allokatora.
+
+Systemy uniksowe dzięki mechanizmowi przesłaniania symboli bibliotecznych
+umożliwiają zmuszanie programów do korzystania z menadżera pamięci spoza
+biblioteki standardowej. Dzięki temu można generować tzw. ślady wykonania
+programu i analizować w jaki sposób korzystał z wywołań \texttt{malloc} i
+\texttt{free}. Posiadając ślady można próbować generować testy składające się
+na pseudolosowe ciągi operacji z uwzględnieniem zachowań pewnej przebadanej
+liczby programów. Można także optymalizować allokator bezpośrednio pod daną
+aplikację. Ciekawą i mało zbadaną dziedziną badań jest generowanie i analiza
+śladów dla aplikacji wielowątkowych.
+
+O testowaniu, technikach generowania śladów, doborze miarodajnych aplikacji do
+testów traktuje rozdział \hyperlink{Testowanie}{\textbf{Metody testowania
+wydajności}}.
+
+Pamięć dzielona jest to spójny obszar pamięci umiejscowiony w przestrzeni
+adresowej kilku ścieżek wykonania instrukcji nazywanych procesami lub wątkami.
+Istotne jest zrozumienie różnic między tymi dwoma klasami obiektów.
+
+Wątki działają wewnątrz jednego procesu. Dzielą między siebie przestrzeń
+adresową procesu w ramach którego powstały. Wątki angażują zdecydowanie mniej
+zasobów niż procesy. Ich wadą jest to, że potencjalnie są bardzo niebezpieczne.
+Potencjalny błąd w jednym wątku może zniszczyć dane innych wątków. Czasem, ze
+wzgędów bezpieczeństwa i poufności danych, nie można dzielić całej przestrzeni
+adresowej.
+
+Procesy, w odróżnieniu od wątków, posiadają własne niezależne przestrzenie
+adresowe. Separują własne zasoby od innych procesów. Zarządzaniem dostępu do
+pewnych zasobów zlecają systemowi operacyjnemu -- zapewniając duży stopień
+poufności danych. Czasem jednak muszą się ze sobą komunikować. Wydaje się, że
+najwydajnieszym sposobem na szybką wymianę danych między procesami jest
+dzielenie pewnego obszaru pamięci. Stworzenie pamięci dzielonej między
+procesami wymaga specjalnych mechanizmów systemu operacyjnego.
+
+Autor pracy w trakcie swojej kariery programistycznej natknął się na problem
+efektywnego współdzielenia prostej struktury danych (tablicy haszującej) między
+procesami serwera \textit{Apache} w systemie \texttt{Linux}.  Należy się tu
+krótkie wyjaśnienie jak przebiega procedura obsługi połączenia \verb+HTTP+ w
+tym serwerze. Za odbieranie połączeń odpowiada główny proces działający z
+prawami administratora. Celem zwiększenia bezpieczeństwa i odporności na błędy
+główny proces wykonuje swoją kopię przy pomocy procedury \verb+fork+, a
+następnie deleguje obsługę pewnej ilości połączeń do dziecka.  Proces potomny
+startuje z uprawnieniami administratora i szybko je porzuca, gdyż obsługa
+połączenia może być potencjalnie niebezpieczna. Dziecko obsługuje połączenia,
+które zostały mu przydzielone, a następnie kończy swoje działanie.  Taka
+architektura separacji zadań dobrze sprawdza się w praktyce, czyniąc
+\textit{Apache} jednym z bezpieczniejszych serwerów \texttt{HTTP}.
+
+Zadanie programistyczne polegało na zaimplementowaniu modułu serwera
+\textit{Apache} zabraniającego dostępu użytkownikom (określonym adresom
+\texttt{IP}) do stron internetowych na podstawie pewnych kryteriów. Każde
+obsłużenie połączenia musiało zmieniać parametry używane jako kryterium
+akceptacji żądań klientów. W trakcie testów mających określić miejsce
+przechowywania danych o połączeniach wybrano pamięć dzieloną, ze względu na
+najmniejszy narzut obliczeń wymaganych do obsługi żądania. Główny proces
+serwera rezerwował pewien obszar pamięci współdzielonej, która była
+przekazywana w niezmienionej postaci do procesów potomnych -- co gwarantuje
+procedura \verb+fork+. Dzięki temu wszystkie procesy potomne mogły się ze soba
+w efektywny sposób komunikować.
+
+Nowoczesny algorytm zarządzania pamięcią jest tworem hybrydowym i z reguły
+posiada pięć rozróżnialnych podsystemów. Zarządzanie stronami to najbardziej
+niskopoziomowy element całego menadżera. Odpowiada za pobieranie, zwalnianie i
+buforowanie stron pamięci. Istnieją trzy pomniejsze algorytmy zarządzania
+blokami o odpowiednich rozmiarach -- podział ten jest stosowany ze względu na
+odmienne preferencje programów co do określonych rozmiarów allokacji. Ostatnim
+elementem jest właściwy menadżer pamięci, który używa wyżej wymienionych
+elementów i realizuje pewną strategię zarządzania blokami i obszarami pamięci.
+
+W rozdziale \hyperlink{Implementacja}{\textbf{Implementacja}} autor przedstawił
+założenia, które poczynił implementując własny menadżer pamięci. Został tam
+zaprezentowany standardowegy zarządca sterty dla systemu operacyjnego
+\texttt{Linux}, który był podstawą określającą interfejs programisty i
+zachowanie poszczególnych operacji. Opisane zostały poszczególne składowe
+algorytmu, ogólna strategia zarządzania oraz ewentualne modyfikacje i
+rozszerzenia mające na celu zwiększenie wydajności.
+
+W rozdziale \hyperlink{Podsumowanie}{\textbf{Podsumowanie i kierunek dalszych
+badań}} zostały przedstawione potencjalne zastosowania wielowątkowego menadżera
+pamięci poza wspomnianym przypadkiem modułu dla serwera \textit{Apache}. Autor
+przedstawił też możliwą ścieżkę ewolucji dla poczynionych badań i
+implementacji.
 
 \newpage
 
 % --=[ Wstęp teoretyczny ]=-----------------------------------------------------
 
-\section{Wstęp teoretyczny}
+\section{Teoretyczne podstawy}
+\hypertarget{Teoria}{}
 
 Zarządcy pamięci są algorytmami tak powszechnymi, że niemal nie zauważa się ich
 istnienia. Programiści traktują wywołania funkcji realizujących przydzielanie i
@@ -168,6 +332,7 @@ osiągalny przez wywołania malloc/free z biblioteki standardowej języka C.
 % --=[ Podstawy architektury pamięci ]=-----------------------------------------
 
 \section{Podstawy architektury pamięci}
+\hypertarget{Architektura}{}
 
 Przed przystąpieniem do realizacji jakiegokolwiek algorytmu zarządzania stertą
 należy dokładnie przeanalizować strukturę pamięci. Struktura pamięci to pojęcie
@@ -325,6 +490,12 @@ komórki pamięci. To rozróżnienie jest istotne, gdyż mechanizm stronicowania
 jest bardzo elastyczny i umożliwia odwzorowanie przestrzeni adresowej na pamięć
 zewnętrzną, pliki, pamięć urządzeń wejścia-wyjścia, itd.
 
+\begin{figure}[h]
+\centering
+\includegraphics[height=0.5\textwidth]{linux-layout}
+\caption{Obłożenie przestrzeni adresowej procesu w systemie Linux}
+\end{figure}
+
 Najnowsze systemy komputerowe mimo ograniczenia na przestrzeń adresową potrafią
 umożliwić procesowi dostęp do większej ilości pamięci fizycznej niż wynosi
 wielkość przestrzeni adresowej. Oczywiście mechanizm ten nie jest przezroczysty
@@ -337,12 +508,6 @@ W systemach uniksowych oczywiście nie cała przestrzeń adresowa jest dostępna
 dla procesu, jej część zajmuje jądro systemu. W tym fragmencie przestrzeni
 jądro udostępnia swoje publiczne struktury, może mapować bufory, dane otrzymane
 od urządzeń wejścia-wyjścia, itd.
-
-\begin{figure}[h]
-\centering
-\includegraphics[height=0.5\textwidth]{linux-layout}
-\caption{Obłożenie przestrzeni adresowej procesu w systemie Linux}
-\end{figure}
 
 Na przestrzeń adresową procesu użytkownika w systemie Linux składają się
 następujące obszary:
@@ -564,6 +729,7 @@ działającego na architekturze wieloprocesorowej.
 % --=[ Omówienie klasycznych mechanizmów ]=-------------------------------------
 
 \section{Klasyczne menadżery}
+\hypertarget{Klasyka}{}
 
 Podstawy, z których będę korzystał wymyślając własny algorytm.
 
@@ -584,6 +750,7 @@ Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 % --=[ Testowanie wydajności ]=-------------------------------------------------
 
 \section{Testowanie wydajności}
+\hypertarget{Testowanie}{}
 
 \begin{enumerate}
 \item test z losowymi parami \textit{(długość życia, wielkość)} o równomiernym rozkładzie,
@@ -603,6 +770,7 @@ Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 % --=[ Implementacja ]=---------------------------------------------------------
 
 \section{Implementacja}
+\hypertarget{Implementacja}{}
 
 \subsection{Założenia}
 
@@ -1117,14 +1285,14 @@ Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
 
 % --=[ Wnioski ]=---------------------------------------------------------------
 
-\section{Wnioski i kierunek badań}
+\section{Podsumowanie i kierunek dalszych badań}
+\hypertarget{Podsumowanie}{}
 
 Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić:
 \begin{itemize}
 \item istotne dla wydajności dostępów do pamięci jest umieszczanie danych w
 adresach o naturalnych wartościach tj. $32$-bitowe słowo powinno być pod
 adresem podzielnym przez $4$,
-\item wywołania systemowe są operacjami kosztownymi i nie można ich robić zbyt często,
 \end{itemize}
 
 \end{document}
