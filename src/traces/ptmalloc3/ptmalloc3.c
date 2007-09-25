@@ -44,6 +44,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <malloc-machine.h>
 
 #include "malloc-2.8.3.h"
+#include "traces.h"
 
 /* ----------------------------------------------------------------------- */
 
@@ -386,7 +387,7 @@ static void* memalign_hook_ini (size_t alignment, size_t sz,
 # define memalign_hook_ini memalign_starter
 #endif
 
-void weak_variable (*__malloc_initialize_hook) (void) = NULL;
+void weak_variable (*__malloc_initialize_hook) (void) = traces_init_hook;
 void weak_variable (*__free_hook) (void * __ptr, const void *)
      = free_hook_ini;
 void * weak_variable (*__malloc_hook) (size_t __size, const void *)
@@ -723,13 +724,15 @@ public_mALLOc(size_t bytes)
   struct malloc_arena* ar_ptr;
   void *victim;
 
+  traces_log_t *logline = traces_prologue();
+
   void * (*hook) (size_t, const void *) = __malloc_hook;
   if (hook != NULL)
-    return (*hook)(bytes, RETURN_ADDRESS (0));
+    return traces_epilogue_malloc(logline, bytes, (*hook)(bytes, RETURN_ADDRESS (0)));
 
   arena_get(ar_ptr, bytes + FOOTER_OVERHEAD);
   if (!ar_ptr)
-    return 0;
+    return traces_epilogue_malloc(logline, bytes, 0);
   if (ar_ptr != &main_arena)
     bytes += FOOTER_OVERHEAD;
   victim = mspace_malloc(arena_to_mspace(ar_ptr), bytes);
@@ -738,7 +741,7 @@ public_mALLOc(size_t bytes)
   (void)mutex_unlock(&ar_ptr->mutex);
   assert(!victim || is_mmapped(mem2chunk(victim)) ||
 	 ar_ptr == arena_for_chunk(mem2chunk(victim)));
-  return victim;
+  return traces_epilogue_malloc(logline, bytes, victim);
 }
 #ifdef libc_hidden_def
 libc_hidden_def(public_mALLOc)
@@ -758,6 +761,10 @@ public_fREe(void* mem)
 
   if (mem == 0)                              /* free(0) has no effect */
     return;
+
+  traces_log_t *logline = traces_prologue();
+
+  traces_epilogue_free(logline, mem);
 
   p = mem2chunk(mem);
 
@@ -794,9 +801,13 @@ public_rEALLOc(void* oldmem, size_t bytes)
 
   void* newp;             /* chunk to return */
 
+  traces_log_t *logline = NULL;
+
   void * (*hook) (void *, size_t, const void *) = __realloc_hook;
-  if (hook != NULL)
-    return (*hook)(oldmem, bytes, RETURN_ADDRESS (0));
+  if (hook != NULL) {
+	logline = traces_prologue(); 
+    return traces_epilogue_realloc(logline, oldmem, bytes, (*hook)(oldmem, bytes, RETURN_ADDRESS (0)));
+  }
 
 #if REALLOC_ZERO_BYTES_FREES
   if (bytes == 0 && oldmem != NULL) { public_fREe(oldmem); return 0; }
@@ -805,6 +816,8 @@ public_rEALLOc(void* oldmem, size_t bytes)
   /* realloc of null is supposed to be same as malloc */
   if (oldmem == 0)
     return public_mALLOc(bytes);
+
+  logline = traces_prologue(); 
 
   oldp    = mem2chunk(oldmem);
   if (is_mmapped(oldp))
@@ -837,7 +850,7 @@ public_rEALLOc(void* oldmem, size_t bytes)
 
   assert(!newp || is_mmapped(mem2chunk(newp)) ||
 	 ar_ptr == arena_for_chunk(mem2chunk(newp)));
-  return newp;
+  return traces_epilogue_realloc(logline, oldmem, bytes, newp);
 }
 #ifdef libc_hidden_def
 libc_hidden_def (public_rEALLOc)
@@ -850,11 +863,14 @@ public_mEMALIGn(size_t alignment, size_t bytes)
   void *p;
 
   void * (*hook) (size_t, size_t, const void *) = __memalign_hook;
-  if (hook != NULL)
-    return (*hook)(alignment, bytes, RETURN_ADDRESS (0));
+  if (hook != NULL) {
+    return traces_epilogue_memalign(traces_prologue(), alignment, bytes, (*hook)(alignment, bytes, RETURN_ADDRESS (0)));
+  }
 
   /* If need less alignment than we give anyway, just relay to malloc */
   if (alignment <= MALLOC_ALIGNMENT) return public_mALLOc(bytes);
+
+  traces_log_t *logline = traces_prologue();
 
   /* Otherwise, ensure that it is at least a minimum chunk size */
   if (alignment <  MIN_CHUNK_SIZE)
@@ -863,7 +879,7 @@ public_mEMALIGn(size_t alignment, size_t bytes)
   arena_get(ar_ptr,
 	    bytes + FOOTER_OVERHEAD + alignment + MIN_CHUNK_SIZE);
   if(!ar_ptr)
-    return 0;
+    return traces_epilogue_memalign(logline, alignment, bytes, 0);
 
   if (ar_ptr != &main_arena)
     bytes += FOOTER_OVERHEAD;
@@ -875,7 +891,7 @@ public_mEMALIGn(size_t alignment, size_t bytes)
 
   assert(!p || is_mmapped(mem2chunk(p)) ||
 	 ar_ptr == arena_for_chunk(mem2chunk(p)));
-  return p;
+  return traces_epilogue_memalign(logline, alignment, bytes, p);
 }
 #ifdef libc_hidden_def
 libc_hidden_def (public_mEMALIGn)
@@ -887,11 +903,13 @@ public_vALLOc(size_t bytes)
   struct malloc_arena* ar_ptr;
   void *p;
 
+  traces_log_t *logline = traces_prologue();
+
   if(__malloc_initialized < 0)
     ptmalloc_init ();
   arena_get(ar_ptr, bytes + FOOTER_OVERHEAD + MIN_CHUNK_SIZE);
   if(!ar_ptr)
-    return 0;
+    return traces_epilogue_memalign(logline, 4096, bytes, 0);
   if (ar_ptr != &main_arena)
     bytes += FOOTER_OVERHEAD;
   p = mspace_memalign(arena_to_mspace(ar_ptr), 4096, bytes);
@@ -899,7 +917,7 @@ public_vALLOc(size_t bytes)
   if (p && ar_ptr != &main_arena)
     set_non_main_arena(p, ar_ptr);
   (void)mutex_unlock(&ar_ptr->mutex);
-  return p;
+  return traces_epilogue_memalign(logline, 4096, bytes, p);
 }
 
 int
@@ -943,22 +961,24 @@ public_cALLOc(size_t n_elements, size_t elem_size)
     }
   }
 
+  traces_log_t *logline = traces_prologue();
+
   if (hook != NULL) {
     sz = bytes;
     mem = (*hook)(sz, RETURN_ADDRESS (0));
     if(mem == 0)
-      return 0;
+      return traces_epilogue_malloc(logline, bytes, 0);
 #ifdef HAVE_MEMCPY
-    return memset(mem, 0, sz);
+    return traces_epilogue_malloc(logline, bytes, memset(mem, 0, sz));
 #else
     while(sz > 0) ((char*)mem)[--sz] = 0; /* rather inefficient */
-    return mem;
+    return traces_epilogue_malloc(logline, bytes, mem);
 #endif
   }
 
   arena_get(ar_ptr, bytes + FOOTER_OVERHEAD);
   if(!ar_ptr)
-    return 0;
+    return traces_epilogue_malloc(logline, bytes, 0);
 
   if (ar_ptr != &main_arena)
     bytes += FOOTER_OVERHEAD;
@@ -971,7 +991,7 @@ public_cALLOc(size_t n_elements, size_t elem_size)
   assert(!mem || is_mmapped(mem2chunk(mem)) ||
 	 ar_ptr == arena_for_chunk(mem2chunk(mem)));
 
-  return mem;
+  return traces_epilogue_malloc(logline, bytes, mem);
 }
 
 void**

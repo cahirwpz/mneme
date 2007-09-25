@@ -20,7 +20,7 @@ TAR_FLAGS = --numeric-owner --exclude "*~" --exclude "debian/tmp*"
 CC = gcc
 
 SYS_FLAGS  =
-OPT_FLAGS  = -g -O2 #-O # -O2
+OPT_FLAGS  = -g -march=i686 -O2 #-O # -O2
 WARN_FLAGS = -Wall -Wstrict-prototypes
 SH_FLAGS   = -shared -fpic
 
@@ -35,14 +35,14 @@ M_FLAGS   = -DTHREAD_STATS=1 #-DMALLOC_DEBUG=1 -DDEBUG=1
 # Thread flags.
 # See the platform-specific targets below.
 THR_FLAGS = -DUSE_TSD_DATA_HACK -D_REENTRANT
-THR_LIBS  = -lpthread
+THR_LIBS  = -lrt -lpthread
 
 RM        = rm -f
 AR        = ar
 RANLIB    = ranlib
 
-MALLOC_OBJ = ptmalloc3.o malloc.o
-LIB_MALLOC = libptmalloc3.a
+MALLOC_OBJ = ptmalloc3.o malloc.o traces.o
+LIB_MALLOC = libptmalloc3-traces.a
 
 T_SUF =
 TESTS = t-test1$(T_SUF) t-test2$(T_SUF) \
@@ -65,32 +65,32 @@ malloc.o: malloc.c
 #malloc-stats.o: malloc-stats.c malloc.h
 #	$(CC) -c $(CFLAGS) $(M_FLAGS) $<
 
-libptmalloc3.a: $(MALLOC_OBJ)
+libptmalloc3-traces.a: $(MALLOC_OBJ)
 	$(AR) cr $@ $(MALLOC_OBJ)
 	$(RANLIB) $@
 
-libptmalloc3.so: $(MALLOC_OBJ)
-	$(CC) $(SH_FLAGS) $(CFLAGS) $(M_FLAGS) $(MALLOC_OBJ) -o $@
+libptmalloc3-traces.so: $(MALLOC_OBJ)
+	$(CC) $(SH_FLAGS) $(CFLAGS) $(M_FLAGS) $(MALLOC_OBJ) $(THR_LIBS) -o $@
 
 again:
 	$(RM) $(TESTS)
 	$(MAKE) $(TESTS)
 
 clean:
-	$(RM) $(MALLOC_OBJ) libptmalloc3.a libptmalloc3.so $(TESTS) \
-         core core.[0-9]*
+	$(RM) $(MALLOC_OBJ) libptmalloc3-traces.a libptmalloc3-traces.so $(TESTS) \
+         core core.[0-9]* *~ *.bin
 
-m-test1$(T_SUF): m-test1.c $(LIB_MALLOC)
-	$(CC) $(CFLAGS) $(T_FLAGS) m-test1.c $(LIB_MALLOC) $(THR_LIBS) -o $@
+m-test1$(T_SUF): m-test1.c 
+	$(CC) $(CFLAGS) $(T_FLAGS) m-test1.c $(THR_LIBS) -o $@
 
-t-test1$(T_SUF): t-test1.c t-test.h $(LIB_MALLOC)
-	$(CC) $(CFLAGS) $(T_FLAGS) t-test1.c $(LIB_MALLOC) $(THR_LIBS) -o $@
+t-test1$(T_SUF): t-test1.c t-test.h
+	$(CC) $(CFLAGS) $(T_FLAGS) t-test1.c $(THR_LIBS) -o $@
 
-t-test2$(T_SUF): t-test2.c t-test.h $(LIB_MALLOC)
-	$(CC) $(CFLAGS) $(T_FLAGS) t-test2.c $(LIB_MALLOC) $(THR_LIBS) -o $@
+t-test2$(T_SUF): t-test2.c t-test.h
+	$(CC) $(CFLAGS) $(T_FLAGS) t-test2.c $(THR_LIBS) -o $@
 
-tst-mallocstate$(T_SUF): tst-mallocstate.c $(LIB_MALLOC)
-	$(CC) $(CFLAGS) $(T_FLAGS) tst-mallocstate.c $(LIB_MALLOC) \
+tst-mallocstate$(T_SUF): tst-mallocstate.c 
+	$(CC) $(CFLAGS) $(T_FLAGS) tst-mallocstate.c \
 	 $(THR_LIBS) -o $@
 
 tst-mstats$(T_SUF): tst-mstats.c $(LIB_MALLOC)
@@ -146,9 +146,9 @@ linux-pthread:
 linux-shared:
 	$(MAKE) SYS_FLAGS='-D_GNU_SOURCE=1 -fpic' \
  WARN_FLAGS='-Wall -Wstrict-prototypes' \
- OPT_FLAGS='$(OPT_FLAGS)' THR_FLAGS='-DUSE_TSD_DATA_HACK' \
+ OPT_FLAGS='$(OPT_FLAGS)' THR_FLAGS='-DUSE_TSD_DATA_HACK' THR_LIBS="-lrt -lpthread" \
  INC_FLAGS='-Isysdeps/pthread -Isysdeps/generic -I.' M_FLAGS='$(M_FLAGS)' \
- LIB_MALLOC=libptmalloc3.so
+ LIB_MALLOC=libptmalloc3-traces.so
 
 sproc:
 	$(MAKE) THR_FLAGS='' THR_LIBS='' OPT_FLAGS='$(OPT_FLAGS)' CC='$(CC)' \
@@ -159,7 +159,7 @@ sproc-shared:
 	$(MAKE) THR_FLAGS='' THR_LIBS= \
 	 SH_FLAGS='-shared -check_registry /usr/lib/so_locations' \
 	 INC_FLAGS='-Isysdeps/sproc -Isysdeps/generic -I.' \
-	  LIB_MALLOC=libptmalloc3.so M_FLAGS='$(M_FLAGS)'
+	  LIB_MALLOC=libptmalloc3-traces.so M_FLAGS='$(M_FLAGS)'
 
 sproc-libc:
 	$(MAKE) THR_FLAGS='' THR_LIBS= LIB_MALLOC= T_FLAGS= \
