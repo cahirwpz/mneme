@@ -13,10 +13,11 @@
 
 #include "traces.h"
 
-#define VERBOSE 0
+#define VERBOSE 1
+#define WANT_TO_HAVE_ATEXIT_BUG 0
 
 #if VERBOSE == 1
-#define DEBUG(format, args...) fprintf(stderr, "%s: " format "\n", __func__, ##args)
+#define DEBUG(format, args...) fprintf(stderr, "[%.8x] %s: " format "\n", (uint32_t)pthread_self(), __func__, ##args)
 #else
 #define DEBUG(format, args...)
 #endif
@@ -51,6 +52,9 @@ typedef struct traces_data traces_data_t;
 
 static traces_data_t *traces = NULL;
 
+static void traces_at_exit(void);
+static void traces_register_at_exit(void);
+
 /**
  * 
  */
@@ -58,8 +62,6 @@ static traces_data_t *traces = NULL;
 static inline int traces_obtain_log_line_number(void)
 {
 	int linenum;
-
-	DEBUG("begin");
 
 	while (1) {
 		/* wait for buffer to be emptied */
@@ -160,7 +162,11 @@ static traces_log_t *traces_obtain_log_line(void)
 
 static void traces_release_log_line(traces_log_t *logline)
 {
-	AO_fetch_and_sub1(&traces->usecnt);
+	if (traces) {
+		AO_fetch_and_sub1(&traces->usecnt);
+
+		DEBUG("released %p", logline);
+	}
 }
 
 /**
@@ -169,10 +175,15 @@ static void traces_release_log_line(traces_log_t *logline)
 
 traces_log_t *traces_prologue(void)
 {
-	if (traces == NULL)
-		traces_init_hook();
+	traces_log_t *logline = NULL;
+	
+	if (traces) {
+		logline = traces_obtain_log_line();
+		
+		DEBUG("obtain %p", logline);
+	}
 
-	return traces_obtain_log_line();
+	return logline;
 }
 
 /**
@@ -183,16 +194,16 @@ traces_log_t *traces_prologue(void)
 
 void traces_epilogue_free(traces_log_t *logline, void *ptr)
 {
-	if (traces == NULL)
-		traces_init_hook();
+	DEBUG("log line %p", logline);
+	
+	if (traces && logline) {
+		logline->opcode  = OP_FREE;
+		logline->args[0] = (uint32_t)ptr;
+		
+		DEBUG("free(%p)", ptr);
 
-	if (logline == NULL)
-		abort();
-
-	logline->opcode  = OP_FREE;
-	logline->args[0] = (uint32_t)ptr;
-
-	traces_release_log_line(logline);
+		traces_release_log_line(logline);
+	}
 }
 
 /**
@@ -205,17 +216,17 @@ void traces_epilogue_free(traces_log_t *logline, void *ptr)
 
 void *traces_epilogue_malloc(traces_log_t *logline, size_t size, void *result)
 {
-	if (traces == NULL)
-		traces_init_hook();
+	DEBUG("log line %p", logline);
+		
+	if (traces && logline) {
+		logline->opcode  = OP_MALLOC;
+		logline->result  = (uint32_t)result;
+		logline->args[0] = size;
+		
+		DEBUG("malloc(%d) = %p", size, result);
 
-	if (logline == NULL)
-		abort();
-
-	logline->opcode  = OP_MALLOC;
-	logline->result  = (uint32_t)result;
-	logline->args[0] = size;
-
-	traces_release_log_line(logline);
+		traces_release_log_line(logline);
+	}
 
 	return result;
 }
@@ -231,27 +242,31 @@ void *traces_epilogue_malloc(traces_log_t *logline, size_t size, void *result)
 
 void *traces_epilogue_realloc(traces_log_t *logline, void *ptr, size_t size, void *result)
 {
-	if (traces == NULL)
-		traces_init_hook();
+	DEBUG("log line %p", logline);
 
-	if (logline == NULL)
-		abort();
+	if (traces && logline) {
+		if (ptr == NULL) {
+			logline->opcode  = OP_MALLOC;
+			logline->result  = (uint32_t)result;
+			logline->args[0] = size;
+			
+			DEBUG("malloc(%d) = %p", size, result);
+		} else if (size == 0) {
+			logline->opcode  = OP_FREE;
+			logline->args[0] = (uint32_t)ptr;
+			
+			DEBUG("free(%p)", ptr);
+		} else {
+			logline->opcode  = OP_REALLOC;
+			logline->result  = (uint32_t)result;
+			logline->args[0] = (uint32_t)ptr;
+			logline->args[1] = size;
+			
+			DEBUG("realloc(%p, %d) = %p", ptr, size, result);
+		}
 
-	if (ptr == NULL) {
-		logline->opcode  = OP_MALLOC;
-		logline->result  = (uint32_t)result;
-		logline->args[0] = size;
-	} else if (size == 0) {
-		logline->opcode  = OP_FREE;
-		logline->args[0] = (uint32_t)ptr;
-	} else {
-		logline->opcode  = OP_REALLOC;
-		logline->result  = (uint32_t)result;
-		logline->args[0] = (uint32_t)ptr;
-		logline->args[1] = size;
+		traces_release_log_line(logline);
 	}
-
-	traces_release_log_line(logline);
 
 	return result;
 }
@@ -267,18 +282,18 @@ void *traces_epilogue_realloc(traces_log_t *logline, void *ptr, size_t size, voi
 
 void *traces_epilogue_memalign(traces_log_t *logline, size_t alignment, size_t size, void *result)
 {
-	if (traces == NULL)
-		traces_init_hook();
+	DEBUG("log line %p", logline);
 
-	if (logline == NULL)
-		abort();
+	if (traces && logline) {
+		logline->opcode	 = OP_MEMALIGN;
+		logline->result	 = (uint32_t)result;
+		logline->args[0] = alignment;
+		logline->args[1] = size;
 
-	logline->opcode	 = OP_MEMALIGN;
-	logline->result	 = (uint32_t)result;
-	logline->args[0] = alignment;
-	logline->args[1] = size;
+		DEBUG("memalign(%d, %d) = %p", alignment, size, result);
 
-	traces_release_log_line(logline);
+		traces_release_log_line(logline);
+	}
 
 	return result;
 }
@@ -289,23 +304,32 @@ void *traces_epilogue_memalign(traces_log_t *logline, size_t alignment, size_t s
 
 static void traces_at_exit(void)
 {
-	if (traces != NULL) {
+	if (traces) {
 		DEBUG("writing out");
+
 		traces_log_write_out();
 	}
 }
 
 /**
- *
+ * 
  */
 
 static AO_TS_t initlock = AO_TS_INITIALIZER;
 static AO_t    initcnt  = 0;
 
+static void traces_register_at_exit(void)
+{
+	/* atexit uses internally malloc ! */
+	if ((traces != NULL) && (AO_load(&initcnt) == 0) && (AO_fetch_and_add1(&initcnt) == 0)) {
+		DEBUG("initializing atexit handler");
+		atexit(&traces_at_exit);
+		DEBUG("initialized atexit handler");
+	}
+}
+
 void traces_init_hook(void)
 {
-	DEBUG("begin");
-		
 	while (AO_test_and_set(&initlock) == AO_TS_SET);
 		
 	if (traces == NULL) {
@@ -321,7 +345,7 @@ void traces_init_hook(void)
 			abort();
 		}
 		
-		DEBUG("traces @ $%.8x", (uint32_t)_traces);
+		DEBUG("traces data placed at $%.8x", (uint32_t)_traces);
 
 		memset(&_traces->logs, 0, (LAST_LOGLINE - 1) * sizeof(traces_log_t));
 
@@ -351,14 +375,14 @@ void traces_init_hook(void)
 
 		traces = _traces;
 
-		DEBUG("inialized");
+		DEBUG("initialized");
 	} else {
-		DEBUG("already inialized");
+		DEBUG("already initialized");
 	}
 	
 	AO_CLEAR(&initlock);
-	
-	/* atexit uses internally malloc ! */
-	if ((AO_load(&initcnt) == 0) && (AO_fetch_and_add1(&initcnt) == 0))
-		atexit(&traces_at_exit);
+
+#if WANT_TO_HAVE_ATEXIT_BUG
+	traces_register_at_exit();
+#endif
 }

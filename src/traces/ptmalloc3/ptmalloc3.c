@@ -903,10 +903,11 @@ public_vALLOc(size_t bytes)
   struct malloc_arena* ar_ptr;
   void *p;
 
-  traces_log_t *logline = traces_prologue();
-
   if(__malloc_initialized < 0)
     ptmalloc_init ();
+
+  traces_log_t *logline = traces_prologue();
+
   arena_get(ar_ptr, bytes + FOOTER_OVERHEAD + MIN_CHUNK_SIZE);
   if(!ar_ptr)
     return traces_epilogue_memalign(logline, 4096, bytes, 0);
