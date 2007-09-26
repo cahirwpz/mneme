@@ -13,8 +13,8 @@
 
 #include "traces.h"
 
-#define VERBOSE 1
-#define WANT_TO_HAVE_ATEXIT_BUG 0
+#define VERBOSE 0
+#define WANT_TO_HAVE_ATEXIT_BUG 1
 
 #if VERBOSE == 1
 #define DEBUG(format, args...) fprintf(stderr, "[%.8x] %s: " format "\n", (uint32_t)pthread_self(), __func__, ##args)
@@ -355,7 +355,7 @@ void traces_init_hook(void)
 		if (logname == NULL)
 			logname = "trace-log.bin";
 		
-		DEBUG("traces logname = %s", logname);
+		fprintf(stderr, "ptmalloc3 traces logname = %s\n", logname);
 
 		_traces->logfd  = open(logname, O_WRONLY|O_APPEND|O_CREAT, 0600);
 		_traces->logcnt = 0;
