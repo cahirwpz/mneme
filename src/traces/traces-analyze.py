@@ -11,6 +11,9 @@ import biggles
 # -----------------------------------------------------------------------------
 
 def classify(n):
+	if n < 8:
+		n = 8
+
 	s = 8
 	n = (n + (s - 1)) & ~(s - 1)
 
@@ -224,159 +227,211 @@ def processLog(name):
 # -----------------------------------------------------------------------------
 
 def drawBlkHist(blkhist):
-	ts = blkhist.keys()
-	ts.sort()
+	# cut unnecessary sizes
+	ss = blkhist.keys()
+	ss.sort()
 
-	for t in ts:
-		# cut unnecessary sizes
-		ss = blkhist[t].keys()
-		ss.sort()
+	while blkhist[ss[-1]] == 0:
+		ss.pop()
+	
+	# calculate ranges & histogram
+	xmax = ((len(ss) + 9) / 10) * 10
+	ymax = 0
 
-		while blkhist[t][ss[-1]] == 0:
-			ss.pop()
-		
-		# calculate ranges & histogram
-		xmax = ((len(ss) + 9) / 10) * 10
-		ymax = 0
+	ys = []
 
-		ys = []
+	for s in ss:
+		if ymax < blkhist[s]:
+			ymax = blkhist[s]
 
-		for s in ss:
-			if ymax < blkhist[t][s]:
-				ymax = blkhist[t][s]
+		y = blkhist[s]
 
-			y = blkhist[t][s]
+		if y > 0:
+			y = math.log(y, 10)
 
-			if y > 0:
-				y = math.log(y, 10)
+		ys.append(y)
 
-			ys.append(y)
+	ymax = math.ceil(math.log(ymax, 10))
 
-		ymax = math.ceil(math.log(ymax, 10))
+	# draw a plot
+	p = biggles.FramedPlot()
+	p.title = "Histogram rozmiar\\'ow blok\\'ow"
 
-		# draw a plot
-		p = biggles.FramedPlot()
-		
-		title = string.split(t, ":")
+	p.xrange = (0, xmax)
+	p.yrange = (0, ymax)
 
-		p.title = "Analiza dla pid: %s threadid: 0x%s" % (title[0],title[1])
+	p.x1.label = "rozmiar bloku"
+	p.y1.label = "# allokacji"
 
-		p.aspect_ratio = 0.66
+	p.x1.tickdir = 1
+	p.y1.tickdir = 1
 
-		p.xrange = (0, xmax)
-		p.yrange = (0, ymax)
+	p.x2.draw_ticks = 0
+	p.y2.draw_ticks = 0
 
-		p.x1.label = "rozmiar bloku"
-		p.y1.label = "# allokacji"
+	p.y1.ticks      = int(ymax) + 1
+	p.y1.ticklabels = ["0"] + [ str(int(math.pow(10, i+1))) for i in range(int(ymax)) ]
+	p.y1.subticks   = 9
 
-		p.x1.tickdir = 1
-		p.y1.tickdir = 1
-		p.x2.draw_ticks = 0
-		p.y2.draw_ticks = 0
+	p.x1.ticks         = [0]
+	p.x1.ticklabels    = ["$2^3$"]
+	p.x1.draw_subticks = 0
 
-		p.y1.ticks      = int(ymax) + 1
-		p.y1.subticks   = 9
-		p.y1.ticklabels = ["0"] + [ str(int(math.pow(10, i+1))) for i in range(int(ymax)) ]
+	for n in range(len(ss)):
+		if ss[n] < 64:
+			continue
 
-		p.x1.draw_subticks = 0
+		v = math.log(ss[n], 2)
 
-		p.x1.ticks = [0]
-		p.x1.ticklabels = ["$2^3$"]
+		if v == int(v):
+			p.x1.ticks.append(n)
+			p.x1.ticklabels.append("$2^{%d}$" % int(v))
 
-		for n in range(len(ss)):
-			if ss[n] < 64:
-				continue
+	p.add(biggles.Histogram(ys, color = 0xFF0000))
 
-			v = math.log(ss[n], 2)
-
-			if v == int(v):
-				p.x1.ticks.append(n)
-				p.x1.ticklabels.append("$2^{%d}$" % int(v))
-
-		p.add(biggles.Histogram(ys, color = 0xFF0000))
-		p.show()
+	return p
 
 # -----------------------------------------------------------------------------
 
 def drawBlkSize(blksize):
-	ks = blksize.keys()
-	ks.sort()
+	ts = blksize.keys()
+	ts.sort()
 
-	for k in ks:
-		ts = blksize[k].keys()
-		ts.sort()
+	ys = [[], [], [], []]
 
-		ys = [[], [], [], []]
+	maxused = [0, 0, 0, 0]
 
-		maxused = [0, 0, 0, 0]
+	for i in range(4):
+		for t in ts:
+			ys[i].append(blksize[t][i])
 
-		for i in range(4):
-			for t in ts:
-				ys[i].append(blksize[k][t][i])
+			if maxused[i] < blksize[t][i]:
+				maxused[i] = blksize[t][i]
 
-				if maxused[i] < blksize[k][t][i]:
-					maxused[i] = blksize[k][t][i]
+	# cut down data
+	i = 0
+	j = 0
+	n = len(ts)
 
-		# draw a plot
-		p = biggles.FramedPlot()
+	while i < n:
+		if i % 10 != 0:
+			del ts[j]
 
-		p.xrange = (0, ts[-1])
-		p.yrange = (0, maxused[-1])
+			for m in range(4):
+				del ys[m][j]
+		else:
+			j += 1
 
-		p.x1.label = "czas [ms]"
-		p.y1.label = "bajty"
-		
-		p.aspect_ratio = 0.75
-		p.add(biggles.FillBetween(ts, ys[2], ts, ys[3], color = 0x802080))	# all blocks
-		p.add(biggles.FillBetween(ts, ys[1], ts, ys[2], color = 0xE038E0))	# blocks <= 32kiB
-		p.add(biggles.FillBetween(ts, ys[0], ts, ys[1], color = 0x208080))	# blocks <= 4kiB
-		p.add(biggles.FillBelow(ts, ys[0], color = 0x38E0E0))				# blocks <= 64B
+		i += 1
 
-		for i in range(4):
-			p.add(biggles.Curve(ts, ys[i], color = 0x000000))
+	# draw a plot
+	p = biggles.FramedPlot()
+	p.title = "Zuzycie pamieci"
 
-		p.show()
+	p.xrange = (0, ts[-1])
+	p.yrange = (0, maxused[-1])
+
+	p.x1.label = "czas [ms]"
+	p.y1.label = "# bajt\\'ow"
+
+	p.x1.tickdir = 1
+	p.y1.tickdir = 1
+	p.x1.draw_subticks = 0
+	p.y1.draw_subticks = 0
+
+	p.x2.draw_ticks = 0
+	p.y2.draw_ticks = 0
+	
+	chart = [ None for i in range(4) ]
+
+	chart[0] = biggles.FillBetween(ts, ys[2], ts, ys[3], color = 0x0060C0)	# all blocks
+	chart[0].label = "bloki >= 32KiB"
+
+	chart[1] = biggles.FillBetween(ts, ys[1], ts, ys[2], color = 0xFFC000)	# blocks <= 32kiB
+	chart[1].label = "bloki [4KiB, 32KiB)"
+
+	chart[2] = biggles.FillBetween(ts, ys[0], ts, ys[1], color = 0xF02020)	# blocks <= 4kiB
+	chart[2].label = "bloki [64B, 4KiB)"
+
+	chart[3] = biggles.FillBelow(ts, ys[0], color = 0x20F020)				# blocks <= 64B
+	chart[3].label = "bloki < 64B"
+
+	p.add(chart[0], chart[1], chart[2], chart[3])
+
+	l = biggles.PlotKey(0.66, 0.4, [ chart[i] for i in range(4)])
+
+	return p, l
 
 # -----------------------------------------------------------------------------
 
 def drawBlkCount(blkcount):
-	ks = blkcount.keys()
-	ks.sort()
+	ts = blkcount.keys()
+	ts.sort()
 
-	for k in ks:
-		ts = blkcount[k].keys()
-		ts.sort()
+	ys = [[], [], [], []]
 
-		ys = [[], [], [], []]
+	maxused = [0, 0, 0, 0]
 
-		maxused = [0, 0, 0, 0]
+	for i in range(4):
+		for t in ts:
+			ys[i].append(blkcount[t][i])
 
-		for i in range(4):
-			for t in ts:
-				ys[i].append(blkcount[k][t][i])
+			if maxused[i] < blkcount[t][i]:
+				maxused[i] = blkcount[t][i]
 
-				if maxused[i] < blkcount[k][t][i]:
-					maxused[i] = blkcount[k][t][i]
+	# cut down data
+	i = 0
+	j = 0
+	n = len(ts)
 
-		# draw a plot
-		p = biggles.FramedPlot()
+	while i < n:
+		if i % 10 != 0:
+			del ts[j]
 
-		p.xrange = (0, ts[-1])
-		p.yrange = (0, maxused[-1])
+			for m in range(4):
+				del ys[m][j]
+		else:
+			j += 1
 
-		p.x1.label = "czas [ms]"
-		p.y1.label = "bloki"
-		
-		p.aspect_ratio = 0.75
-		p.add(biggles.FillBetween(ts, ys[2], ts, ys[3], color = 0x802080))	# all blocks
-		p.add(biggles.FillBetween(ts, ys[1], ts, ys[2], color = 0xE038E0))	# blocks <= 32kiB
-		p.add(biggles.FillBetween(ts, ys[0], ts, ys[1], color = 0x208080))	# blocks <= 4kiB
-		p.add(biggles.FillBelow(ts, ys[0], color = 0x38E0E0))				# blocks <= 64B
+		i += 1
 
-		for i in range(4):
-			p.add(biggles.Curve(ts, ys[i], color = 0x000000))
+	# draw a plot
+	p = biggles.FramedPlot()
+	p.title = "Ilosc blok\\'ow"
 
-		p.show()
+	p.xrange = (0, ts[-1])
+	p.yrange = (0, maxused[-1])
+
+	p.x1.label = "czas [ms]"
+	p.y1.label = "# blok\\'ow"
+
+	p.x1.tickdir = 1
+	p.y1.tickdir = 1
+	p.x1.draw_subticks = 0
+	p.y1.draw_subticks = 0
+
+	p.x2.draw_ticks = 0
+	p.y2.draw_ticks = 0
+
+	chart = [ None for i in range(4) ]
+
+	chart[0] = biggles.FillBetween(ts, ys[2], ts, ys[3], color = 0x0060C0)	# all blocks
+	chart[0].label = "$bloki \ge\,32KiB$"
+
+	chart[1] = biggles.FillBetween(ts, ys[1], ts, ys[2], color = 0xFFC000)	# blocks <= 32kiB
+	chart[1].label = "$bloki \in [\,4KiB,\,32KiB\,)$"
+
+	chart[2] = biggles.FillBetween(ts, ys[0], ts, ys[1], color = 0xF02020)	# blocks <= 4kiB
+	chart[2].label = "$bloki \in [\,64B,\,4KiB\,)$"
+
+	chart[3] = biggles.FillBelow(ts, ys[0], color = 0x20F020)				# blocks <= 64B
+	chart[3].label = "$bloki < 64B$"
+
+	p.add(chart[0], chart[1], chart[2], chart[3])
+
+	l = biggles.PlotKey(0.63, 0.4, [ chart[i] for i in range(4)])
+
+	return p, l
 
 # -----------------------------------------------------------------------------
 
@@ -384,6 +439,30 @@ psyco.full()
 
 blkhist, blksize, blkcount = processLog(sys.argv[1])
 
-drawBlkHist(blkhist)
-drawBlkSize(blksize)
-drawBlkCount(blkcount)
+ks = blksize.keys()
+ks.sort()
+
+print ks
+
+for k in ks:
+	chart_blkhist  = drawBlkHist(blkhist[k])
+	chart_blksize, blksize_legend  = drawBlkSize(blksize[k])
+	chart_blkcount, blkcount_legend = drawBlkCount(blkcount[k])
+
+	chart_legend = biggles.Plot()
+	chart_legend.xrange = (0.0, 1.0)
+	chart_legend.yrange = (0.0, 1.0)
+	chart_legend.add(blkcount_legend)
+	chart_legend.add(biggles.Box((0.575, 0.525),(1.0, 0.133)))
+	chart_legend.add(biggles.Label(0.68, 0.48, "Legenda:"))
+
+	table = biggles.Table(2,2)
+	table.aspect_ratio = 0.75
+
+	table[0,0] = chart_blkhist
+	table[0,1] = chart_blksize
+	table[1,0] = chart_legend
+	table[1,1] = chart_blkcount
+
+	table.show()
+	table.write_eps(sys.argv[1] + "." + k + ".eps")
