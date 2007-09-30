@@ -1,0 +1,309 @@
+@COMMENT{ Bon94
+	SunOS 5.4 kernel memory allocator - omówienie algorytmu i struktury danych.
+	Rozwinięcie tematu prawidłowego wykorzystania n-way associative cache,
+	dzięki kolorowaniu linii cache-u. Inne sprzętowe aspekty wydajnego dostępu
+	do pamięci.
+}
+@inproceedings{ bonwick94slab,
+    author = "Jeff Bonwick",
+    title = "The Slab Allocator: An Object-Caching Kernel Memory Allocator",
+    booktitle = "{USENIX} Summer",
+    pages = "87-98",
+    year = "1994",
+    url = "citeseer.ist.psu.edu/bonwick94slab.html"
+}
+
+@COMMENT{ Eva06
+	Omówienie potrzeb współczesnych wielowątkowych allokatorów. Zgrubne
+	przedstawienie struktur danych użytych do implementacji. Przeprowadzenie
+	pomiarów wydajności dla maszyn jedno i wieloprocesorowych. Ciekawy dobór
+	testów odróżniający pracę od innych. Interesujący sposób wizualizacji
+	zużycia pamięci.
+}
+@misc{ evans06scalable,
+	author = "Jason Evans",
+	title = "A Scalable Concurrent malloc(3) Implementation for FreeBSD",
+	year = "2006",
+	url = "citeseer.ist.psu.edu/evans06scalable.html"
+}
+ 
+@COMMENT{ DM99
+	Szczegółowe omówienie szybkiego algorytmu Buddy Systems działającego w
+	czasie zamortyzowanym O(1). Algorytm wspiera swoje działanie opóźnionym
+	podziałem i scalaniem bloków. Opisana fragmentacja i symulacje.
+}
+@inproceedings{ demaine99fast,
+	author = "Erik D. Demaine and J. Ian Munro",
+	title = "Fast Allocation and Deallocation with an Improved Buddy System",
+	booktitle = "Foundations of Software Technology and Theoretical Computer Science",
+	pages = "84-96",
+	year = "1999",
+	url = "citeseer.ist.psu.edu/demaine99fast.html"
+}
+
+@COMMENT{ WW88
+	Omówienie warstwy abstrakcji na dowolny allokator. Nakładka na wzór pamięci
+	cache, przechowuje ostatnio zwolnione bloki oczekując, że program
+	będzie chciał powtórnie ich użyć.
+}
+@article{ weinstock88quickfit,
+	author = {C. B. Weinstock and W. A. Wulf},
+	title = {An efficient algorithm for heap storage allocation},
+	journal = {SIGPLAN Not.},
+	volume = {23},
+	number = {10},
+	year = {1988},
+	issn = {0362-1340},
+	pages = {141--148},
+	doi = {http://doi.acm.org/10.1145/51607.51619},
+	publisher = {ACM Press},
+	address = {New York, NY, USA},
+}
+
+@COMMENT{ Iye96
+	Wielowątkowe podejście do podstawowych algorytmów allokatorów.
+	Wykorzystanie nieblokujących się struktur danych. Kilka mało konkretnych
+	wyników testów.
+}
+@inproceedings{ iyengar96scalability,
+    author = "Arun Iyengar",
+    title = "Scalability of Dynamic Storage Allocation Algorithms",
+    pages = "223--232",
+	year = "1996",
+    url = "citeseer.ist.psu.edu/iyengar96scalability.html"
+}
+
+@COMMENT{ JW98
+	Praktyczne podejście do problemu fragmentacji. Skrótowa i łatwa w
+	przyswojeniu prezentacja różnych podstawowych algorytmów allokacji takich jak:
+	first-fit, next-fit, best-fit, segregated free list, buddy systems.
+	Szczegółowe testy na zbiorze programów intensywnie korzystających z malloc i free.
+}
+@inproceedings{ johnstone98memory,
+	author = {Mark S. Johnstone and Paul R. Wilson},
+	title = {The memory fragmentation problem: solved?},
+	booktitle = {ISMM '98: Proceedings of the 1st international symposium on Memory management},
+	year = {1998},
+	isbn = {1-58113-114-3},
+	pages = {26--36},
+	location = {Vancouver, British Columbia, Canada},
+	doi = {http://doi.acm.org/10.1145/286860.286864},
+	publisher = {ACM Press},
+	address = {New York, NY, USA},
+}
+
+@COMMENT{ FB05
+}
+@misc{ feng05localityimproving,
+	author = "Y. Feng and E. Berger",
+	title = "A locality-improving dynamic memory allocator",
+	text = "Y. Feng and E. D. Berger. A locality-improving dynamic memory allocator.
+		Technical Report TR09-05, Department of Computer Science, University of
+		Massachusetts Amherst, 2005.",
+	year = "2005",
+	url = "citeseer.ist.psu.edu/723935.html"
+}
+
+
+@COMMENT{ BZM02
+	Bardzo dokładne testy przeprowadzone na szerokiej gamie programów.
+	Prezentacja algorytmu Reaps i szczegółowe porównianie z innymi
+	allokatorami.
+}
+@misc{ berger02reconsidering,
+	author = "E. Berger and B. Zorn and K. McKinley",
+	title = "Reconsidering custom memory allocation",
+	text = "Emery D. Berger, Benjamin G. Zorn, and Kathryn S. McKinley. Reconsidering
+		custom memory allocation. In Proceedings of the Conference on Object-Oriented
+		Programming: Systems, Languages, and Applications (OOPSLA) 2002.",
+	year = "2002",
+	url = "citeseer.ist.psu.edu/berger02reconsidering.html"
+}
+
+@COMMENT{ WJNB95
+}
+@inproceedings{ paul95dynamic,
+	author = "Wilson, Paul R. and Johnstone, Mark S. and Neely, Michael and Boles, David",
+	title = "Dynamic Storage Allocation: A Survey and Critical Review",
+	booktitle = "Proc.\ Int.\ Workshop on Memory Management",
+	address = "Kinross Scotland (UK)",
+	year = "1995",
+	url = "citeseer.ist.psu.edu/wilson95dynamic.html"
+}
+
+@COMMENT{ BZM01
+	Prezentacja infrastruktry do budowania allokatorów o różnych
+	zastosowaniach. Wiele pojedyńczych algorytmów z których można budować
+	hybrydy. Całość napisana w C++ na template-ach. Próba rekonstrukcji
+	znanych algorytmów i porównanie z oryginałem.
+}
+@inproceedings{ berger01composing,
+	author = "Emery D. Berger and Benjamin G. Zorn and Kathryn S. McKinley",
+	title = "Composing High-Performance Memory Allocators",
+	booktitle = "{SIGPLAN} Conference on Programming Language Design and Implementation",
+	pages = "114-124",
+	year = "2001",
+	url = "citeseer.ist.psu.edu/article/berger01composing.html"
+}
+
+@COMMENT{ BMBW00
+}
+@inproceedings{ berger00hoard,
+	author = "Emery Berger and Kathryn McKinley and Robert Blumofe and Paul Wilson",
+	title = "Hoard: {A} Scalable Memory Allocator for Multithreaded Applications",
+	booktitle = "{ASPLOS-{IX}}: Ninth International Conference on Architectural Support for Programming Languages and Operating Systems",
+	address = "Cambridge, MA",
+	pages = "117--128",
+	year = "2000",
+	url = "citeseer.ist.psu.edu/article/berger00hoard.html"
+}
+
+@COMMENT{ CJZ00
+	Prezentacja elastycznego i efektywnie kompresowalnego formatu do
+	składowania śladów.
+}
+@inproceedings{ chilimbi00designing,
+	author = "Trishul M. Chilimbi and Richard E. Jones and Benjamin G. Zorn",
+	title = "Designing a Trace Format for Heap Allocation Events",
+	booktitle = "{ISMM}",
+	pages = "35-49",
+	year = "2000",
+	url = "citeseer.ist.psu.edu/chilimbi00designing.html"
+}
+
+@COMMENT{ Rob71
+	Praca w dużym stopniu niezbędna do zrozumienia zagadnień w pracy Rob74.
+}
+@article{ robson71estimate,
+	author = {J. M. Robson},
+	title = {An Estimate of the Store Size Necessary for Dynamic Storage Allocation},
+	journal = {J. ACM},
+	volume = {18},
+	number = {3},
+	year = {1971},
+	issn = {0004-5411},
+	pages = {416--423},
+	doi = {http://doi.acm.org/10.1145/321650.321658},
+	publisher = {ACM Press},
+	address = {New York, NY, USA}
+}
+
+@COMMENT{ Rob74
+	Ciężka, ale wyczerpująca prezentacja górnego ograniczenia na ilość
+	używanej pamięci przez First-Fit.
+}
+@article{ robson74bounds,
+	author = {J. M. Robson},
+	title = {Bounds for Some Functions Concerning Dynamic Storage Allocation},
+	journal = {J. ACM},
+	volume = {21},
+	number = {3},
+	year = {1974},
+	issn = {0004-5411},
+	pages = {491--499},
+	doi = {http://doi.acm.org/10.1145/321832.321846},
+	publisher = {ACM Press},
+	address = {New York, NY, USA}
+}
+
+@COMMENT{ LNO94
+	Kolejna próba zmierzenia się z problemem dokładnego współczynnika
+	konkurencyjności dla First-Fit. Praca teoretyczna uwzględniająca równoległe
+	procesy.
+}
+@inproceedings{ luby94tight,
+	author = "Luby and Naor and Orda",
+	title = "Tight Bounds for Dynamic Storage Allocation",
+	booktitle = "{SODA}: {ACM}-{SIAM} Symposium on Discrete Algorithms (A
+		Conference on Theoretical and Experimental Analysis of Discrete
+		Algorithms)",
+	year = "1994",
+	url = "citeseer.ist.psu.edu/luby94tight.html"
+}
+
+@COMMENT{ Fit00
+	Omówienie allokatora pamięci na wewnętrzne struktury jądra Linuksa 2.4.x.
+	Duży nacisk na cache-owanie obiektów i lokalność odwołań.
+}
+@misc{ fitzgibbons00linux,
+	author = "Brad Fitzgibbons",
+	title = "The Linux Slab Allocator",
+	year = "2000",
+	url = "citeseer.ist.psu.edu/fitzgibbons00linux.html"
+}
+
+@COMMENT{ Vui80
+	Drzewa kartezjańskie. Omówienie struktury danych i jej właściwości.
+}
+@article{ vuillemin80unifying,
+	author = {Jean Vuillemin},
+	title = {A unifying look at data structures},
+	journal = {Commun. ACM},
+	volume = {23},
+	number = {4},
+	year = {1980},
+	issn = {0001-0782},
+	pages = {229--239},
+	doi = {http://doi.acm.org/10.1145/358841.358852},
+	publisher = {ACM Press},
+	address = {New York, NY, USA},
+}
+
+@COMMENT{ Ste83
+	Wykorzystanie drzew kartezjańskich do implementacji efektywnego
+	wyszukiwania bloków pamięci o zadanej wielkości.
+}
+@inproceedings{ stephenson83fastfits,
+	author = {C. J. Stephenson},
+	title = {New methods for dynamic storage allocation (Fast Fits)},
+	booktitle = {SOSP '83: Proceedings of the ninth ACM symposium on Operating systems principles},
+	year = {1983},
+	isbn = {0-89791-115-6},
+	pages = {30--32},
+	location = {Bretton Woods, New Hampshire, United States},
+	doi = {http://doi.acm.org/10.1145/800217.806613},
+	publisher = {ACM Press},
+	address = {New York, NY, USA},
+}
+
+@COMMENT{ vdP02
+	Zgrubne przedstawienie architektury pamięci cache. Skierowane do
+	programistów -- nastawione na budowanie świadomości jak programować
+	efektywnie aplikacje intensywnie korzystające z pamięci.
+}
+@misc{ pas02memory,
+	author = "Ruud van der Pas",
+	title = "Memory Hierarchy in Cache-Based Systems",
+	year = "2002",
+	publisher = {Sun Microsystems, Inc.},
+	url = "http://www.sun.com/blueprints",
+	howpublished = "\url{http://www.sun.com/blueprints/1102/817-0742.pdf}"
+}
+
+@COMMENT{
+}
+@misc{ ghemawat00tcmalloc,
+	author = "Sanjay Ghemawat",
+	title = "TCMalloc: Thread-Caching Malloc",
+	year = "2007",
+	publisher = {Google Inc.},
+	howpublished="\url{http://google-perftools.googlecode.com/svn/trunk/doc/tcmalloc.html}"
+}
+
+@COMMENT{
+}
+@misc{ douglea96malloc,
+	author = "Doug Lea",
+	title = "A Memory Allocator",
+	year = "1996",
+	howpublished = "\url{http://gee.cs.oswego.edu/dl/html/malloc.html}"
+}
+
+@COMMENT{
+}
+@misc{ gorman04linuxvm,
+	author = "Mel Gorman",
+	title = "Understanding the Linux Memory Manager",
+	year = "2004",
+	howpublished = "\url{http://www.csn.ul.ie/~mel/projects/vm/guide/pdf/understand.pdf}"
+}

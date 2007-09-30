@@ -44,10 +44,7 @@ RANLIB    = ranlib
 MALLOC_OBJ = ptmalloc3.o malloc.o traces.o
 LIB_MALLOC = libptmalloc3-traces.a
 
-T_SUF =
-TESTS = t-test1$(T_SUF) t-test2$(T_SUF) \
-	tst-independent-alloc$(T_SUF)
-        #m-test1$(T_SUF) tst-mallocstate$(T_SUF) tst-mstats$(T_SUF)
+TESTS = t-test1 t-test2 tst-independent-alloc
 
 CFLAGS = $(SYS_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS) $(THR_FLAGS) $(INC_FLAGS)
 

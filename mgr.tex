@@ -22,7 +22,7 @@
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
 \title{Wielowątkowy zarządca pamięci dzielonej}
-\date{}
+\date{Październik 2007}
 
 \frenchspacing
 
@@ -232,75 +232,153 @@ implementacji.
 \section{Teoretyczne podstawy}
 \hypertarget{Teoria}{}
 
-Zarządcy pamięci są algorytmami tak powszechnymi, że niemal nie zauważa się ich
+Menadżery pamięci są algorytmami tak powszechnymi, że niemal nie zauważa się ich
 istnienia. Programiści traktują wywołania funkcji realizujących przydzielanie i
-zwalnianie obszarów za czarne skrzynki -- nie wiedząc, że pod spodem tkwią
-często zaawansowane algorytmy, a czasem również dość nieefektywne w pewnych
-przypadkach. Celem tego rodziału jest przedstawienie podstawowych koncepcji
-związanych z dostępem do pamięci i jej zarządzaniem.
+zwalnianie obszarów za czarne skrzynki -- nie wiedząc, że wewnątrz tkwią często
+zaawansowane algorytmy. Z reguły są one dość dobrze przetestowane i sprawują
+się dobrze w większości przypadków. Niestety bywają sytuacje kiedy działają
+skrajenie nieefektywnie.  Słowo \textit{efektywnie} w kontekście allokatorów
+pamięci może być rozumiane na kilka sposóbów.
+
+Algorytm może być \textit{efektywny} pamięciowo, co znaczy że:
+\begin{itemize}
+\item zużywa niewiele pamięci na własne wewnętrzne pomocnicze struktury danych,
+\item charakteryzuje się niewielką fragmentacją wewnętrzą i zewnętrzną.
+\end{itemize}
+Tematyka efektywności wykorzystania pamięci została szczegółowo omówiona w
+pracy \cite{paul95dynamic}.
+
+Allokator może być \textit{efektywny} wydajnościowo, co znaczy że:
+\begin{itemize}
+\item program z niego korzystający spędza mało czasu rezerwując i zwalniając
+pamięć,
+\item rzadko korzysta z wywołań systemowych celem pobrania lub zwolnienia stron
+pamięci,
+\item w przypadku programów wielowątkowych wątki rzadko się nawzajem blokują
+wykorzystując zarządcę pamięci -- allokator charakteryzuje się niską
+rywalizacją o blokady (ang. \textit{lock contention}) niezbędne do utrzymania
+spójności wewnętrznych struktur.
+\end{itemize}
+
+Celem tego rodziału jest przedstawienie podstawowych koncepcji związanych z
+algorytmami zarządzania pamięcią niezbędne do zrozumienia treści kolejnych
+rozdziałów. 
 
 \subsection{Intuicyjna definicja problemu}
 
-Zarządca sterty to algorytm on-line, który operuje na pewnym obszarze pamięci
-w przestrzeni adresowej programu. Obiektami, którymi się zajmuje są bloki
-pamięci. Manadżer musi pamiętać, które bloki są przydzielane programowi, a
-które są nieużywane.
+Algorytm zarządzania pamięcią to algorytm \textit{on-line}. Oznacza to, że dane
+wejściowe traktuje on jak żądania, które należy obsłużyć natychmiastowo. Nie
+może odwlekać ich obsłużenia -- w szczególności zacząć obsługiwać następne
+żądanie przed spełnieniem bieżącego. Algorytmy \textit{on-line} charakteryzują
+się również tym, że nie znają one przyszłości -- w sensie nie znają danych
+jakie będą przetwarzać w następnym kroku. Optymalizacja takich algorytmów może
+bazować tylko i wyłącznie na wiedzy, którą zdołały posiąść -- czyli na
+podstawie żądań, które obsłużyły.
 
-\parbox{\textwidth}{
+Menadżer pamięci to algorytm, który zarządza zasobem jakim jest pewien obszar
+pamięci. W szczególności -- obszar ten może być niespójny. Poszczególne części
+takiej przestrzeni pamięci mogą mieć różne właściwości wynikające z
+architektury sprzętowej. Zarządzany obszar może się dynamicznie zmieniać swój
+rozmiar czy strukturę dostosowując się do wymagań pamięciowych aplikacji
+korzystającej z allokatora. Menadżer sterty odpowiada za wykorzystanie całej
+pamięci, którą posiada w przydzielonym mu obszarze.
+
+Program korzystający z allokatora pobiera i zwalnia obiekty zwane
+\textit{blokami pamięci}. Do obowiązków menadżera należy utrzymywanie listy
+bloków i pamiętanie, które są zajęte, a które wolne. Algorytm wyznacza
+położenie danego bloku tylko raz -- tj. nie może go przemieszczać, ani zmieniać
+danych w nim zawartych, jeśli blok został już przydzielony.
+
 Blok jest spójnym obszarem pamięci o następujących właściwościach:
-\par\vspace{2mm}
-\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
-	\textbf{położenie}	& adres obszaru pamięci, w którym się zaczyna. \\
-	\textbf{wielkość}	& mierzona (zazwyczaj) w bajtach. \\
-	\textbf{narodziny}	& kwant czasu, w którym zarządca oddaje blok na użytek programu. \\
-	\textbf{śmierć}		& kwant czasu, w którym program oddaje blok na użytek zarządcy. \\
-	\textbf{właściciel}	& proces lub wątek, któremu ten blok został przypisany. \\
-\end{tabularx}
-}
 
-\parbox{\textwidth}{
-Zarządca odpowiada na dwa typy żądań programu:
-\par\vspace{2mm}
 \begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
-	\textbf{malloc} & które zwraca adres bloku pamięci o żądanym
+	\texttt{położenie}	& adres pamięci, w którym się zaczyna \\
+	\texttt{wielkość}	& ilość zajmowanej przestrzeni mierzona w bajtach \\
+	\texttt{narodziny}	& kwant czasu, w którym zarządca oddaje blok na użytek programu \\
+	\texttt{śmierć}		& kwant czasu, w którym program oddaje blok na użytek zarządcy \\
+	\texttt{właściciel}	& proces lub wątek, któremu ten blok został przypisany \\
+\end{tabularx}
+
+Zarządca odpowiada na co najmniej dwa typy żądań programu:
+
+\begin{tabularx}{\textwidth}{@{\hspace{4ex}}lX@{}}
+	\texttt{malloc} & które zwraca adres bloku pamięci o żądanym
 	rozmiarze lub informuje, że żądanie nie mogło zostać spełnione. \\
 
-	\textbf{free} & które oddaje obszar zajmowany przez blok pamięci o
+	\texttt{free} & które oddaje obszar zajmowany przez blok pamięci o
 	podanym adresie do ponownego użycia przez algorytm zarządcy. \\
 \end{tabularx}
-}
 
-\subsubsection{Fragmentacja}
+Taka definicja odpowiada temu co znane jest dla większości programistów
+używających języków imperatywnych takich jak \verb#C#, \verb#C++# czy
+\verb#Pascal#.
 
-Warto wspomnieć o tym, że blok z reguły jest większy niżby wynikało to z
-wartości przekazywanej do funkcji \textbf{malloc}.  Może to wynikać np. z
-pewnych założeń co do architektury sprzętu -- często jednostka alokacji jest
-równa rozmiarowi największej elementarnej danej, którą może przetwarzać
-procesor -- jak i tego, że algorytm może chcieć składować gdzieś dane niezbędne
-do przetwarzania bloków.
+\subsection{Fragmentacja}
 
-Większość znanych alokatorów pamięci dla systemów operacyjnych przeznaczonych
-dla procesorów z rodziny Intel IA-32 za jednostkę alokacji przyjmuje 8 bajtów,
-co odpowiada rozmiarowi najdłuższej danej całkowitej oznaczanej w języku C jako
-'long long int'.
+Fragmentacja jest zjawiskiem wynikającym z nieefektywnego zarządzania pamięcią.
+Jest miarą ilości przestrzeni, której nie można wykorzystać do obsłużenia żądań
+programu. Innymi słowy jest to pamięć, która jest wolna, ale z jakiś powodów
+nie może być oddana na użytek programu.
 
-Zarządca jest właściwie wyłącznie odpowiedzialny za wyznaczanie położenia
-obszaru pamięci, w którym będzie się znajdował blok i wszystkie niezbędne dane
-z nim związane. Algorytm wyznacza położenie danego bloku tylko raz -- tj. nie
-może go przemieszczać, ani zmieniać danych w nim zawartych (poza tymi, które są
-przeznaczone na struktury danych zarządcy), jeśli blok został już przydzielony.
+Fragmentacja wewnętrzna jest mniej groźna, lecz trudniejsza w minimalizacji. W
+większości przypadków jest ona wynikiem poczynienia pewnych założeń w działaniu
+allokatora. Rezerwowane bloki pamięci są z reguły większe, niżby wynikało to z
+wartości przekazywanej do funkcji \texttt{malloc}. Procesory działają
+wydajniej, a czasami wręcz wymagają\footnote{Procesory \texttt{PowerPC} przy
+próbie odczytu słów danych o parzystej długości spod nieparzystych adresów
+zgłaszają przerwanie sprzętowe.}, by słowa danych były odczytywane z adresów
+podzielnych przez ich długość. Większość menadżerów pamięci za jednostkę
+allokacji przyjmuje $8$ bajtów, co odpowiada rozmiarowi najdłuższej danej
+całkowitej oznaczanej w języku \verb+C+ jako \verb+long long int+. W związku z
+tym każdy blok ma adres początku podzielny przez $8$, co implikuje również 
+podzielność rozmiaru bloku przez~$8$.
+
+Wydaje się, że fragmentacja wewnętrzna jest nie do uniknięcia. Algorytm
+zarządzania pamięcią nie wie nic na temat struktur, które będzie przechowywał w
+blokach. Nie może zatem wiedzieć nic na temat tego przez jaką liczbę ma być
+podzielny adres bloku. Na szczęście fragmentacja wewnętrzna nie jest dużym
+problemem, gdyż dotyczy niewielkich objętościowo fragmentów pamięci.
+
+Znacznie poważniejszym problemem jest fragmentacja zewnętrzna. Powstaje ona na
+skutek wykonania pewnego ciągu operacji, które skutkują powstaniem wolnych
+bloków o rozmiarach nie pozwalających na ich użycie przy obsłudze kolejnych
+żądań.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\textwidth]{frag-zew}
+\caption{Powstawanie fragmentacji zewnętrznej.}
+\end{figure}
+
+Na przedstawionym wyżej rysunku ostatnia operacja zakończyła się niepowodzeniem
+mimo, że łączna ilość wolnej pamięci wynosi $64$. Rezerwując obszar o wielkości
+$8$ allokator nie wiedział nic na temat przyszłych operacji. Nie mógł zatem
+przewidzieć, że lepiej będzie umiejscowić ten blok w adresie \verb+@64+.
+Niestety nie istnieje algorytm zapobiegający takim sytuacjom. Okazuje się, że
+dla każdego algorytmu zarządzania pamięcią istnieje taki ciąg operacji
+\texttt{malloc} i \texttt{free} by fragmentacja pochłoneła stosunkowo duże
+obszary pamięci czyniąc z nich nieużytki. Na szczęście w praktyce fragmentacja
+zewnętrzna nie osiąga tak niepokojących rozmiarów -- głównie dzięki temu, że
+zachowania programów są dość regularne i często powtarzalne, co uwzględnia się
+przy budowie algorytmów.
+
+Na początku lat 70 przeprowadzono szereg badań mający na celu określić jaka
+jest górna granica ilości pamięci na wykonanie się ciągu operacji
+\texttt{malloc} i \texttt{free}. W swojej pracy Robson \cite{robson74bounds}
+pokazał, że górna granica na wykonanie dowolnego ciągu operacji przydziału
+zwolnienia bloku wynosi $O(M log(n))$, gdzie $n$~to długość największego bloku,
+a $M$~to maksymalna ilość zajętych bloków.
+
+Tu czas by opowiedzieć nieco o polityce i strategii.
 
 
-
-Ogólna definicja problemu zarządzania stertą jako algorytmu on-line.
-
-Przyjrzyjmy się trzem podstawowym wariantom problemu zarządzania pamięcią.
-
-\subsubsection{Klasyczna wersja problemu}
+\subsection{Klasyczna wersja problemu}
 
 Blok pamięci długości $n$-słów. Operacje: malloc, free.
 
-\subsubsection{Zarządzenie stronami pamięci}
+\subsection{Wersje problemu zarządzania pamięcią}
+
+\paragraph{Zarządzenie stronami pamięci}
 
 Większość ówczesnych komputerów ma pewne mechanizmy zarządzania pamięcią
 zaimplementowane sprzętowo. Mechanizmy te tworzono z myślą o systemach
@@ -316,16 +394,11 @@ Jądro systemu zarządza pamięcią fizyczną tworząc przestrzeń adresową na
 potrzeby procesu. Systemy partnerskie (ang. Buddy Systems) są podstawowym
 algorytmem zarządzania pamięcią fizyczną w systemie Linux.
 
-\subsubsection{Zarządzenie pamięcią dla bloków jednakowej wielkości}
+\paragraph{Zarządzenie pamięcią dla bloków jednakowej wielkości}
 
 Wiele dynamicznych struktur danych drzewa charakteryzuje się stałą wielkością
 rekordu -- w przypadku drzewa jest to węzeł. Mając na względzie takie
 ograniczenia problemu, można łatwo zapanować nad problemem lokalności w algorytmach
-
-\subsubsection{Zarządzenie pamięcią dla bloków różnej wielkości}
-
-Najbardziej ogólny wariant algorytmu. Na potrzeby programistów jest on
-osiągalny przez wywołania malloc/free z biblioteki standardowej języka C.
 
 \newpage
 
@@ -751,6 +824,12 @@ Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 
 \section{Testowanie wydajności}
 \hypertarget{Testowanie}{}
+
+Programy w różnym stopniu wykorzystują algorytmy zarządzania pamięcią. Ponieważ
+nie jest oczywiste w jaki sposób to robią 
+
+
+
 
 \begin{enumerate}
 \item test z losowymi parami \textit{(długość życia, wielkość)} o równomiernym rozkładzie,
@@ -1294,5 +1373,35 @@ Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
 adresach o naturalnych wartościach tj. $32$-bitowe słowo powinno być pod
 adresem podzielnym przez $4$,
 \end{itemize}
+
+\newpage
+
+% --=[ Bibliografia ]=----------------------------------------------------------
+
+\nocite{berger00hoard}
+\nocite{berger01composing}
+\nocite{berger02reconsidering}
+\nocite{bonwick94slab}
+\nocite{chilimbi00designing}
+\nocite{demaine99fast}
+\nocite{douglea96malloc}
+\nocite{evans06scalable}
+\nocite{feng05localityimproving}
+\nocite{fitzgibbons00linux}
+\nocite{ghemawat00tcmalloc}
+\nocite{gorman04linuxvm}
+\nocite{iyengar96scalability}
+\nocite{johnstone98memory}
+\nocite{luby94tight}
+\nocite{pas02memory}
+\nocite{paul95dynamic}
+\nocite{robson71estimate}
+\nocite{robson74bounds}
+\nocite{stephenson83fastfits}
+\nocite{vuillemin80unifying}
+\nocite{weinstock88quickfit}
+
+\bibliographystyle{alpha}
+\bibliography{mgr}
 
 \end{document}

@@ -157,7 +157,7 @@ def processLog(name):
 
 					del block[ptr]
 				except KeyError:
-					print "Warning: block at address %x not found!" % ptr
+					print "free@%d: block at address %x not found!" % (msec, ptr)
 
 			# malloc
 			if line[1] == 1:
@@ -165,7 +165,7 @@ def processLog(name):
 				res  = line[3]
 
 				if block.has_key(res):
-					print "Warning: block at address %x already exists!" % res
+					print "malloc@%d: block at address %x already exists!" % (msec, res)
 
 				block[res] = size
 
@@ -181,7 +181,7 @@ def processLog(name):
 				res  = line[4]
 
 				if (ptr != res) and block.has_key(res):
-					print "Warning: block at address %x already exists!" % res
+					print "realloc@%d: block at address %x already exists!" % (msec, res)
 
 				try:
 					for i in range(4):
@@ -191,7 +191,7 @@ def processLog(name):
 
 					del block[ptr]
 				except KeyError:
-					print "Warning: block at address %x not found!" % ptr
+					print "realloc@%d: block at address %x not found!" % (msec, ptr)
 			
 				block[res] = size
 
@@ -207,7 +207,7 @@ def processLog(name):
 				res   = line[4]
 
 				if block.has_key(ptr):
-					print "Warning: block at address %x already exists!" % res
+					print "memalign@%d: block at address %x already exists!" % (msec, res)
 
 				block[res] = size
 
@@ -442,7 +442,7 @@ blkhist, blksize, blkcount = processLog(sys.argv[1])
 ks = blksize.keys()
 ks.sort()
 
-print ks
+i = 0
 
 for k in ks:
 	chart_blkhist  = drawBlkHist(blkhist[k])
@@ -465,4 +465,6 @@ for k in ks:
 	table[1,1] = chart_blkcount
 
 	table.show()
-	table.write_eps(sys.argv[1] + "." + k + ".eps")
+	table.write_eps(sys.argv[1] + ".%d.eps" % i)
+
+	i += 1
