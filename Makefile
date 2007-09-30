@@ -10,7 +10,9 @@ PDFS	=	stronicowanie.pdf linux-layout.pdf heapblkman.pdf mmapman-ao.pdf blkman.p
 
 all:	mgr.pdf
 
-mgr.pdf: $(PDFS) mgr.toc mgr.bbl mgr.aux 
+full:	$(PDFS) mgr.toc mgr.bbl mgr.aux mgr.pdf
+
+mgr.pdf: $(PDFS) mgr.tex
 	pdflatex mgr.tex
 
 mgr.toc: mgr.aux
@@ -35,11 +37,14 @@ dist:	mgr.pdf
 nocite:
 	@sed -nr 's/@\w+\{\ (.*),/\\nocite{\1}/p' mgr.bib | sort
 
+comments:
+	@sed -r '/COMMENT/,/^}/!d' mgr.bib
+
 clean:
 	rm -f mgr.{aux,bbl,blg,log,ps,eps,dvi,pdf,toc,out}
 	rm -f {linux-layout,stronicowanie,heapblkman,blkman,mmapman-ao,pageman,frag-zew}.{pdf,eps}
 	rm -f *~ *.tmp
 
-.PHONY: cite mgr.pdf
+.PHONY: cite
 
 # vim: ts=8 sw=8

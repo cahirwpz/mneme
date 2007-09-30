@@ -246,7 +246,7 @@ Algorytm może być \textit{efektywny} pamięciowo, co znaczy że:
 \item charakteryzuje się niewielką fragmentacją wewnętrzą i zewnętrzną.
 \end{itemize}
 Tematyka efektywności wykorzystania pamięci została szczegółowo omówiona w
-pracy \cite{paul95dynamic}.
+przekrojowej pracy na temat allokatorów pamięci \cite{paul95dynamic}.
 
 Allokator może być \textit{efektywny} wydajnościowo, co znaczy że:
 \begin{itemize}
@@ -362,43 +362,104 @@ zewnętrzna nie osiąga tak niepokojących rozmiarów -- głównie dzięki temu,
 zachowania programów są dość regularne i często powtarzalne, co uwzględnia się
 przy budowie algorytmów.
 
-Na początku lat 70 przeprowadzono szereg badań mający na celu określić jaka
-jest górna granica ilości pamięci na wykonanie się ciągu operacji
-\texttt{malloc} i \texttt{free}. W swojej pracy Robson \cite{robson74bounds}
-pokazał, że górna granica na wykonanie dowolnego ciągu operacji przydziału
-zwolnienia bloku wynosi $O(M log(n))$, gdzie $n$~to długość największego bloku,
-a $M$~to maksymalna ilość zajętych bloków.
-
-Tu czas by opowiedzieć nieco o polityce i strategii.
-
-
-\subsection{Klasyczna wersja problemu}
-
-Blok pamięci długości $n$-słów. Operacje: malloc, free.
+Na początku lat 70 przeprowadzono szereg badań mających na celu określić jaka
+ilość pamięci jest potrzebna na wykonanie dowolnego ciągu operacji
+\texttt{malloc} i \texttt{free}. W~pracy \cite{robson74bounds} (będącej
+kontynuacją \cite{robson71estimate}) Robson pokazał, że górna granica ilości
+użytej pamięci na wykonanie dowolnego ciągu operacji przydziału oraz zwolnienia
+bloku dla strategii \textit{First-Fit}\footnote{Z listy wolnych bloków
+wybierany jest pierwszy satysfakcjonujący żądanie.} wynosi $O(M \cdot
+\log_{2}(n))$, gdzie $n$~to długość największego bloku, a $M$~to maksymalna
+ilość zajętych bloków. W kolejnej swojej pracy \cite{robson77worst} Robson
+pokazał górne ograniczenie na ilość zużytej pamięci przez strategię
+\textit{Best-Fit}\footnote{Z listy wolnych bloków wybierany jest najmniejszy
+możliwy blok satysfakcjonujący żądanie.}, która okazuję się być znacznie
+większa niż w przypadku \textit{First-Fit} i wynosi $O(M \cdot n)$. Analiza
+oszacowania górnej granicy ilości zużytej pamięci dla metody \textit{First-Fit}
+działającej w środowisku wielowątkowym ukazała się pracy \cite{luby94tight} i
+jest taka sama jak dla przypadku jednowątkowego.
 
 \subsection{Wersje problemu zarządzania pamięcią}
 
-\paragraph{Zarządzenie stronami pamięci}
+Z problemem zarządzania pamięcią analogicznym to zdefinowanego w poprzednim
+paragrafie można się spotkać na wielu szczeblach działania systemu
+operacyjnego. W jądrze Linuksa są co najmniej dwa menadżery pamięci o rożnych
+zastosowaniach i właściwościach. Istnieje cała gama allokatorów działających w
+przestrzeni użytkownika.
+
+\paragraph{Standardowa biblioteka POSIX.}
+
+Najbardziej znany programistom interfejs zarządcy pamięci wywodzi się z języka
+\verb+C+. Jest to allokator ogólnego przeznaczenia dla procesów i wątków
+działających w przestrzeni użytkownika. Posiada pewien z góry ustalony
+interfejs, który został dokładnie omówiony w rozdziale \ref{PosixMalloc}.
+Ponieważ jest to najczęściej wykorzystywany allokator istnieje wiele projektów
+mających na celu zwiększenie wydajności tego mechanizmu.
+
+W~chwili obecnej standardowa biblioteka \verb+C+ dla systemu Linux korzysta z
+allokatora \textit{Doug Lea's Malloc} (w skrócie \textit{dlmalloc}) opisanego w
+pracy \cite{douglea96malloc}. W trakcie swojego instnienia allokator ten
+przeszedł szereg modyfikacji: zwiększenie lokalności odwołań do pamięci,
+usprawnienie heurystyk przygotowujących bloki na potrzeby przyszłych wywołań,
+odroczone scalanie bloków, intesywne sprawdzanie spójności zarządzanej pamięci
+celem znajdywania błędów popełnionych przez programistę i ograniczone wspracie
+dla wielowątkowości (znane jako \textit{ptmalloc}).
+
+Lukę w wydajnych allokatorach dla programów wielowątkowych wypełnił
+\textit{Hoard} opisany w pracy \cite{berger00hoard}. Opisano tam efektywny
+sposób na zmniejszenie konkurencji między wątkami, poprzez przypisanie im
+prywatnych obszarów pamięci. Zwrócono tam uwagę na zjawisko fałszywego
+współdzielenia pamięci przez różne procesory i podano sposób na poradzenie
+sobie z tym problemem. Allokator o podobnych właściwościach do \textit{Hoard}
+został zaimplementowany na potrzeby projektu systemu operacyjnego
+\textit{FreeBSD} -- \textit{jemalloc} został opisany w pracy
+\cite{evans06scalable}.
+
+Ideę prywatnych stert z allokatora \textit{Hoard} wozwinięto w
+\textit{tcmalloc} wykonanym przez pracowników firmy Google opisanym w pracy
+\cite{ghemawat07tcmalloc}. Zamiast semaforów, korzystających z systemu
+operacyjnego, zastosowano tam blokady pętlowe (ang.  \textit{spin locks}).
+Zaprezenowano tam efektywniejszą organizację wolnych obszarów pamięci
+minimalizującą ilość odwołań do systemu operacyjnego.  Obecnie
+\textit{tcmalloc} wydaje się być najwydajniejszym publicznie dostępnym
+allokatorem pamięci ogólnego przeznaczenia.
+
+\paragraph{Zarządzenie stronami pamięci.}
 
 Większość ówczesnych komputerów ma pewne mechanizmy zarządzania pamięcią
-zaimplementowane sprzętowo. Mechanizmy te tworzono z myślą o systemach
-operacyjnych i użyciu ich do usprawnienia działania procesów.
+zaimplementowane sprzętowo. Tworzono je z myślą o systemach operacyjnych i
+zwiększeniu wydajności programów. Jądro nadbudowuje nad tymi mechanizmami
+warstwę abstrakcji uwalniając zwykłego programistę od pewnych ograniczeń, ale
+również pułapek wydajnościowych.
 
 Jądro systemu uniksowego nie udostępnia procesom przestrzeni użytkownika
-mechanizmu zarządzania pamięcią dla bloków różnej długości. Implementacja
-popularnych funkcji malloc/free jest wczytywana z biblioteki libc. Proces
-użytkownika, może od systemu zarządać jedynie pewnej ilość tzw. ramek pamięci
--- bloków z reguły wielkości 4KB. Z punktu widzenia procesora taki blok to
-najmniejsza jednostka pamięci, której właściwości jest w stanie kontrolować.
-Jądro systemu zarządza pamięcią fizyczną tworząc przestrzeń adresową na
-potrzeby procesu. Systemy partnerskie (ang. Buddy Systems) są podstawowym
-algorytmem zarządzania pamięcią fizyczną w systemie Linux.
+mechanizmu zarządzania pamięcią dla bloków różnej długości. Dostarcza zamiast
+tego nieco bardziej niskopoziomy interfejs pobierania lub zwalaniania pewnej
+ilości całych stron pamięci (najczęściej są to 4\verb+KiB+ bloki). Z punktu
+widzenia procesora taki blok to najmniejsza jednostka pamięci, której
+właściwości jest w stanie kontrolować. Jądro systemu zarządza pamięcią fizyczną
+tworząc wirtualną przestrzeń adresową na potrzeby procesu -- do tego celu
+najczęściej używa się zmodyfikowanych systemów partnerskich (ang. \textit{buddy
+systems}). Szczegółowy opis zarządzania pamięcią fizyczną w systemie
+\textit{Linux} został zawarty w publicznie dostępnej książce
+\cite{gorman04linuxvm}.
 
-\paragraph{Zarządzenie pamięcią dla bloków jednakowej wielkości}
+\paragraph{Zarządzenie obiektami w jądrze.}
 
-Wiele dynamicznych struktur danych drzewa charakteryzuje się stałą wielkością
-rekordu -- w przypadku drzewa jest to węzeł. Mając na względzie takie
-ograniczenia problemu, można łatwo zapanować nad problemem lokalności w algorytmach
+Jądro systemu wykorzystuje na swoje potrzeby pewne struktury danych o ustalonej
+wielkości rekordów. Wydzielenie funkcjonalności, jaką jest rezerwacja bloków
+ustalonej długości, z ogólnego allokatora pamięci daje możliwość wielu
+optymalizacji. Znając dobrze architekturę sprzętową można zadbać wtedy o
+zwiększenie szybkości dostępu do poszczególnych bloków pamięci.
+
+W pracy \cite{bonwick94slab} skupiono się na efektywnym wykorzystaniu pamięci
+podręcznej do konstrukcji rekordów. Opis bazuje na wewnętrznym menadżerze
+pamięci systemu operacyjnego \textit{SunOS 5.4}, będącego przodkiem systemu
+\textit{Solaris}. W pracy tej przedstawiono zastosowanie kolorowania stron
+pamięci do równomiernego obciążenia szyny pamięci. Zaprezentowano strukturę
+danych \textit{slab} służącą do przechowywania obiektów ustalonej długości.
+Allokator o podobnej strukturze został zaimplementowany w systemie
+\textit{Linux} i zaprezentowany w pracy \cite{fitzgibbons00linux}.
 
 \newpage
 
@@ -423,6 +484,10 @@ W tym rozdziale zostaną omówione podstawy i pojęcia związane z:
 \item zagadnieniami wydajności pamięci w systemach jedno- i wieloprocesorowych,
 \item metodami synchronizacji dla programów wielowątkowych.
 \end{itemize}
+
+Część z tych zagadnien w przystępny sposób opisuje praca \cite{pas02memory}
+skierowana do programistów kodujących aplikacje korzystające w intensywny
+sposób z pamięci RAM.
 
 \subsection{Stronicowanie}
 
@@ -787,15 +852,18 @@ taką określa się mianem zaśmiecania pamięci podręcznej (ang. \textit{cache
 trashing}), które, w dosłownym tego słowa sensie, rujnuje wydajność programu
 działającego na architekturze wieloprocesorowej.
 
-\subsection{Synchronizacja między wątkami i procesorami}
+\subsection{Synchronizacja}
 
-\begin{enumerate}
-\item \verb+pthread_mutex_t+
-\item POSIX semaphores
-\item futex
-\item spinlocks
-\item operacje atomowe
-\end{enumerate}
+\paragraph{Semafory POSIX.}
+
+\paragraph{Semafory binarne dla wątków POSIX.}
+
+\paragraph{Mechanizm konstruowania obiektów synchronizacji w przestrzeni
+użytkownika.} \verb+futex+
+
+\paragraph{Blokady pętlowe.} (ang. \textit{spin locks})
+
+\paragraph{Atomowe instrukcje procesora.}
 
 \newpage
 
@@ -856,6 +924,8 @@ nie jest oczywiste w jaki sposób to robią
 \newpage
 
 \subsection{Zgodność ze standardem \texttt{POSIX}}
+
+\label{PosixMalloc}
 
 Programiści, korzystający z menadżera sterty w standardowej bibliotece języka
 C, są przyzwyczajeni do tego, że posiadają pewien dobrze znany mechanizm
@@ -1388,7 +1458,7 @@ adresem podzielnym przez $4$,
 \nocite{evans06scalable}
 \nocite{feng05localityimproving}
 \nocite{fitzgibbons00linux}
-\nocite{ghemawat00tcmalloc}
+\nocite{ghemawat07tcmalloc}
 \nocite{gorman04linuxvm}
 \nocite{iyengar96scalability}
 \nocite{johnstone98memory}
@@ -1397,6 +1467,7 @@ adresem podzielnym przez $4$,
 \nocite{paul95dynamic}
 \nocite{robson71estimate}
 \nocite{robson74bounds}
+\nocite{robson77worst}
 \nocite{stephenson83fastfits}
 \nocite{vuillemin80unifying}
 \nocite{weinstock88quickfit}

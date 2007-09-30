@@ -93,6 +93,10 @@
 }
 
 @COMMENT{ FB05
+	Opis allokatora Vam - kładącego duży nacisk na lokalność odwołań.
+	Przedstawienie struktur danych. Analizy użycia cache L1 / L2.
+	Analizy wykorzystania podsystemu zarządzania pamięcią. Badanie czasu
+	działania w przypadku małej ilości pamięci fizycznej.
 }
 @misc{ feng05localityimproving,
 	author = "Y. Feng and E. Berger",
@@ -121,6 +125,7 @@
 }
 
 @COMMENT{ WJNB95
+	Przekrojowa praca. Źródło poznania ;-)
 }
 @inproceedings{ paul95dynamic,
 	author = "Wilson, Paul R. and Johnstone, Mark S. and Neely, Michael and Boles, David",
@@ -144,18 +149,6 @@
 	pages = "114-124",
 	year = "2001",
 	url = "citeseer.ist.psu.edu/article/berger01composing.html"
-}
-
-@COMMENT{ BMBW00
-}
-@inproceedings{ berger00hoard,
-	author = "Emery Berger and Kathryn McKinley and Robert Blumofe and Paul Wilson",
-	title = "Hoard: {A} Scalable Memory Allocator for Multithreaded Applications",
-	booktitle = "{ASPLOS-{IX}}: Ninth International Conference on Architectural Support for Programming Languages and Operating Systems",
-	address = "Cambridge, MA",
-	pages = "117--128",
-	year = "2000",
-	url = "citeseer.ist.psu.edu/article/berger00hoard.html"
 }
 
 @COMMENT{ CJZ00
@@ -204,6 +197,21 @@
 	doi = {http://doi.acm.org/10.1145/321832.321846},
 	publisher = {ACM Press},
 	address = {New York, NY, USA}
+}
+
+@COMMENT{ Rob77
+	Prezentacja górnego ograniczenia na ilość używanej pamięci przez Best-Fit,
+	porównanie z First-Fit.
+}
+@article{ robson77worst,
+	author = {J. M. Robson},
+	title = {Worst Case Fragmentation of First Fit and Best Fit Storage	Allocation Strategies},
+	journal = {Comput. J.},
+	volume = {20},
+	number = {3},
+	year = {1977},
+	pages = {242-244},
+	bibsource = {DBLP, http://dblp.uni-trier.de}
 }
 
 @COMMENT{ LNO94
@@ -280,9 +288,10 @@
 	howpublished = "\url{http://www.sun.com/blueprints/1102/817-0742.pdf}"
 }
 
-@COMMENT{
+@COMMENT{ Ghe07
+	Zgrubny opis allokatora tcmalloc zrobionego przez Google.
 }
-@misc{ ghemawat00tcmalloc,
+@misc{ ghemawat07tcmalloc,
 	author = "Sanjay Ghemawat",
 	title = "TCMalloc: Thread-Caching Malloc",
 	year = "2007",
@@ -290,7 +299,8 @@
 	howpublished="\url{http://google-perftools.googlecode.com/svn/trunk/doc/tcmalloc.html}"
 }
 
-@COMMENT{
+@COMMENT{ Lea96
+	Zgrubny opis popularnego allokatora dlmalloc. Opisane techniki cache-owania.
 }
 @misc{ douglea96malloc,
 	author = "Doug Lea",
@@ -299,7 +309,22 @@
 	howpublished = "\url{http://gee.cs.oswego.edu/dl/html/malloc.html}"
 }
 
-@COMMENT{
+@COMMENT{ BMBW00
+	Opis wielowątkowego allokatora Hoard. Pojęcie blowup dla przerośniętych
+	stosów dla pojedyńczych wątków.
+}
+@inproceedings{ berger00hoard,
+	author = "Emery Berger and Kathryn McKinley and Robert Blumofe and Paul Wilson",
+	title = "Hoard: {A} Scalable Memory Allocator for Multithreaded Applications",
+	booktitle = "{ASPLOS-{IX}}: Ninth International Conference on Architectural Support for Programming Languages and Operating Systems",
+	address = "Cambridge, MA",
+	pages = "117--128",
+	year = "2000",
+	url = "citeseer.ist.psu.edu/article/berger00hoard.html"
+}
+
+@COMMENT{ Gor04
+	Książka opisująca system zarządzania pamięcią w Linuksie 2.4.x.
 }
 @misc{ gorman04linuxvm,
 	author = "Mel Gorman",
