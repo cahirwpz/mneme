@@ -54,6 +54,8 @@ zarządzania przestrzenią udostępnianą w ramach pamięci dzielonej.
 \end{center}
 \end{abstract}
 
+\cleardoublepage
+
 % --- Spis treści --------------------------------------------------------------
 
 \tableofcontents
@@ -854,16 +856,61 @@ działającego na architekturze wieloprocesorowej.
 
 \subsection{Synchronizacja}
 
-\paragraph{Semafory POSIX.}
+Sposób synchronizacji między poszczególnymi ścieżkami wykonania kodu może być
+realizowany na wiele sposobów. Używane do tego instrumenty mogą się różnić
+wydajnością i elastycznością. Podstawowym środkiem służącym do synchronizacji
+wątków czy procesów są blokady, które mogą nakazywać systemowi operacyjnemu
+wywłaszczenie programu i tym samym użycie mocy obliczeniowej na inne zadania.
+Blokad y używa się do obrony zasobów przed modyfikacją przez więcej niż jedną
+ściężkę wykonania kodu. Zwrócenie sterowania do jądra systemu jest opłacalne,
+jeśli przewiduje się, że program będzie oczekiwał na zwolnienie blokady przez
+dłuższy moment czasu. Odpowiedni dobór środków synchronizacji przy konstrukcji
+allokatora mającego działać w środowisku wielowątkowym może mieć dużym wpływ na
+jego wydajność.
 
-\paragraph{Semafory binarne dla wątków POSIX.}
+\paragraph{Semafory POSIX.} Są środkiem do synchronizacji wielu procesów w
+systemach zgodnych ze standardem \texttt{POSIX}. Występują w dwóch formach --
+jako semafory z nazwą i semafory anonimowe. Druga forma może posłużyć jako
+forma synchronizacji między procesami tylko, jeśli semafor anonimowy umieści
+się w pamięci dzielonej. Pełna implementacja tego mechanizmu jest dostępna w
+systemie \texttt{Linux} od wersji 2.6. Semafory \texttt{POSIX} w przypadku
+wykrycia blokady wywłaszczają program.
+
+\paragraph{Semafory binarne dla wątków POSIX.} (ang. \textit{pthread mutexes})
+Są środkiem synchronizacji między wątkami. W systemie \texttt{Linux} są
+zaimplementowane przy użyciu wywołania systemowego \verb+futex(7)+ -- podobnie
+jak semafory \texttt{POSIX}. Dzięki temu część operacji (np.: sprawdzenie stanu
+blokady) przebiega w przestrzeni użytkownika i jest stosunkowo szybka. W
+przypadku blokady sterowanie jest kierowane do systemu operacyjnego. 
+
+\paragraph{Blokady pętlowe.} (ang. \textit{spin locks}) Są używane tam, gdzie
+programista spodziewa się szybkiego zwolnienia blokady. Taka sytuacja może się
+często zdarzać dla systemów wieloprocesorowych, kiedy chronione zasoby są
+niewielkich rozmiarów. W takim przypadku opłaca się przeczekać kilkadziesiąt
+nawet do kilkuset cykli procesora w przestrzeni użytkownika. Koszt
+wywłaszczenia programu jest o wiele większy. Blokady pętlowe są bezużyteczne w
+przypadku systemów z jednym procesorem i należy ich unikać.
+
+\paragraph{Atomowe instrukcje procesora.} Do realizacji blokad pętlowych
+niezbędne są instrukcje procesora, które dają gwarancję wyłącznego dostępu do
+wybranych lokacji w pamięci. Najczęściej spotykanymi atomowymi operacjami są:
+\texttt{test-and-set}, \texttt{compare-and-swap}, \texttt{fetch-and-add}.
+Znajdują one także zastosowanie przy budowie równoległych struktur danych bez
+blokad (ang. \textit{lock free}).
 
 \paragraph{Mechanizm konstruowania obiektów synchronizacji w przestrzeni
-użytkownika.} \verb+futex+
-
-\paragraph{Blokady pętlowe.} (ang. \textit{spin locks})
-
-\paragraph{Atomowe instrukcje procesora.}
+użytkownika.} Celem zwiększenia wydajności operacji na semaforach programiści
+systemu \texttt{Linux} wprowadzili w wersji 2.6 nowe wywołanie systemowe
+\verb+futex(7)+ (ang. \textit{Fast Userspace muTexes}). Główną motywacją do
+stworzenia tego wywołania było przerzucenie odpowiedzialności na program
+użytkownika za obsługę części operacji na semaforach -- a tym samym
+zmniejszenie ilości wywołań systemowych, które są stosunkowo kosztowne. Przy
+okazji \texttt{Linux} zyskał potężne narzędzie do konstrukcji dowolnych
+obiektów służących do synchronizacji wątków i procesów. Przy pomocy procedury
+\verb+futex(2)+ można np.: napisać hybrydową wersję blokowania, która przez
+pewien okres czasu czeka na zwolnienie zasobu w przestrzeni użytkownika i w
+przypadku przekroczenia limitu czasowego oddaje sterowanie do przestrzeni
+jądra.
 
 \newpage
 
@@ -923,7 +970,7 @@ nie jest oczywiste w jaki sposób to robią
 
 \newpage
 
-\subsection{Zgodność ze standardem \texttt{POSIX}}
+\subsection{Interfejs standardowego allokatora}
 
 \label{PosixMalloc}
 
@@ -935,7 +982,9 @@ W związku z tym implementacja ogólnego menadżera pamięci powinna być możli
 jak najbardziej zbliżona pod względem zachowania do tej określonej w
 standardzie \texttt{POSIX}.
 
-\subsubsection{Procedura \texttt{malloc}}
+\subsubsection{Zgodność ze standardem \texttt{POSIX}}
+
+\paragraph{Procedura malloc.}
 
 Funkcja \texttt{malloc} zwraca wskaźnik do bloku pamięci o rozmiarze
 \texttt{size} bajtów lub wartość \texttt{NULL} w przeciwnym wypadku.
@@ -953,7 +1002,7 @@ bezpośrednio przed jak i za przydzielonym blokiem najprawdopodobniej uszkodzi
 prywatne struktury danych allokatora pamięci -- co doprowadzi do nieokreślonego
 zachowania menadżera pamięci.
 
-\subsubsection{Procedura \texttt{calloc}}
+\paragraph{Procedura calloc.}
 
 Funkcja \texttt{calloc} zwraca wskaźnik do wyzerowanego bloku pamięci będącego
 w stanie pomieścić tablicę \texttt{count} elementów o rozmiarze
@@ -968,7 +1017,7 @@ Procedura ta zachowuję się podobnie jak \texttt{malloc}, poza gwarancją
 zainicjalizowania obszaru zerami. Implementacja tego wywołania może, ale nie
 musi, korzystać wewnętrznie z wywołania \texttt{malloc}.
 
-\subsubsection{Procedura \texttt{realloc}}
+\paragraph{Procedura realloc.}
 
 Funkcja \texttt{realloc} zmienia rozmiar bloku wskazywanego przez argument
 \texttt{ptr} na \texttt{newsize} bajtów. Jeśli zwrócony adres jest równy
@@ -990,7 +1039,7 @@ Funkcja \texttt{realloc} działa jak \texttt{malloc(newsize)}, jeśli argument
 \texttt{ptr} jest równy \texttt{NULL}, lub jako \texttt{free(ptr)}, jeśli
 argument \texttt{newsize} jest równy $0$.
 
-\subsubsection{Procedura \texttt{posix\_memalign}}
+\paragraph{Procedura posix\_memalign.}
 
 Funkcja \texttt{posix\_memalign} rezerwuje blok pamięci o adresie podzielnym
 przez argument \texttt{alignment} (liczba ta musi być potęgą dwójki) oraz przez
@@ -1020,7 +1069,7 @@ sprawdzić używając funkcji \texttt{getpagesize()}.
 Warto również zauważyć, że w systemach \textit{BSD} pamięć rezerwowana przez te
 procedury nie może być zwalniania przez procedurę \texttt{free}.
 
-\subsubsection{Procedura \texttt{free}}
+\paragraph{Procedura free.}
 
 Funkcja \texttt{free} zwalnia blok pamięci, czyniąc przestrzeń przez niego
 wykorzystywaną zdatną do ponownego użycia.
@@ -1050,7 +1099,7 @@ zakończyć się przerwaniem działania programu.
 Jeśli wskaźnik \texttt{ptr} jest równy wartości \texttt{NULL}, to procedura
 \texttt{free} nie wykonuje żadnej operacji.
 
-\subsubsection{Pozostałe procedury menadżera zgodnego z \texttt{POSIX}}
+\subsubsection{Rozszerzenia \texttt{GNU}}
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototypy pozostałych procedur i zmiennych.}]
