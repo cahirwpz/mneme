@@ -25,14 +25,20 @@ mgr.bbl: mgr.tex mgr.bib
 mgr.aux: mgr.tex
 	pdflatex mgr.tex
 
-dist:	mgr.pdf
+dist:	full
 	@rm -f mgr.tar.gz
-	@tar cvzf mgr.tar.gz	\
-		mgr.{tex,pdf}	\
-		*.dia		\
-		Makefile	\
-		src/Makefile	\
-		$(shell find src -name *.[ch])
+	@tar --verbose			\
+		--exclude *.bin		\
+		--exclude *.o		\
+		--exclude .svn 		\
+		--exclude .libs		\
+		--create		\
+		--gzip			\
+		--file mgr.tar.gz	\
+		mgr.{tex,pdf}		\
+		*.dia			\
+		Makefile		\
+		src
 
 nocite:
 	@sed -nr 's/@\w+\{\ (.*),/\\nocite{\1}/p' mgr.bib | sort

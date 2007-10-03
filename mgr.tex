@@ -916,22 +916,220 @@ jądra.
 
 % --=[ Omówienie klasycznych mechanizmów ]=-------------------------------------
 
-\section{Klasyczne menadżery}
+\section{Klasyczne mechanizmy}
 \hypertarget{Klasyka}{}
 
-Podstawy, z których będę korzystał wymyślając własny algorytm.
+Istnieje szereg schematów zarządzania pamięcią o dobrze zbadanych
+właściwościach. Można je potraktować jako punkt wyjściowy do tworzenia
+hybrydowych menadżerów pamięci.
 
-\subsection{Strategie wyboru bloku pamięci}
+Do głównych zadań algorytmu allokatora należy wyznaczanie pozycji bloków przy
+próbie minimalizacji efektu fragmentacji. Wybór adresu początku bloku jest
+jedyną decyzją jaką może podejmować menadżer pamięci. Sposób w jaki to robi
+nazywa się \textit{polityką wyznaczania położenia bloku}. Projektowanie
+menadżera pamięci składa się na trzy etapy:
 
-W jaki sposób zarezerwować blok pamięci?
+\begin{description}
 
-\subsubsection{Best-fit}
+\item[Nakreślenie strategii.] \textit{Strategia} określa cele jakie mają być
+spełnione w ramach pewnej \textit{polityki}. \textit{Strategia} może być
+idealistyczna i brzmieć np.: ``wyznaczaj pozycję bloków w takich sposób, by ich
+rezerwacja nie indukowała fragmentacji w trakcie kolejnych operacji
+allokatora'', co z natury \textit{on-line} algorytmu zarządzania pamięcią jest
+nieosiągalne.  \textit{Strategia} może powstać w wyniku obserwacji
+rzeczywistych ciągów operacji dla allokatora.
 
-Wybór najlepiej pasującego wolnego bloku.
+\item[Określenie polityki.] \textit{Polityka} jest w pewnym sensie
+skonkretyzowaną instancją starającą się zaspokoić cele wyznaczone przez
+\textit{strategię}. Może być to pseudokod lub inna forma myśli dająca się
+przekształcić bezpośrednio w \textit{mechanizm}. W wyniku skonkretyzowania
+pewne właściwości \textit{strategii} mogą zostać porzucone, jako zbyt kosztowne
+lub zbyt skomplikowane by zawrzeć jej koncepcje w \textit{polityce}.
 
-\subsubsection{First-fit}
+\item[Implementacja mechanizmu.] \textit{Mechanizmem} można określić kompletny
+algorytm spełniający specyfikację wyznaczoną przez pewną \textit{politykę
+wyznaczania pozycji bloku}. \textit{Mechanizm} to zbiór struktur danych i
+operacji na nich służących do przydzielania i zwalniania bloków pamięci.
+Programista wykorzystuje \textit{mechanizm} odwołując się do niego poprzez
+pewien określony interfejs.
 
-Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
+\end{description}
+
+\subsection{Listy wolnych bloków}
+
+Najczęściej wykorzystywanym mechanizmem wśród menadżerów pamięci są warianty
+listy wolnych bloków implementujące różne polityki. Z reguły listy są
+organizowane w pamięci używając techniki znaczników granicznych (ang.
+\textit{boundary tags}) opisane przez Kuntha w książce
+\cite{knuth73fundamental}. Znaczniki są częścią bloku -- leżą bezpośrednio
+przed adresem zwracanym przez procedurę rezerwującą blok. Znaczniki to rekord
+przechowujący co najmniej wielkość bloku i flagę zajętości. Kiedy blok jest
+wolny bezpośrednio za zacznikami, a czasem również na samym końcu,
+przechowywane są pola struktury utrzymującej porządek wolnych bloków według
+zasad określonych przez pewną politykę. Najczęściej wykorzystywaną strukturą
+danych jest lista dwukierunkowa, która niestety wypada bardzo źle pod względem
+wydajności. Ponieważ znaczniki poszczególnych bloków są od siebie znacznie
+oddalone, lokalność odwołań do pamięci jest dość znikoma -- powodując znacznie
+obciążenie przepustowości szyny danych. Dodatkowo menadżer używający listy może
+wymagać liniowego czasu względem ilości wszystkich bloków do wykonania operacji
+przydziału lub zwolnienia.
+
+Celem poprawienia czasu działania poszczególnych żądań zamiast list
+dwukierunkowych stosuje się np. drzewa kartezjańskie opisane w pracy
+\cite{vuillemin80unifying}. Są to drzewa, które są uporządkowane dwuwymiarowo.
+Utrzymują porządek kopcowy ze względu na wielkość bloku, a porządek
+\textit{in-order} ze względu na adres początku bloku. Pierwszy allokator
+wykorzystujący te drzewa został opisany w pracy \cite{stephenson83fastfits}.
+
+Tam gdzie porządek względem adresów nie jest konieczny, interesującym wydaje
+się być wykorzystanie zbalansowanych drzew. Przemawia za tym niewielka
+pesymistyczna złożoność czasowa operacji wyszukiwania i tym samym zmniejszenie
+ilości odwołań do komórek, które z dużym prawdopodobieństwem znajduje się poza
+pamięcią podręczną. Słabo zbadaną strukturą danych pod względem wykorzystania w
+allokatorach pamięci jest \textit{splay tree}, która może się bardzo dobrze
+sprawować w praktyce.
+
+\paragraph{Podział i scalanie.} Są to techniki, które służą kontroli do
+fragmentacji. Przypuśćmy, że znaleziony przez algorytm wolny blok jest dużo
+większy od żądanego rozmiaru. Allokator może wtedy podzielić blok na dwie
+części. Pierwszą część może wtedy zwrócić jako żądany blok, a drugą wstawić na
+listę wolnych bloków. Kiedy menadżer dostaje pewien blok do zwolnienia, może
+zadecydować, aby scalić go z okolicznymi wolnymi blokami. \textit{Podział i
+scalanie} są przedmiotem rozmaitych polityk np.:
+
+\vspace{-1ex}
+
+\begin{description}
+\item[Polityka buforowania.] Wynika z następującej strategii: ``jeśli program
+zwolnił obszar o rozmiarze $n$, to być może zaraz będzie potrzebował bloku o
+identycznym rozmiarze''. Strategia ta może się przyczynić do zwiększenia
+wydajności allokatora w przypadku operacji intensywnie modyfikujących
+dynamiczną strukturę danych, a wymagającą użycia menadżera pamięci. Polityka do
+zrealizowania tej strategii polega na zorganizowania bufora, do którego na
+jakiś okres czasu trafiają zwolnione bloki. Jeśli blok nie został w określonym
+czasie zarezerwowany to trafia na listę wolnych bloków i zostaje scalony.
+Polityka taka gwarantuje zapobiega swego rodzaju ``czkawce'' polegającej na
+częstym scalaniu i podziale tego samego bloku. Dodatkowo polityka ta sprzyja
+lokalności odwołań do pamięci, gdyż z dużym prawdopodobieństwem ostatnio
+zwolnione bloki znajdują się w pamięci podręcznej procesora.
+\vspace{1ex}
+
+\item[Polityka gorliwego podziału.] Motywowana jest strategią brzmiącą: ``jeśli
+program zrezerwował blok o niewielkim rozmiarze $n$, to najprawdopodobniej
+zaraz będzie żądął bloku o podobnym rozmiarze''. Strategia taka sprawdza się w
+przypadku, kiedy program szybko buduje dużą strukturę danych. Polityka
+relizująca tą strategię zapewnia, że przy żądaniach o odpowiednim rozmiarze
+(dla struktur o rozsądnym rozmiarze rekordu) zostanie znaleziony odpowiednio
+większy wolny blok pamięci. Zostanie on podzielony na pewną ilość wolnych
+bloków o żądanym rozmiarze. Pierwszy z tych bloków zostanie zwrócony jako
+rezultat operacji \texttt{malloc}, a reszta trafi do podręcznego bufora
+allokatora, omówionego w \textit{polityce buforowania}. Technika ta została
+użyta w dlmalloc \cite{douglea96malloc} i określana jest tam mianem
+\textit{pre-splitting}. Dokładniejszy opis implementacji takiej strategii można
+znaleźć w pracy \cite{weinstock88quickfit}.
+\vspace{1ex}
+
+\item[Polityka leniwego scalania.] Może być wynikiem stosowania następującej
+strategii: ``wykorzystuj moc obliczeniową tylko wtedy, kiedy jest to
+rzeczywiście potrzebne''. Polityka wynikająca z tej strategii może np. scalać
+tylko wtedy, kiedy uzna że wolne bloki po scaleniu mogą posłużyć do spełnienia
+żądania. Może też po prostu odraczać scalanie bloków do kolejnej operacji
+przydziału pamięci, które być może musi przejrzeć wszystkie pozycje na liście.
+\end{description}
+
+\paragraph{Best-fit.}
+
+Polityka \textit{best-fit} -- czyli polityka najlepszego dopasowania -- polega
+na przydzielaniu takiego bloku, którego rozmiar jest najmniejszym możliwym
+spełniającym żądanie \texttt{malloc}. Mimo, że teoretycznie jest to polityka
+powodująca największą fragmentację, to w praktyce nie obserwuje się takich
+anomalii. Na dodatek jej stosowanie często powoduje mniejszą fragmentację niż
+\textit{first-fit} o lepszych teoretycznie właściwościach. Polityka
+\textit{best-fit} wynika z następujących dwóch strategii:
+\vspace{-1ex}
+
+\begin{description}
+\item[Strategia minimalizacji pozostałości.] Mimo, że brzmi mało konkretnie i
+nie jest jasne czemu dokładnie ma służyć, to przyczyniła się do powstania wielu
+istotnych polityk. \textit{Best-fit} spełnia założenia tej strategii. Zauważmy,
+że wybór najmniejszego możliwego bloku, a następnie jego podział na część
+mającą posłużyć jako rezultat operacji \texttt{malloc}, implikuje powstanie
+pewnego obszaru za przydzielonym blokiem (o ile znaleziony wolny blok nie jest
+dokładnie tych samej wielkości co żądany). Obszar ten, będący pozostałością po
+podziale, jest najmniejszym z możliwych jakie mogły powstać. Zatem jeśli się
+okaże, że został nieużytkiem, to będzie miał minimalny rozmiar.
+\vspace{1ex}
+
+\item[Strategia ochrony dużych obszarów.] Służy polityce, która preferuje
+dzielić bloki w obszarach, które w przyszłości nie będą mogły być elastycznie
+używane.
+\end{description}
+
+\paragraph{First-fit.}
+
+Polityka pierwszego dopasowania (ang. \textit{first-fit}) polega na
+przydzieleniu pierwszego bloku, który spełnia rozmiar żądania. Reszta powstała
+w wyniku podziału znalezionego bloku zostaje wstawiona na listę wolnych bloków.
+Wadą tej polityki jest tendencja do generowania dużej ilości małych bloków na
+samym początku listy i w efekcie długi czas wyszukiwania dużych bloków.
+
+\paragraph{Polityka, a porządek listy wolnych bloków.}
+
+W przypadku obu polityk wyboru położenia bloku (tj. \textit{best-fit} i
+\textit{first-fit}) fregmentacja, którą powstaje w wyniku działania allokatora
+w istotny sposób zależy od tego, w jaki sposób zorganizowany jest porządek na
+liście wolnych bloków. W pracy \cite{johnstone98memory} przeprowadzono
+gruntowne badania nt.  fragmentacji dla porządku \texttt{AO} (ang.
+\textit{address ordered}), \texttt{FIFO}\footnote{Porządek kolejkowy --
+pierwszy na wejściu, pierwszy na wyjściu.} (ang.  \textit{first in, first
+out}), \texttt{LIFO}\footnote{Porządek stosowy -- ostatni na wejściu, pierwszy
+na wyjściu.} (ang.  \textit{last in, first out}). Okazuje się, że praktycznych
+zastosowaniach polityka \textit{best-fit} w połączeniu z listą uporządkowaną
+względem adresów lub stosowo charakteryzuje się najmniejszą fragmentacją.
+
+\begin{description}
+
+\item[Porządek LIFO.] Lista bloków przechowuje na początku ostatnio zwolnione
+bloki. W łatwy sposób można rozszerzyć ten pomysł o właściwości
+\textit{polityki buforowania}, jeśli tylko nie będzie się scalać pewnej ilości
+bloków z początku listy. Polityka ta charakteryzuje się dużą lokalnością
+odwołań. Ponieważ na czele listy znajdują się ostanio używane bloki, to z dużym
+prawdopodobieństwem znajdują się one również w pamięci podręcznej procesora.
+
+\vspace{1ex}
+
+\item[Porządek FIFO.] Ostatnio zwolnione bloki będą umiejscawiane na końcu
+kolejki. Cały zarządzany obszar będzie cyklicznie przeglądany. Trudno
+stwierdzić praktyczną przydatność takiej polityki. Wydaje się ona być mało
+interesująca ze względu na niską lokalność odwołań i empirycznie udowodnioną
+dużą fragmentacją.
+
+\vspace{1ex}
+
+\item[Porządek AO.] Lista jest uporządkowana w naturalny sposób -- względem
+adresu początku bloków. Polityka ta zdradza tendencję do umieszczania zajętych
+bloków w obrębie początku zarządzanego obszaru. Charakteryzuje się dobrym
+zachowaniem lokalności i małą fragmentacją w przypadku, kiedy zwalnianie bloki
+tworzą spójny obszar pamięci. Oszacowanie fragmentacji w przypadku śmierci
+dużej ilości obiektów nierównomiernie rozmieszczonych w pamięci nie jest dobrze
+zbadane.
+\end{description}
+
+\subsection{Posegregowane listy wolnych bloków}
+
+\textsc{Teraz pracuję tutaj!}
+
+\paragraph{Wersja uproszczona.} (sama koncepcja)
+
+\paragraph{Wersja pełna.} (ze scalaniem, podziałem i przenoszeniem między listami)
+
+\subsection{Inne algorytmy}
+
+\paragraph{Systemy partnerskie.} (binarne, Fibonnaciego, podwójne)
+
+\paragraph{Mapy bitowe.} (nic wielkiego)
+
+\paragraph{Reaps.} (stos i połączenie listy wolnych bloków)
 
 \newpage
 
@@ -940,11 +1138,10 @@ Wybór pierwszego wolnego bloku, w którym mieści się rezerwowany obszar.
 \section{Testowanie wydajności}
 \hypertarget{Testowanie}{}
 
+\textsc{Struktura tego rozdziału jeszcze do określenia!}
+
 Programy w różnym stopniu wykorzystują algorytmy zarządzania pamięcią. Ponieważ
 nie jest oczywiste w jaki sposób to robią 
-
-
-
 
 \begin{enumerate}
 \item test z losowymi parami \textit{(długość życia, wielkość)} o równomiernym rozkładzie,
