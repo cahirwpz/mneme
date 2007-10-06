@@ -19,6 +19,8 @@
 \pagestyle{fancy}
 \lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
 
+\pdfcompresslevel9
+
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
 \title{Wielowątkowy zarządca pamięci dzielonej}
@@ -1086,6 +1088,7 @@ out}), \texttt{LIFO}\footnote{Porządek stosowy -- ostatni na wejściu, pierwszy
 na wyjściu.} (ang.  \textit{last in, first out}). Okazuje się, że praktycznych
 zastosowaniach polityka \textit{best-fit} w połączeniu z listą uporządkowaną
 względem adresów lub stosowo charakteryzuje się najmniejszą fragmentacją.
+\vspace{-1ex}
 
 \begin{description}
 
@@ -1117,44 +1120,235 @@ zbadane.
 
 \subsection{Posegregowane listy wolnych bloków}
 
-\textsc{Teraz pracuję tutaj!}
+Prostym i efektywnym rozszerzeniem mechanizmu omówionego w poprzednim punkcie
+jest tablica list. Każdy element takiej tablicy przechowuje wskaźnik do listy
+wolnych bloków o określonej wielkości. Kiedy blok jest zwalniany umieszcza się
+go na liście odpowiadającej rozmiarowi zwalnianiego bloku. Kiedy program chce
+zarezerwować pamięć, wtedy bloków o żądanej wielkości szuka się na odpowiedniej
+liście. Jeśli lista jest pusta, to allokator przy pomocy odpowiednich działań
+musi pobrać wolną pamięć, stworzyć nowe bloki i uzupełnić pustą listę.  Należy
+jeszcze zauważyć, że o ile bloki z danej listy są uporządkowane względem
+wielkości, to wcale nie muszą zajmować spójnego obszaru pamięci.
 
-\paragraph{Wersja uproszczona.} (sama koncepcja)
+Z oczywistych względów tablica przechowująca wskaźniki nie może być zbyt duża.
+Dlatego ogranicza się liczbę dopuszczalnych wielkości bloków. Do danej listy
+przyporządkowuje się wszystkie żądania z danego przedziału wielkości,
+zaokrąglając żądany rozmiar w górę. Niestety, przyczynia się to do zwiększenia
+fragmentacji wewnętrznej. Z tego względu mechanizmu tego nie stosuje się do
+obsługi wszystkich żądań, a tylko z zadanego przedziału wielkości -- z reguły
+od kilkudziesięciu bajtów do kilkunastu kilobajtów.
 
-\paragraph{Wersja pełna.} (ze scalaniem, podziałem i przenoszeniem między listami)
+\begin{description}
+\item[Wersja uproszczona.] Nie angażuje ona procedur podziału i scalania
+bloków do ograniczania problemu fragmentacji. Gdy na danej liście zabraknie
+bloków, to allokator pobiera spójny obszar o długości kilku stron od systemu
+operacyjnego, dzieli je na wolne bloki i wstawia na listę. Warto zauważyć, że
+takie działanie zwalnia allokator z obowiązku pamiętania długości bloku w
+obszarze przez niego zajmowanym. Zamiast tego, wielkość można przypisać do
+obszaru okupowanego przez bloki o danym rozmiarze. Jest w miarę oczywiste, że
+polityka taka prowadzi do implementacji szybkiego algorytmu -- zarówno w
+trakcie przydziału jak i zwalniania pamięci koszt jest stały. Wadą tego
+podejścia jest potencjalnie duża fragmentacja, która nie podlega kontroli.
+Pewnym podejściem do ograniczenia problemu fragmentacji jest sprawdzanie, czy w
+obszarze zajmowanym przez bloki danej wielkości istnieje co najmniej jedna
+nieużywana strona. Można ją wtedy wyciągnąć z tego obszaru i użyć do
+uzupełnienia listy bloków o innym rozmiarze.
+\vspace{1ex}
+
+\item[Wersja pełna.] Zasadnicza różnica między wersją pełną, a uproszczoną,
+tkwi w metodzie tworzenia nowych bloków. Kiedy lista przechowująca bloki o
+rozmiarze z danego zakresu jest pusta, przeszukuje się listę dla bloków o
+większym rozmiarze. Jeśli tam znajdzie się blok to zostaje on podzielony.
+Powstałe w wyniku podziału mniejsze bloki umieszcza się na odpowiednich
+listach. W trakcie zwalniania bloku następuje jego scalenie z sąsiadami i
+umieszczenie na odpowiedniej liście. Łączenie jest operacją kosztowną i może
+prowadzić do tzw. ``czkawki'', dlatego zazwyczaj stosuje się \textit{politykę
+leniwego scalania}. W przeciwieństwie do wersji uproszczonej, bloki o
+określonym zakresie rozmiaru mogą zajmować dowolne obszary pamięci.  Warto
+zauważyć, że mechanizm ten aproksymuje politykę \textit{best-fit}, niezależnie
+od polityki stosowanej względem poszczególnych list.
+
+\end{description}
 
 \subsection{Inne algorytmy}
 
-\paragraph{Systemy partnerskie.} (binarne, Fibonnaciego, podwójne)
+Wiele algorytmów zarządzania pamięcią jest efektem modyfikacji mechanizmów
+przedstawionych w poprzednich punktach. Często dokonywanymi zmianami jest
+stosowanie struktur danych pozwalających skrócić czas poszukiwania bloku o
+określonych właściwościach. Istnieją jeszcze dwa mechanizmy istotnie różne od
+omówionych wcześniej i warte komentarza:
 
-\paragraph{Mapy bitowe.} (nic wielkiego)
+\begin{description}
 
-\paragraph{Reaps.} (stos i połączenie listy wolnych bloków)
+\item[Systemy partnerskie.] Znane jako \textit{buddy system}, są szczególnym
+wariantem list wolnych bloków implementujących efektywną, lecz ograniczoną
+formę scalania i podziału. Na $i$-tej liście przechowywane są bloki, których
+długość jest sumą wielkości bloków z poprzednich list -- zazwyczaj z
+$(i-1)$-tej. Szybki podział i scalanie opierają się na prostym sposobie
+wyznaczania pozycji bloków, operującym jedynie na wartości adresów.  Bloki o
+danej wielkości muszą mieć adres podzielny przez określoną wielkość.  Scalanie
+odbywa się jedynie na przyległych blokach o takim samym rozmiarze --
+określanych mianem partnerów lub bliźniaków. Adres pierwszego bloku musi być
+podzielny przez rozmiar bloku, który powstałby w wyniku scalenia bliźniaków.
+Intuicyjnie patrząc -- przestrzeń zarządzana przez \textit{buddy system} jest w
+rekurencyjnie podzielona na dwie części o ustalonych rozmiarach -- najczęściej
+są to potęgi dwójki. Efektywną implementację binarnych systemów bliźniaczych
+zaprezentowano w pracy \cite{demaine99fast}.
+
+\vspace{1ex}
+
+\item[Mapy bitowe.] Mapa bitowa (ang. \textit{bitmap}) jest wektorem bitów.
+Każdemu bitowi można przypisać odpowiedzialność za stan danego bloku z obszaru
+odpowiadającemu wektorowi. Metodę tą rzadko się spotyka w allokatorach pamięci
+mimo, że w niektórych przypadkach mogłyby pomóc redukować fragmentację
+wewnętrzną. Mapy bitowe mogłyby też posłużyć do zwiększania lokalności
+referencji, poprzez umieszczenie informacji o zajętości bloków w jednym
+obszarze pamięci.
+
+\end{description}
 
 \newpage
 
-% --=[ Testowanie wydajności ]=-------------------------------------------------
+% --=[ Testowanie właściwości ]=------------------------------------------------
 
-\section{Testowanie wydajności}
+\section{Testowanie}
 \hypertarget{Testowanie}{}
 
-\textsc{Struktura tego rozdziału jeszcze do określenia!}
+W trakcie omawiania allokatorów w poprzednich rozdziałach często padało
+stwierdzenie, że pewnych teoretycznych właściwości menadżerów pamięci nie
+obserwuje się w praktyce. Istnieje duża rozbieżność między tym w jaki sposób
+zachowują się allokatory w rzeczywistych zastosowaniach i pesymistycznymi
+przypadkami określonymi przez teorię. Warto zwrócić uwagę na to, że często
+proste modyfikacje, czy dodatkowe heurystyki, potrafią całkowicie zmienić
+właściwości teoretyczne menadżera pamięci. Trudno powiedzieć z czego wynika tak
+duża rozbieżność. Może to mieć źródło w fakcie, że w istocie allokatory są zbyt
+skromnie przebadane od strony teoretycznej. Może to wynikać z braku dobrze
+zdefiniowanych środków do modelowania pewnych zachowań.  Menadżery pamięci to z
+reguły algorytmy hybrydowe inaczej traktujące poszczególne wielkości bloków --
+ze względu na to ich teoretyczna analiza może okazać się bardzo kłopotliwa i
+nader skomplikowana. Ostanim i najbardziej prawdopodobnym wyjaśnieniem rozważanej
+rozbieżności jest to, że przekrój programów wykorzystujących menadżery pamięci
+zachowuje się w mało losowy sposób, za który odpowiadają pewne wzorce
+programistyczne.
 
-Programy w różnym stopniu wykorzystują algorytmy zarządzania pamięcią. Ponieważ
-nie jest oczywiste w jaki sposób to robią 
+\subsection{Badane właściwości}
+
+Menadżery pamięci warto i należy intensywnie badać. Istnieje duża gama zachowań
+programów korzystających z allokatorów. Można się spodziewać, że będą istotne
+różnice we wzorcach wykorzystania tych algorytmów w przypadku: aplikacji z
+interfejsami graficznymi, serwerów usług sieciowych, programów do obliczeń
+naukowych, aplikacji do modelowania geometrii, itd. Dobry ogólny menadżer
+pamięci powinien sprawować się dobrze w każdym z tych przypadków.
+
+Złą wiadomością jest to, że algorytmy allokatorów są bardzo ciężkie do analizy
+w~praktyce. Fragmentację należy mierzyć na pewnym zbiorze programów. Niestety
+nie ma ustalonego korpusu, który byłby standardem do porównywania wyników.  W
+artykułach poruszających tematykę wydajności i fragmentacji często pojawiają
+się te same programy służące do pomiarów, jednak część z nich nie jest
+publicznie dostępna lub jest płatna. Trudno też uznawać ten zbiór za
+reprezentatywny.
+
+Kolejnym problemem jest fakt, że badanie allokatorów ze względu na wydajność
+traci sens, jeśli wydzielić je ze środowiska lub programu, w którym działają.
+Efektywność aplikacji w dużym stopniu zależy od tego, jak allokator rozmieści
+bloki w pamięci. Lokalność referencji to na tyle istotne zagadnienie, że
+programista świadomie i poprawnie posługujący się mechanizmami współczesnych
+procesorów jest w stanie przyśpieszyć swój program nawet o rząd wielkości.
+Menadżer pamięci powinen maksymalizować lokalność odwołań, zwalniając
+programistę z pamiętania o niskopoziomowych aspektach związanych z hierarchią
+pamięci.
+
+Przed wdrożeniem kompletnego menadżera pamięci do szerszego zastosowania należy
+go gruntownie przetestować pod względem poszczególnych właściwości:
+
+\paragraph{Poprawność.} Allokator w pełni odpowiada za bloki pamięci, które
+przydziela i zwalnia. Każdy błąd w menadżerze bezpośrednio oddziaływuje na
+program, który z niego korzysta. W związku z tym algorytm musi być intensywnie
+przetestowany względem wszystkich przypadków na jakie pozwala semantyka
+operacji rezerwowania i zwalniania bloku. Niedopuszczalne jest, by narażać
+programy korzystające z menadżera na utratę danych. Allokatory są klasą
+algorytmów, którą wyjątkowo ciężko się odpluskwia. Nie można zdać się na
+narzędzia do znajdowania błędów odwołań do pamięci, bo w większości przypadków
+działają one jako nakładka przechwytująca wywołania procedur \texttt{malloc} i
+\texttt{free}. Poprawność można badać przy pomocy testów losowych -- jest wtedy
+pewność, że w dość krótkim czasie zostaną osiągnięte stany, które w praktyce
+zdarzają się niezwykle rzadko. Taki typ błędów jest szczególnie niebezpieczny,
+gdyż za usterkę z reguły obwinia się wtedy nie allokator, a~program z niego
+korzystający.
+
+\paragraph{Fragmentacja.} Pamięć RAM w dzisiejszych czasach jest zasobem
+stosunkowo tanim. Niemniej trzeba go wykorzystywać z rozsądkiem -- wydaje się,
+że straty większe niż 10\% -- 15\% są już martnorawstwem. Fragmentacja była
+zawsze głównym celem badań allokatorów i często minimalizowano ją kosztem
+wydajności. Ze względów ekonomicznych w dzisiejszych czasach można już kłaść na
+to mniejszy nacisk. Istnieje dość szeroki wachlarz publicznie dostępnych
+programów, którymi porównuje się menadżery pamięci -- aplikacje te zostaną
+omówione w kolejnym podrozdziale. Fragmentację można mierzyć na różne sposoby:
 
 \begin{enumerate}
-\item test z losowymi parami \textit{(długość życia, wielkość)} o równomiernym rozkładzie,
-\item j.w. ale wielowątkowy,
-\item test z losowymi parami \textit{(długość życia, wielkość)} o rozkładzie symulujacym rzeczywistość,
-\item j.w. ale wielowątkowy,
-\item ślady z wykonania programów,
-\item wnioski nt. zachowań spotykanych w programach
+
+\item Wyznacza się stosunek największego wolnego bloku do sumy wszystkich
+wolnych bloków. Podaje się minimum tej wartości na przestrzeni czasowej
+wykonania programu. Im bliższy jedności ten stosunek, tym większa część wolnej
+pamięci jest skumulowana w pojedyńczym bloku.
+
+\vspace{1ex}
+
+\item Na całej przestrzeni czasowej programu wyznacza się stosunek dwóch
+wartości -- maksymalnej wielkości bloków będących w użyciu i maksymalnej ilości
+pamięci używanej przez allokator. Obliczane maksima mogą przypadać na różne
+chwile. Wyznaczona wartość daje orientacyjne pojęcie o efektywności użycia
+pamięci w najbardziej obciążającym momencie.
+
 \end{enumerate}
 
-\subsection{Testy statystyczne}
+Inne sposoby mierzenia fragmentacji, wraz z argumentacją na temat ich
+użyteczności, zostały dokładnie omówione w pracy \cite{johnstone98memory}.
+Problem fragmentacji w systemach komputerowych ze stronicowaniem ma nieco inną
+specyfikę niż w rozważaniach teoretycznych. Najmniejszą jednostką pamięci jaką
+otrzymuje allokator od systemu to strona -- obszar o długości 4\texttt{KiB}.
+Dopóki istnieje co najmniej jeden używany blok wewnątrz strony, to nie może być
+ona zwolniona.  Dochodzi wtedy do sytuacji, gdzie pojedyńczy nawet bardzo mały
+blok powstrzymuje allokator przed zwolnieniem całkiem dużego obszaru. Warto
+rozszerzyć testy uwzględniając właśnie takie anomalie. W pracy na temat
+menadżera pamięci \texttt{jemalloc} \cite{evans06scalable} zastosowano ciekawą
+metodę wizualizacji użycia przestrzeni adresowej programu przez allokator
+pamięci.
 
-\subsection{Testy z wykorzystaniem śladów}
+\paragraph{Wydajność.} W inżynierii oprogramowania często spotyka się
+stwierdzenie, że za 90\% czasu wykonania programu odpowiada 10\% kodu. Nie musi
+być to prawdą, jednak słaba wydajność menadżera pamięci może przyczyniać się do
+powstawania tak negatywnego efektu. Dzisiejsze programy wykorzystują allokatory
+bardzo intensywnie -- wywołując procedury \texttt{malloc} i \texttt{free} setki
+tysięcy, czy nawet miliony razy na sekundę. Optymalizacja szybkości menadżera
+pamięci wymaga głębokiej wiedzy na temat architektury sprzętowej pamięci oraz
+systemu operacyjnego. Wydajność można mierzyć kierując się różnymi kryteriami:
+
+\begin{enumerate}
+\item Czas poświęcony na wykonanie procedury \texttt{malloc} i \texttt{free}.
+Uśredniony, minimalny, maksymalny w zależności od wielkości bloków.
+
+\item W przypadku środowisk wielowątkowych -- ilość czasu spędzanego w
+oczekiwaniu na zwolnienie blokady.
+
+\item Ilość wywołań systemowych i ilość czasu w nich spędzonego.
+
+\item Czas wykonania ustalonego zbioru programów używających danego allokatora.
+\end{enumerate}
+
+\paragraph{Lokalność.}
+
+\begin{description}
+\item[Pamięć podręczna.]
+\item[Stronicowanie.]
+\item[Warunki niskiej dostępności pamięci fizycznej.]
+\end{description}
+
+\paragraph{Skuteczność w wykrywaniu błędów.}
+
+\subsection{Programy wspomagające testowanie.}
+
+\subsection{Narzędzie \texttt{traces}.}
 
 \newpage
 
