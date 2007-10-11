@@ -309,20 +309,21 @@ def drawBlkSize(blksize):
 				maxused[i] = blksize[t][i]
 
 	# cut down data
-	i = 0
-	j = 0
-	n = len(ts)
+	if False:
+		i = 0
+		j = 0
+		n = len(ts)
 
-	while i < n:
-		if i % 10 != 0:
-			del ts[j]
+		while i < n:
+			if i % 10 != 0:
+				del ts[j]
 
-			for m in range(4):
-				del ys[m][j]
-		else:
-			j += 1
+				for m in range(4):
+					del ys[m][j]
+			else:
+				j += 1
 
-		i += 1
+			i += 1
 
 	# draw a plot
 	p = biggles.FramedPlot()
@@ -380,20 +381,21 @@ def drawBlkCount(blkcount):
 				maxused[i] = blkcount[t][i]
 
 	# cut down data
-	i = 0
-	j = 0
-	n = len(ts)
+	if False:
+		i = 0
+		j = 0
+		n = len(ts)
 
-	while i < n:
-		if i % 10 != 0:
-			del ts[j]
+		while i < n:
+			if i % 10 != 0:
+				del ts[j]
 
-			for m in range(4):
-				del ys[m][j]
-		else:
-			j += 1
+				for m in range(4):
+					del ys[m][j]
+			else:
+				j += 1
 
-		i += 1
+			i += 1
 
 	# draw a plot
 	p = biggles.FramedPlot()

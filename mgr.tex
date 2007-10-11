@@ -15,6 +15,7 @@
 \usepackage[iso]{isodateo}
 \usepackage{hyperref}
 \usepackage{listings}
+%\usepackage{subfigure}
 \usepackage{graphicx}
 \pagestyle{fancy}
 \lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
@@ -482,7 +483,7 @@ pamięci.
 
 W tym rozdziale zostaną omówione podstawy i pojęcia związane z:
 \begin{itemize}
-\item organizacją sprzętową pamięci dla architektury sprzętowej Intel IA-32,
+\item organizacją sprzętową pamięci dla architektury sprzętowej \textit{Intel x86},
 \item przestrzeni adresowej programu i jej obłożenia w systemie Linux,
 \item interfejsem rezerwacji i zwalnianiem stron w systemach uniksowych,
 \item zagadnieniami wydajności pamięci w systemach jedno- i wieloprocesorowych,
@@ -500,8 +501,8 @@ Podstawową jednostką zarządzania tym rodzajem pamięci jest strona, będąca
 obszarem o następujących własnościach:
 
 \begin{itemize}
-\item pewnej z góry ustalonej wielkości (w przypadku procesorów Intel
-IA-32 jest to 4KiB lub 4MiB),
+\item pewnej z góry ustalonej wielkości (w przypadku procesorów \textit{Intel
+x86} jest to 4KiB lub 4MiB),
 \item adres jej początku jest podzielny przez długość strony,
 \item posiada zestaw uprawnień (do odczytu, do zapisu, itd.)
 \end{itemize}
@@ -515,7 +516,7 @@ pamięci logicznej składający się na wielopoziomowe tablice deskryptorów str
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.75\textwidth]{stronicowanie}
-\caption{Schemat translacji adresu dla architektury Intel IA-32}
+\caption{Schemat translacji adresu dla architektury \textit{Intel x86}.}
 \end{figure}
 
 Procesor posiada rejestr PDBR, w którym składuje wskaźnik o adresie wyrównanym
@@ -565,6 +566,7 @@ operacyjnemu organizowanie rozrzuconych w pamięci fizycznej stron w jeden
 spójny obszar w pamięci logicznej.
 
 \subsection{Pamięć podręczna}
+\label{CacheMemory}
 
 W tematyce związanej z architekturami systemów komputerowych często pojawia się
 termin \textit{piramidy pamięci}. Porusza on zależność ilości pamięci od jej
@@ -1325,30 +1327,198 @@ pamięci wymaga głębokiej wiedzy na temat architektury sprzętowej pamięci or
 systemu operacyjnego. Wydajność można mierzyć kierując się różnymi kryteriami:
 
 \begin{enumerate}
-\item Czas poświęcony na wykonanie procedury \texttt{malloc} i \texttt{free}.
-Uśredniony, minimalny, maksymalny w zależności od wielkości bloków.
 
-\item W przypadku środowisk wielowątkowych -- ilość czasu spędzanego w
-oczekiwaniu na zwolnienie blokady.
+\item Czas poświęcony na wykonanie procedur \texttt{malloc} i \texttt{free}.
+Można mierzyć czas zamortyzowany, minimalny i maksymalny. Sensowna wydaje się
+być też klasyfikacja wyników w zależności od wielkości przetwarzanych bloków.
+Niestety takie pomiary dają jedynie zgrubny obrazu wydajności menadżera, gdyż
+jak zostało wspomniane wcześniej, allokator ma wpływ na szybkość działania
+programu również poprzez wybór rozmieszczenia przydzielanych bloków. Zostanie
+to dokładniej wyjaśnione przy testowaniu lokalności.
 
-\item Ilość wywołań systemowych i ilość czasu w nich spędzonego.
+\vspace{1ex}
+
+\item Ilość czasu spędzanego na obsługę blokad w przypadku środowisk
+wielowątkowych. Cykle procesora zużyte w oczekiwaniu na zwolnienie blokady to
+zmarnowana moc obliczeniowa. Jeśli wątek poprosi system operacyjny o
+wywłaszczenie, to czas poświęcony na przełączenie kontekstu jest również czasem
+zmarnowanym. Powinno się go mierzyć i w miarę możliwości minimalizować poprzez
+zwiększenie separacji wątków oraz implementację struktur danych bez blokad tam,
+gdzie współbieżność jest nie do uniknięcia.
+
+\vspace{1ex}
+
+\item Ilość wywołań systemowych i spędzony w nich czas. Kiedy program
+gwałtownie zaczyna rezerwować lub zwalniać pamięć może zachodzić potrzeba
+pobierania lub oddawania stron do systemu operacyjnego. Każde wywołań takich
+jak \texttt{mmap} lub \texttt{munmap} jest kosztowne i w niewielkim stopniu
+zależy od ilości stron, którymi się zajmuje. Allokator powinien minimalizować
+ilość wywołań systemu operacyjnego gorliwie rezerwując nowe strony i leniwie
+zwalniająć nieużywane.
+
+\vspace{1ex}
 
 \item Czas wykonania ustalonego zbioru programów używających danego allokatora.
+Jest to najlepszy sposób na sprawdzenie wydajności menadżera pamięci. Takie
+testy mają oczywiście tylko wtedy sens, jeśli programy intensywnie używają
+procedur \texttt{malloc} oraz \texttt{free} wykorzystując szeroką gamę wzorców
+zachowań.
+
 \end{enumerate}
 
-\paragraph{Lokalność.}
+\paragraph{Lokalność.} Współczesne procesory pod względem wydajności faworyzują
+dostęp do danych będacych w zbitkach. Paradoksalnie może się zdarzyć, że
+program wykorzystujący wolniejszy, ale staranniej wybierający bloki allokator,
+może działać szybciej niż menadżer nie wykorzystujący zjawiska lokalności
+referencji. Testowanie omawianej właściwości opiera się na uruchomieniu
+programów testowych w środowisku wirtualnej maszyny, która będzie badać dostępy
+do pamięci symulując działanie pamięci podręcznych, mechanizmu stronicowania,
+itd. Takim narzędziem dla procesorów \textit{Intel x86} może być program
+\texttt{valgrind} z nakładką \texttt{cachegrind}, działający pod kontrolą
+systemu \texttt{Linux}. 
 
 \begin{description}
-\item[Pamięć podręczna.]
-\item[Stronicowanie.]
-\item[Warunki niskiej dostępności pamięci fizycznej.]
+
+\item[Pamięć podręczna.] Efektywność wykorzystania pamięci podręcznej mierzy
+się zliczając ilość \textit{cache miss}, które wymagają komunikacji procesora z
+wolniejszą pamięcią RAM. Minimalizację tego parametru można osiągnąć poprzez
+umieszczanie często wykorzystywanych bloków w możliwie jak najmniejszej ilości
+linii. W szczególności nie można pozwolić na to, by małe rekordy leżały na
+granicy dwóch linii. Warto zwrócić uwagę na to, że współczesne procesory mają z
+reguły dwa rodzaje pamięci podręcznej różniące się długością \textit{cache line} i
+organizacją danych.
+
+\vspace{1ex}
+
+\item[Stronicowanie i warunki niskiej dostępności pamięci fizycznej.] W
+rozdziale \ref{CacheMemory} zostało omówione zjawisko \textit{TLB miss}.
+Występuje ono rzadziej niż \textit{cache miss} jednak ma o wiele większy wpływ
+na wydajność. Lokalność w wykorzystaniu stron nabiera szczególnego znaczenia w
+przypadku, kiedy system operacyjny posiada mało pamięci fizycznej i często musi
+korzystać z pamięci zewnętrznej wyrzucając lub sprowadzając strony. Jeśli
+aplikacja intesywnie operuje na pewnej strukturze danych, a allokator
+niepotrzebnie ją rozrzuci po pamięci, to czas spędzony na wymianę stron może
+drastycznie ograniczyć wydajność. Zagadnienie to zostało dokładniej omówione w
+pracy \cite{feng05localityimproving}.
+
 \end{description}
 
-\paragraph{Skuteczność w wykrywaniu błędów.}
+\paragraph{Skuteczność w wykrywaniu błędów.} Wiszące wskaźniki, próba dostępu
+do zwolnionych już bloków, wyjechanie poza granice tablicy, czy inne błędy
+związane z dostępem do pamięci, to jedne z najczęściej spotykanych usterek w
+programach. Dobry allokator pamięci powinen wykrywać lub ułatwiać wykrycie
+takich nieprawidłowych zachowań. Menadżer pamięci może udostępniać procedury
+sprawdzające spójność jego struktur danych. Celem uniknięcia błędów w trakcie
+zwalniania lub rezerwacji bloku menadżer może wykonywać ograniczone sprawdzanie
+poprawności przeglądanych obszarów pamięci. Warto, żeby umiał wykrywać próby
+kilkukrotnego zwolnienia tego samego bloku. Często spotykaną dodatkową
+funkcjonalnością menadżera pamięci jest czyszczenie zwolnionych, a jeszcze nie
+oddanych do systemu operacyjnego obszarów ustaloną wartością np.
+\verb+0xDEADC0DE+. Ułatwia to wykrycie sytuacji, gdzie programista odczytuje
+zawartość zwolnionego bloku. Podsumowując -- menadżer pamięci powinien być nie
+tylko zbiorem procedur, ale również posiadać cechy narzędzia programistycznego.
 
-\subsection{Programy wspomagające testowanie.}
+\subsection{Narzędzia wspomagające testowanie.}
+
+\paragraph{Valgrind.} Jest to wirtualna maszyna z kompilacją \texttt{JIT} (ang.
+\textit{just-in-time}) stworzona z myślą o analizie dynamicznej programów.
+\textit{Valgrind} tłumaczy kod programu do postaci pośredniej, niezależnej od
+procesora. Następnie przekształca kod pośredni w odpowiedni sposób, a następnie
+kompiluje to do kodu maszyny. Przekształcanie odbywa się przy pomocy
+odpowiednich wtyczek. Każda z nich analizuje kod pośredni i wstrzykuje w niego
+instrukcje realizujące odpowiednią funkcjonalność. Jednymi z najbardziej
+znanych wtyczek do programu \textit{Valgrind} są: \texttt{memcheck} --
+sprawdzający błędne odwołania do pamięci i nieprawidłowe używanie allokatora
+pamięci, \texttt{cachegrind} -- analizujący wykorzystanie pamięci podręcznej
+procesora, \texttt{helgrind} -- lokalizujący usterki typu \textit{race
+condition} w programach wielowątkowych. Elastyczna architektura
+\textit{Valgrinda} może posłużyć jako podstawa budowy wtyczek analizujących
+wpływ allokatora na aplikacje z niego korzystające.
+
+\paragraph{Zegary o dużej rozdzielczości.} Systemy uniksowe oferują pomiar
+czasu w ograniczonym zakresie. Linux domyślnie dysponuje licznikami o
+dokładności $1-10$ ms. Do mierzenia wydajności niezbędne są źródła czasu o
+większej rozdzielczości, liczące z dokładności do mikrosekund, nanosekund lub
+cykli procesora. Procesory \textit{Intel x86} dysponują instrukcją
+\texttt{RDTSC} zwracającą $64$-bitową wartość reprezentującą ilość cykli.
+które upłyneły od ostatniego restartu. Jest to najdokładniejsze i jednocześnie
+najmniej kosztowne pod względem odczytu źródło czasu. Niestety posiada też
+liczne wady -- przede wszystkim jest ograniczone do architektury \textit{Intel
+x86}, po drugie nie jest gwarantowane, że w systemach wieloprocesorowych
+wszystkie liczniki będą ze sobą zsynchronizowane. Alternatywą do instrukcji
+\texttt{RDTSC} jest sprzętowy zegar o dużej rozdzielczości \texttt{HPET} (ang.
+\textit{High Precision Event Timer}).
+
+\paragraph{Benchmarki.} Poniżej przedstawiono publicznie dostępne programy do
+mierzenia wydajności allokatorów. Programy te są dostępne w katalogu
+\texttt{src/benchmarks} i zostały przystosowane do kompilacji w systemie
+\textit{Linux} z użyciem kompilatora \texttt{gcc 4.2}.
+
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textsc{program} & \textsc{opis} \\
+\hline
+\hline
+\verb+cfrac+ & Program dokonujący faktoryzacji dużych liczb. Rezerwuje bardzo
+duże ilości bloków o wielkości 16 i 32 bajtów. \\
+\hline
+\verb+espresso+ & Aplikacja do optymalizacji programowalnych macierzy
+logicznych. Dane do testów to plik \texttt{largest.espresso}. \\
+\hline
+\verb+larson+ & Symulacja stworzona na podstawie obserwacji wielowątkowych
+serwerów. W każdej rundzie wątek rezerwuje i zwalnia bloki o zadanym rozmiarze.
+Przed zakończeniem działania przekazuje on zajęte bloki do innego wątku. Dane
+wejściowe podaje się z linii poleceń i są nimi kolejno: czas działania, rozmiar
+min. i max. bloku, min. i max.  ilość wątków, ilość bloków rezerwowanych przez
+wątek, ilość rund i ziarno generatora liczb pseudolosowych. \\
+\hline
+\verb+lindsay+ & Symulacja przenoszenia komunikatów w sieci o topologii
+hipersześcianu. Przykładowy plik wejściowy to \texttt{scirpt.mine}. \\
+\hline
+\verb+linux-scalability+ & Wielowątkowy test dołączany do biblioteki
+\texttt{glibc}. Dostępne parametry z linii poleceń: wielkość bloków, ilość
+iteracji i wątków.\\
+\hline
+\verb+mallocperf+ & Benchmark udostępniany przez firmę \textit{Cherrystone
+Software Labs}. Wiele wątków losowo przydziela i zwalnia pamięć. Parametry
+podaje się z linii poleceń.\\
+\hline
+\verb+p2c+ & Konwerter źródeł w języku \texttt{Pascal} do źródeł w języku
+\texttt{C}. Do programu dostarczono dane wejściowe -- plik \texttt{mf.p}. \\
+\hline
+\verb+roboop+ & Bibiloteka do symulacji ruchów robotów -- bardzo intensywnie
+korzystająca z allokatora. Dostarczona wraz z programem \texttt{bench} służącym
+do pomiaru szybkości operacji. \\
+\hline
+\verb+sh6bench+ & Benchmark o otwartych źródłach dostarczany wraz z komercyjnym
+allokatorem \textit{SmartHeap}. Powtarza w rundach następujące czynności:
+rezerwuje grupy obiektów o tej samej wielkości, następnie zwalnia losowo część
+spośród wszystkich bloków. \\
+\hline
+\end{tabularx}
 
 \subsection{Narzędzie \texttt{traces}.}
+
+Motywacją do stworzenia narzędzia \texttt{traces} była potrzeba analizy
+zachowań programów, również tych wielowątkowych, pod względem wykorzystania
+allokatora. \texttt{Traces} to zestaw programów składających się z publicznie
+dostępnego allokatora \textit{ptmalloc3}, generatora śladów \texttt{traces} i
+analizatora śladów \texttt{traces-analyze}.
+
+Całość jest w katalogu \texttt{src/traces}.
+
+Krótko, ale zwięźle co to robi. Przykład użycia i wykresy.
+
+\begin{figure}%
+\centering
+\includegraphics[width=0.75\textwidth]{src/benchmarks/espresso-log}
+\caption{Ślad wykonania programu espresso.}
+
+\vspace{0.5in}
+
+\includegraphics[width=0.75\textwidth]{src/benchmarks/p2c-log}
+\caption{Ślad wykonania programu p2c.}
+\end{figure}
 
 \newpage
 
