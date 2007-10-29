@@ -2,7 +2,7 @@
 #define __BLKMAN_AO_H
 
 #include "common.h"
-#include "areaman.h"
+#include "areamgr.h"
 #include <stdio.h>
 
 #define MB_GRANULARITY_BITS		3

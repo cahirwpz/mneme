@@ -2,7 +2,7 @@
 #define __MEMMAN_AO_H
 
 #include "common.h"
-#include "areaman.h"
+#include "areamgr.h"
 
 /* function prototypes */
 void mm_init(areamgr_t *mm);

@@ -2,8 +2,8 @@
  * Author:	Krystian Bacławski <krystian.baclawski@gmail.com>
  */
 
-#include "memman-ao.h"
-#include "blkman-ao.h"
+#include "blklst-ao.h"
+#include "blkmgr.h"
 
 /*
  * Memory manager initialization.

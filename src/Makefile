@@ -6,7 +6,7 @@ CFLAGS	=	-O -Wall $(DEFS) $(INCLUDE)
 LD		=	libtool --mode=link gcc -g -static 
 LDFLAGS	=	-rpath /usr/local/lib -lrt
 
-OBJS	=	areaman.lo memman.lo blkman-ao.lo sysmem-mmap.lo sysmem-shm.lo
+OBJS	=	blklst-ao.lo areamgr.lo blkmgr.lo memmgr.lo sysmem-mmap.lo sysmem-shm.lo
 
 all:	libmymalloc.la tst-random tests/t-test1 tests/t-test2
 
@@ -25,15 +25,14 @@ tests/t-test2:		tests/t-test2.lo ldwrapper.lo libmymalloc.la
 %.lo: %.o
 	@
 
-areaman.o:			areaman.c areaman.h common.h sysmem.h
-blkman-ao.o: 		blkman-ao.c blkman-ao.h common.h areaman.h sysmem.h
-blkman.o: 			blkman-ao.c blkman-ao.h common.h areaman.h sysmem.h
-ldwrapper.o: 		ldwrapper.c memman-ao.h common.h areaman.h sysmem.h
-#memman-ao.o: 		memman-ao.c memman-ao.h common.h areaman.h sysmem.h blkman-ao.h
+areamgr.o:			areamgr.c areamgr.h common.h sysmem.h
+blklst-ao.o: 		blklst-ao.c blklst-ao.h common.h areamgr.h sysmem.h
+blkmgr.o: 			blkmgr.c blkmgr.h blklst-ao.h common.h areamgr.h sysmem.h
+ldwrapper.o: 		ldwrapper.c memman-ao.h common.h areamgr.h sysmem.h
 sysmem-mmap.o:		sysmem-mmap.c sysmem.h common.h
 sysmem-sbrk.o:		sysmem-sbrk.c sysmem.h common.h
 sysmem-shm.o:		sysmem-shm.c sysmem.h common.h
-tst-random.o:		tst-random.c memman-ao.h common.h areaman.h sysmem.h
+tst-random.o:		tst-random.c memman-ao.h common.h areamgr.h sysmem.h
 
 tests/t-test1.o:	tests/t-test1.c tests/lran2.h tests/t-test.h ldwrapper.h
 tests/t-test2.o:	tests/t-test2.c tests/lran2.h tests/t-test.h ldwrapper.h
