@@ -11,10 +11,6 @@
 
 void mm_init(memarea_t *mm)
 {
-#ifdef PM_USE_SBRK
-	pm_sbrk_init();
-#endif
-
 #ifdef PM_USE_MMAP
 	pm_mmap_init();
 #endif

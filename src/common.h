@@ -20,6 +20,14 @@ typedef enum { FALSE, TRUE } bool;
 #define offsetof(type, member)	__builtin_offsetof(type, member)
 
 /*
+ * A few constants meaningful for Pentium 4 cache facts.
+ */
+
+#define L1_LINE_SIZE	64
+#define L2_LINE_SIZE	64
+#define L3_LINE_SIZE	128
+
+/*
  * Simple algorithm for calculating checksum.
  */
 
