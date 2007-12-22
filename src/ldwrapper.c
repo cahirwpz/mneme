@@ -4,7 +4,7 @@
 #include <semaphore.h>
 #include <errno.h>
 
-#include "memman-ao.h"
+#include "memmgr.h"
 #include "ldwrapper.h"
 
 void (*__free_hook) (void *PTR, const void *CALLER) = NULL;
@@ -13,7 +13,7 @@ void *(*__realloc_hook) (void *PTR, size_t SIZE, const void *CALLER) = NULL;
 void *(*__memalign_hook)(size_t SIZE, size_t ALIGNMENT, const void *CALLER) = NULL;
 
 static bool ma_initialized = FALSE;
-static struct memarea mm;
+static struct memmgr *mm;
 static sem_t ma_sem;
 
 static void ldwrapper_exit()
@@ -29,7 +29,7 @@ static void ldwrapper_init() {
 
 		atexit(&ldwrapper_exit);
 
-		mm_init(&mm);
+		memmgr_init(mm);
 	}
 
 	while (__sync_and_and_fetch(&ma_initialized, TRUE) == FALSE) {
@@ -43,7 +43,7 @@ void *malloc(size_t size)
 
 	sem_wait(&ma_sem);
 
-	void *area = mm_alloc(&mm, size, 0);
+	void *area = memmgr_alloc(mm, size, 0);
 
 	sem_post(&ma_sem);
 
@@ -70,7 +70,7 @@ void free(void *ptr)
 	if (ptr != NULL) {
 		sem_wait(&ma_sem);
 
-		mm_free(&mm, ptr);
+		memmgr_free(mm, ptr);
 
 		sem_post(&ma_sem);
 	}
@@ -98,7 +98,7 @@ void *realloc(void *ptr, size_t size)
 
 	sem_wait(&ma_sem);
 
-	bool res = mm_realloc(&mm, ptr, size);
+	bool res = memmgr_realloc(mm, ptr, size);
 
 	sem_post(&ma_sem);
 
@@ -123,7 +123,7 @@ void *memalign(size_t boundary, size_t size)
 
 	sem_wait(&ma_sem);
 
-	void *area = mm_alloc(&mm, size, boundary);
+	void *area = memmgr_alloc(mm, size, boundary);
 
 	sem_post(&ma_sem);
 

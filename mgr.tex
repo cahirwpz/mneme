@@ -1501,13 +1501,155 @@ spośród wszystkich bloków. \\
 
 Motywacją do stworzenia narzędzia \texttt{traces} była potrzeba analizy
 zachowań programów, również tych wielowątkowych, pod względem wykorzystania
-allokatora. \texttt{Traces} to zestaw programów składających się z publicznie
-dostępnego allokatora \textit{ptmalloc3}, generatora śladów \texttt{traces} i
-analizatora śladów \texttt{traces-analyze}.
+allokatora. W tym celu utworzono zestaw składający się z:
+\begin{itemize}
+\item programu zbierającego ślady -- w plikach \texttt{ptmalloc3/traces.c} i
+\texttt{ptmalloc3/traces.h} zaimplementowano uniwersalne funkcje służące
+do przechwytywania wywołań \texttt{malloc}, \texttt{free}, itd. Szczegóły
+zostaną omówione poniżej.
+\item publicznie dostępnego allokatora \textit{ptmalloc3} zmodyfikowanego z
+użyciem funkcji określonych w pliku \texttt{ptmalloc3/traces.h},
+\item analizatora śladów \texttt{traces-analyze} napisanego w
+\textit{Pythonie}, generującego wykresy wizualizujące wykorzystanie allokatora.
+\end{itemize}
+Wszystkie pliki znajdują się w katalogu \texttt{src/traces} w dołączonym do
+pracy archiwum.
 
-Całość jest w katalogu \texttt{src/traces}.
+\paragraph{Impementacja.} Założeniem przy tworzeniu programu zbierającego ślady
+było: możliwie jak najmniejszy narzut mocy obliczeniowej, maksymalna
+przezroczystość dla aplikacji działającej pod jego kontrolą, możliwość
+stosowania w programach bez ich rekompilacji, obługę wielu wątków i wielu
+procesów.
 
-Krótko, ale zwięźle co to robi. Przykład użycia i wykresy.
+Pierwsze założenie otrzymano implementując logowanie operacji do statycznego
+bufora o dużym rozmiarze. Algorytmy użyte celem relizacji funkcji dostępu do
+tego bufora działają bez blokad i zapewniają bardzo dobrą wydajność w przypadku
+wielowątkowych programów. Ślady są zapisywane na dysk w dużych paczkach
+minimalizując obciążenie spowodowane operacjami wejścia-wyjścia. Jedyne
+wywołanie, które może powodować istotny spadek wydajności to pobieranie czasu
+dla każdej operacji allokatora.
+
+Przezroczystość została osiągnięta poprzez zintegrowanie programu zbierającego
+ślady z bardzo dobrze znanym i przetestowanym allokatorem \textit{ptmalloc3}
+używanym w standardowej bibliotece języka \verb+C+ w systemie \textit{Linux}.
+
+Dzięki elastycznemu konsolidatorowi \texttt{ld.so} w systemach uniksowych
+istnieje możliwość przesłaniania symboli bibliotecznych. W trakcie wczytywania
+dynamicznie skonsolidowanego programu z pliku \texttt{ELF}\footnote{Executable
+and Linking Format -- standardowy typ dla plików wykonywalnych, bibliotek i
+modułów w systemach uniksowych.}, \texttt{ld.so} pobiera tablicę symboli
+(funkcji) i listę bibliotek. Następnie wgrywa poszczególne biblioteki
+uzupełniając tablicę symboli o adresy procedur bibliotecznych. Zanim jednak to
+zrobi sprawdza zawartość zmiennej systemowej \texttt{LD\_PRELOAD} i jeśli
+zawiera ona ścieżki do zestawu bibliotek, to najpierw uzupełnia listę symboli
+na ich podstawie. Używając tego mechanizmu można pod dowolny dynamicznie
+skonsolidowany program podczepić bibliotekę zawierającą allokator pamięci
+uzupełniony o funkcjonalność zbierania śladów. Odpowiednie funkcje z biblioteki
+podanej w zmiennej \texttt{LD\_PRELOAD} zostaną wykorzystane do uzupełnienia
+symboli w pierwszej kolejności, przesłaniając symbole funkcji allokatora z
+biblioteki \texttt{libc}.
+
+Obsługę wielowątkowości i wieloprocesorowości osiągnięto przez przypisanie
+identyfikatora wątku i procesu do każdej operacji menadżera pamięci. Dodatkowo
+wszyscy potomkowie utworzeni przez dany proces przy pomocy wywołania
+\texttt{fork(2)} zapisują ślad do tego samego pliku. Procesy utworzone przy
+pomocy wywołania \texttt{system(3)} lub \texttt{exec*(3)} jako osobne instacje
+procesów zapisują ślady do innych plików.
+
+\paragraph{Sposób wykorzystania.} Poniższe polecenie uruchamia program
+\texttt{aplikacja}, a ślad wykonania zapisuje do pliku
+\texttt{aplikacja-trace-log}. Symbole allokatora zostaną przesłonięte
+biblioteką \texttt{libptalloc3-traces.so}, którą znajduje się w katalogu
+\texttt{src/traces/ptmalloc3}.
+\begin{center}
+\begin{verbatim}
+$ MALLOC_TRACE_LOG=aplikacja-trace-log \
+  LD_PRELOAD=libptmalloc3-traces.so  \
+      aplikacja arg1 arg2 ...
+\end{verbatim}
+\end{center}
+
+\paragraph{Struktura śladu.} Ślad to plik binarny z rekordami o długości 24
+bajtów. Struktura rekordu została zamieszczona poniżej:
+
+\vspace{1ex}
+
+\begin{lstlisting}[caption={Struktura śladu.}]
+struct traces_log {
+    uint32_t msec;
+    uint16_t opcode;
+    uint16_t pid;
+    uint32_t thrid;
+    uint32_t result;
+    uint32_t args[2];
+};
+\end{lstlisting}
+
+\vspace{-1ex}
+
+Wartość \texttt{msec} określa moment czasu względem początku działania
+programu, w którym wykonano operację, \texttt{opcode} jest numeryczną wartością
+kodującą rodzaj operacji (\texttt{free}, \texttt{malloc}, \texttt{realloc},
+\texttt{memalign}), \texttt{pid} i \texttt{thrid} to odpowiednio numer
+śledzonego procesu/wątku, \texttt{result} to wynik operacji, a \texttt{args}
+argumenty procedury określonej przez \texttt{opcode}. Format ten jest
+wystarczający do analizy większości programów, niewątpliwie jednak wymaga kilku
+optymalizacji.
+
+Jeśli program wykonuje dziesiątki czy setki milionów operacji przydziału lub
+zwalniania bloków, to istotnym aspektem staje się oszczędność przestrzeni
+dyskowej używanej do przechowywania śladu. Pierwszym i najprostszym pomysłem
+jest zastosowanie zmiennej długości rekordu w zależności od rodzaju operacji --
+dla najczęściej wykonywanych operacji \texttt{malloc} i \texttt{free} nie
+wykorzystuje się drugiego elementu tablicy \texttt{args}, a dla \texttt{free}
+dodatkowo pola \texttt{result}. Następnie można by było skrócić pole
+\texttt{opcode}, które koduje cztery operacje, a zatem wymaga tylko dwóch
+bitów. Mniej oczywistym pomysłem jest skrócenie rekordów poprzez nałożenie
+ograniczenia na maksymalną ilość ścieżek wykonania programu. Wydaje się, że
+śledzenie więcej niż kilkuset wątków jest już zadaniem karkołomnym, zatem można
+rozważyć połączenie pól \texttt{pid} i \texttt{thrid} przy pomocy wartości
+wyliczonej pewną funkcją haszującą. Wtedy informację kodująca parę
+identyfikator programu i identyfikator wątku można by ograniczyć do $14$ bitów
+($16384$ różnych ścieżek). W trakcie zapisu rekordów do pamięci zewnętrznej
+można zastosować uproszczony i efektywny wariant kompresji słownikowej
+\texttt{LZO} bazującej na algorytmie \texttt{LZ77}.
+
+Usprawnienia może wymagać też pomiar czasu. W obecnej implementacji jest on
+mierzony dość zgrubnie --  można rozważyć zwiększenie dokładności do
+mikrosekund czy nawet nanosekund, rozszerzając pole \texttt{msec} do $64$
+bitów.
+
+W pracy \cite{chilimbi00designing} omówiono efektywny objętościowo sposób
+składowania śladów. Przedstawiono format rekordów dający możliwie jak
+największą ekspresję zdarzeń istotnych z punktu analizy śladów oraz metody
+efektywnej wydajnościowo kompresji.
+
+\paragraph{Analiza śladów.} Celem graficznej wizualizacji śladów, należy je
+przetworzyć programem \texttt{traces-analyze.py}. Program ten generuje plik
+\textit{EPS} przechowujący trzy wykresy.
+
+Pierwszy z nich jest histogramem rozmiarów wszystkich bloków zarezerwowanych na
+przestrzeni działania programu. Rozmiary bloków są zaokrąglane do odpowiednich
+przedziałów o proporcjonalnych wielkościach. Wykres ten pozwala przeanalizować
+zależności między wielkością bloków przydzielonych na przestrzeni działania
+całego programu, a ich ilością.
+
+Kolejny wykres przedstawia ilość zużywanej pamięci w danej chwili działania
+programu. Zastosowano podział na bloki o wielkości nie większej niż długość
+linii pamięci podręcznej (kolor zielony), nie większej niż strona pamięci
+(kolor czerwony), nie większej niż wielkości kilku stron (kolor pomarańczowawy)
+i zużycie całkowite (kolor ciemnoniebieski). Dzięki takim informacjom można
+obserwować jak wygląda zużycie pamięci w poszczególnych etapach działania
+programu.
+
+Ostatni wykres wizualizuje ilość używanych bloków w określonym momencie
+działania progamu. Podobnie jak w poprzednim wykresie zastosowano podział
+wielkości bloków. Wykres pozwala oszacować na jakie bloki było największe
+zapotrzebowanie w danym okresie działania programu.
+
+Na następnej stronie zaprezentowano wizualizacje śladów dla programów:
+\texttt{espresso} dla danych z pliku \texttt{Input/largest.espresso} i
+\texttt{p2c} dla danych z pliku \texttt{Input/mf.p}.
 
 \begin{figure}%
 \centering

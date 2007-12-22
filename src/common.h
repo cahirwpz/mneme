@@ -4,15 +4,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 typedef enum { FALSE, TRUE } bool;
+
+typedef enum { DONTLOCK, LOCK} locking_t;
 
 #define ALIGN_UP(data, size)	(((uint32_t)(data) + ((size) - 1)) & ~((size) - 1))
 #define ALIGN_DOWN(data, size)	((uint32_t)(data) & ~((size) - 1))
 #define ALIGN(data, size)		ALIGN_UP((data), (size))
 
 #if VERBOSE == 1
-#define DEBUG(format, args...) fprintf(stderr, "%s:%d " format, __func__, __LINE__, ##args)
+#define DEBUG(format, args...) fprintf(stderr, "\033[1m%s:%d\033[0m " format, __func__, __LINE__, ##args)
 #else
 #define DEBUG(format, args...)
 #endif

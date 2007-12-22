@@ -1,11 +1,11 @@
 /*
- * Author:	Krystian Bacławski <krystian.baclawski@gmail.com>
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
  */
 
 #include "blklst-ao.h"
 #include "blkmgr.h"
 
-/*
+/**
  * Memory manager initialization.
  */
 

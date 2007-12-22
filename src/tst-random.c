@@ -2,7 +2,7 @@
  * Random malloc / free test.
  */
 
-#include "memman-ao.h"
+#include "memmgr.h"
 #include <stdio.h>
 
 #define MAX_BLOCK_NUM		(1 << 16)
@@ -27,7 +27,7 @@ static struct
 	int32_t last;
 } blocks;
 
-static memarea_t mm;
+static memmgr_t *mm;
 
 void usage(char *progname)
 {
@@ -74,11 +74,13 @@ int main(int argc, char **argv)
 
 	srand(seed);
 
-	mm_init(&mm);
+	mm = memmgr_init();
 
 	for (i = 0; i < ops; )
 	{
 		uint32_t op = rand();
+
+		memmgr_print(mm);
 
 		if (op <= 2 * (RAND_MAX >> 4)) {
 			/* case for mm_realloc */
@@ -96,7 +98,7 @@ int main(int argc, char **argv)
 			if (s < 4)
 				s = 4;
 
-			if (mm_realloc(&mm, blocks.array[i].ptr, s))
+			if (memmgr_realloc(mm, blocks.array[i].ptr, s))
 				blocks.array[blocks.last + 1].size = s;
 		} else if (op <= 3 * (RAND_MAX >> 4)) {
 			/* case for mm_alloc_aligned */
@@ -115,12 +117,12 @@ int main(int argc, char **argv)
 			if (alignment < 16)
 				alignment = 16;
 
-			blocks.array[blocks.last + 1].ptr  = mm_alloc(&mm, s, alignment);
+			blocks.array[blocks.last + 1].ptr  = memmgr_alloc(mm, s, alignment);
 			blocks.array[blocks.last + 1].size = s;
 
 			/* if couldn't allocate then give up */
 			if (blocks.array[blocks.last + 1].ptr == NULL) {
-				DEBUG("mm_alloc aligned: out of memory!\n");
+				DEBUG("memmgr_alloc aligned: out of memory!\n");
 				abort();
 			}
 				continue;
@@ -129,7 +131,7 @@ int main(int argc, char **argv)
 
 			blocks.last++;
 		} else if (op <= 9 * (RAND_MAX >> 4)) {
-			/* case for mm_alloc */
+			/* case for memmgr_alloc */
 			if (blocks.last == MAX_BLOCK_NUM)
 				continue;
 
@@ -140,12 +142,12 @@ int main(int argc, char **argv)
 			if (s < 4)
 				s = 4;
 
-			blocks.array[blocks.last + 1].ptr  = mm_alloc(&mm, s, 0);
+			blocks.array[blocks.last + 1].ptr  = memmgr_alloc(mm, s, 0);
 			blocks.array[blocks.last + 1].size = s;
 
 			/* if couldn't allocate then give up */
 			if (blocks.array[blocks.last + 1].ptr == NULL) {
-				DEBUG("mm_alloc: out of memory!\n");
+				DEBUG("memmgr_alloc: out of memory!\n");
 				abort();
 			}
 
@@ -153,7 +155,7 @@ int main(int argc, char **argv)
 
 			blocks.last++;
 		} else {
-			/* case for mm_free */
+			/* case for memmgr_free */
 			if (blocks.last == -1)
 				continue;
 
@@ -161,7 +163,10 @@ int main(int argc, char **argv)
 
 			DEBUG("free(%p, %u)\n", blocks.array[i].ptr, blocks.array[i].size);
 
-			mm_free(&mm, blocks.array[i].ptr);
+			if (!memmgr_free(mm, blocks.array[i].ptr)) {
+				DEBUG("memmgr_free: could not free block!\n");
+				abort();
+			}
 
 			if (blocks.last != i)
 				blocks.array[i] = blocks.array[blocks.last];
@@ -173,13 +178,13 @@ int main(int argc, char **argv)
 		}
 
 #if MM_PRINT_AT_ITERATION == 1
-		 mm_print(&mm);
+		 memmgr_print(mm);
 #endif
 		i++;
 	}
 	
 #if MM_PRINT_AT_ITERATION == 0
-	mm_print(&mm);
+	memmgr_print(mm);
 #endif
 
 	return 0;
