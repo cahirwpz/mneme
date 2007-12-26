@@ -80,7 +80,7 @@ int main(int argc, char **argv)
 	{
 		uint32_t op = rand();
 
-		memmgr_print(mm);
+		//memmgr_print(mm);
 
 		if (op <= 2 * (RAND_MAX >> 4)) {
 			/* case for mm_realloc */

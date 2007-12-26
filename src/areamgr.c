@@ -53,12 +53,11 @@ area_t *area_new(pm_type_t type, uint32_t pages)
 			break;
 	}
 
-	area->size			= PAGE_SIZE * pages;
-	area->global.prev	= NULL;
-	area->global.next	= NULL;
-	area->local.prev	= NULL;
-	area->local.next	= NULL;
+	/* Warning: -O2 optimizes data structure layout - checksum may have to be rewritten */
+	memset(area, 0, sizeof(area_t));
 
+	area->size = PAGE_SIZE * pages;
+	
 	area_touch(area);
 
 	DEBUG("Created memory area at $%.8x [$%.8x; %u; $%.2x]\n", (uint32_t)area,
@@ -140,24 +139,25 @@ void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t lock
 	assert(area_is_global_guard((area_t *)arealst));
 
 	/* search the list for place where new area will be placed */
-	area_t *area = arealst->global.next;
+	area_t *after = (area_t *)arealst;
 
 	/* iterate till successor exists and has earlier address */
 	while (TRUE) {
-		assert(area != newarea);
+		area_valid(after);
 
-		area_valid(area);
-
-		if (area_is_global_guard(area->global.next) || (area > newarea))
+		if (area_is_global_guard(after->global.next))
+			break;
+		
+		if (area_begining(newarea) < area_begining(after->global.next))
 			break;
 
-		area = area->global.next;
+		after = after->global.next;
 	}
 
-	area = area->global.prev;
+	DEBUG("Will insert after $%.8x at $%.8x\n", (uint32_t)after, (uint32_t)area_begining(after));
 
-	newarea->global.next  = area->global.next;
-	newarea->global.prev  = area;
+	newarea->global.next  = after->global.next;
+	newarea->global.prev  = after;
 	newarea->flags 		 |= AREA_FLAG_USED;
 		
 	newarea->global.next->global.prev = newarea;
@@ -231,7 +231,7 @@ area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t lock
 
 	area_t *area = arealst->local.next;
 
-	/* check if there is an area of proper size on the list */
+	/* check if there is an area of proper address on the list */
 	while (TRUE) {
 		area_valid(area);
 
@@ -327,15 +327,30 @@ void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, loc
 
 void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t locking)
 {
-	DEBUG("Will insert area at $%.8x to list at $%.8x %s locking\n",
-			(uint32_t)newarea, (uint32_t)arealst, locking ? "with" : "without");
+	DEBUG("Will insert area at $%.8x [$%.8x; %u; $%.2x] to list at $%.8x %s locking\n",
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
+			(uint32_t)arealst, locking ? "with" : "without");
 
 	if (locking)
 		arealst_wrlock(arealst);
 
-	area_t *area = arealst_find_area_by_addr(arealst, (void *)area_begining(newarea), DONTLOCK);
+	area_t *after = (area_t *)arealst;
 
-	return arealst_insert_area(arealst, area ? area->local.prev : (area_t *)arealst, newarea, DONTLOCK);
+	while (TRUE) {
+		area_valid(after);
+
+		if (area_is_guard(after->local.next))
+			break;
+
+		if (area_begining(newarea) < area_begining(after->local.next))
+			break;
+
+		after = after->local.next;
+	}
+
+	DEBUG("Will insert after $%.8x at $%.8x\n", (uint32_t)after, (uint32_t)area_begining(after));
+
+	arealst_insert_area(arealst, after, newarea, DONTLOCK);
 
 	if (locking)
 		arealst_unlock(arealst);
@@ -358,9 +373,21 @@ void arealst_insert_area_by_size(arealst_t *arealst, area_t *newarea, locking_t 
 	if (locking)
 		arealst_wrlock(arealst);
 
-	area_t *area = arealst_find_area_by_size(arealst, newarea->size, DONTLOCK);
+	area_t *after = (area_t *)arealst;
 
-	return arealst_insert_area(arealst, area ? area->local.prev : (area_t *)arealst, newarea, DONTLOCK);
+	while (TRUE) {
+		area_valid(after);
+
+		if (area_is_guard(after->local.next))
+			break;
+
+		if (after->size >= newarea->size)
+			break;
+
+		after = after->local.next;
+	}
+
+	arealst_insert_area(arealst, after, newarea, DONTLOCK);
 
 	if (locking)
 		arealst_unlock(arealst);
@@ -530,6 +557,9 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 
 areamgr_t *areamgr_init(area_t *area)
 {
+	DEBUG("Using area at $%.8x [$%.8x; %u; $%.2x]\n", (uint32_t)area,
+			(uint32_t)area_begining(area), area->size, area->flags);
+
 	area_valid(area);
 
 	/* Check if area has enough space to hold area manager's structure */

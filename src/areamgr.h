@@ -74,9 +74,11 @@ static inline bool area_is_global_guard(area_t *area) {
 
 static inline uint16_t area_checksum(area_t *area)
 {
-	int bytes = sizeof(uint16_t) + sizeof(uint32_t);
+	uint32_t bytes = sizeof(uint16_t) + sizeof(uint32_t);
 
-	return (((uint32_t)area) >> 16) ^ (((uint32_t)area) & 0xFFFF) ^ checksum((uint16_t *)&area->flags, bytes >> 1);
+	return (uint16_t)(((uint32_t)area) >> 16) ^
+		   (uint16_t)(((uint32_t)area) & 0xFFFF) ^
+		   (uint16_t)checksum((uint16_t *)&area->flags, bytes >> 1);
 }
 
 static inline void area_touch(area_t *area)
@@ -87,7 +89,8 @@ static inline void area_touch(area_t *area)
 static inline void area_valid(area_t *area)
 {
 	if (area_checksum(area) != area->checksum) {
-		fprintf(stderr, "invalid area: [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+		fprintf(stderr, "invalid area: [$%.8x; %u; $%.2x] [calc:$%.4x != orig:$%.4x]\n",
+				(uint32_t)area, area->size, area->flags, area_checksum(area), area->checksum);
 		abort();
 	}
 }

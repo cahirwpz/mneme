@@ -1,7 +1,7 @@
 CC		=	libtool --mode=compile gcc -ggdb -static -fms-extensions
 INCLUDE	=	-I./tests -I./tests/sysdeps/pthread -I./tests/sysdeps/generic 
-DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DVERBOSE=1 -DDEADMEMORY
-CFLAGS	=	-O0 -Wall $(DEFS) $(INCLUDE)
+DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBOSE=0
+CFLAGS	=	-march=i686 -O2 -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g -static 
 LDFLAGS	=	-rpath /usr/local/lib -lrt

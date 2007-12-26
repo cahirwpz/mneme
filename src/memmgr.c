@@ -45,6 +45,7 @@ void memmgr_print(memmgr_t *memmgr)
 	area_t *area = (area_t *)&memmgr->areamgr.global;
 
 	bool error = FALSE;
+	uint32_t areacnt = 1;
 
 	while (TRUE) {
 		area_valid(area);
@@ -62,9 +63,12 @@ void memmgr_print(memmgr_t *memmgr)
 			error = TRUE;
 
 		area = area->global.next;
+
+		areacnt++;
 	}
 
 	assert(!error);
+	assert(areacnt == memmgr->areamgr.global.areacnt);
 
 	arealst_unlock(&memmgr->areamgr.global);
 
