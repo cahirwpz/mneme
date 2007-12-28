@@ -27,7 +27,7 @@ void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)
 
 bool memmgr_realloc(memmgr_t *memmgr, void *memory, uint32_t new_size)
 {
-	return FALSE;
+	return mmapmgr_realloc(&memmgr->percpumgr[0].mmapmgr, memory, new_size);
 }
 
 bool memmgr_free(memmgr_t *memmgr, void *memory)

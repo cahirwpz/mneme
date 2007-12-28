@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 typedef enum { FALSE, TRUE } bool;
+typedef enum { NONE, LEFT, RIGHT } direction_t;
 
 typedef enum { DONTLOCK, LOCK} locking_t;
 

@@ -53,7 +53,6 @@ area_t *area_new(pm_type_t type, uint32_t pages)
 			break;
 	}
 
-	/* Warning: -O2 optimizes data structure layout - checksum may have to be rewritten */
 	memset(area, 0, sizeof(area_t));
 
 	area->size = PAGE_SIZE * pages;
@@ -101,17 +100,13 @@ bool area_delete(area_t *area)
 
 void arealst_init(arealst_t *arealst)
 {
-	arealst->size    		= 0;
-	arealst->global.prev	= NULL;
-	arealst->global.next	= NULL;
+	memset(arealst, 0, sizeof(arealst_t));
+
 	arealst->local.prev		= (area_t *)arealst;
 	arealst->local.next		= (area_t *)arealst;
 	arealst->flags			= AREA_FLAG_GUARD;
 
 	area_touch((area_t *)arealst);
-
-	/* Initialize area counter */
-	arealst->areacnt = 0;
 
 	/* Initialize locking mechanizm */
 	pthread_rwlockattr_init(&arealst->lock_attr);
@@ -423,6 +418,10 @@ void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)
 
 	area_touch(area->local.prev);
 	area_touch(area->local.next);
+
+	area->local.prev = NULL;
+	area->local.next = NULL;
+
 	area_touch(area);
 
 	/* Decrement area counter of the list */
@@ -455,7 +454,7 @@ area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, lock
 	assert(area_is_used(first));
 	assert(area_is_used(second));
 
-	assert(((void *)first + sizeof(area_t) == area_begining(second)));
+	assert(area_end(first) == area_begining(second));
 
 	/* Sum sizes */
 	second->size += first->size;
@@ -469,9 +468,16 @@ area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, lock
 	area_touch(first->global.prev);
 	area_touch(first->global.next);
 
+	if ((first->local.prev != NULL) && (first->local.next != NULL)) {
+		second->local.prev = first->local.prev;
+		second->local.next = first->local.next;
+
+		second->local.prev->local.next = second;
+		second->local.next->local.prev = second;
+	}
+
 	/* Invalidate removed area */
-	first->global.prev = NULL;
-	first->global.next = NULL;
+	memset(first, 0, sizeof(area_t));
 
 	global->areacnt--;
 
@@ -513,24 +519,34 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 	/* Now split point is inside area */
 	area_t *newarea = area_footer(area_begining(area), pages);
 
-	memcpy(newarea, area, sizeof(area_t));
-
-	newarea->local.next = NULL;
-	newarea->local.prev = NULL;
+	memset(newarea, 0, sizeof(area_t));
 
 	/* set up new area */
-	newarea->size = pages * PAGE_SIZE;
+	newarea->size	= pages * PAGE_SIZE;
+	newarea->flags	= area->flags;
+
 	newarea->global.next = area;
+	newarea->global.prev = area->global.prev;
 
-	area_touch(newarea);
+	if ((area->local.prev != NULL) && (area->local.next != NULL)) {
+		newarea->local.prev = area->local.prev;
+		newarea->local.next = area->local.next;
 
-	newarea->global.prev->global.next = newarea;
-	area_touch(newarea->global.prev);
+		area->local.prev->local.next = newarea;
+		area->local.next->local.prev = newarea;
+	}
 
 	/* correct data in splitted area */
 	area->size = area->size - pages * PAGE_SIZE;
 	area->global.prev = newarea;
 
+	area->local.prev = NULL;
+	area->local.next = NULL;
+
+	/* correct data in predecessor */
+	newarea->global.prev->global.next = newarea;
+
+	area_touch(newarea);
 	area_touch(area);
 
 	global->areacnt++;
@@ -660,16 +676,14 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area)
 
 area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr)
 {
-	bool by_addr = (pages == 0);
-
-	DEBUG("Will try to find area of size %u or more pages\n", pages);
-
-	/* address must be non-null if seeking area with given address */
-	if (by_addr)
-		assert(addr != NULL);
+	if (addr != NULL) {
+		DEBUG("Will try to find area of size %u pages and containing address $%.8x\n", pages, (uint32_t)addr);
+	} else {
+		DEBUG("Will try to find area of size %u pages\n", pages);
+	}
 
 	/* begin searching from areas' list of proper size*/
-	int32_t n = (by_addr) ? (0) : (pages - 1);
+	int32_t n = (pages == 0) ? pages : pages - 1;
 
 	/* last list stores areas of size bigger than AREAMGR_LIST_COUNT pages */
 	if (n >= AREAMGR_LIST_COUNT - 1)
@@ -681,7 +695,7 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr)
 	while (n < AREAMGR_LIST_COUNT) {
 		arealst_wrlock(&areamgr->list[n]);
 
-		if (by_addr)
+		if (addr != NULL)
 			area = arealst_find_area_by_addr(&areamgr->list[n], addr, DONTLOCK);
 		else
 			area = arealst_find_area_by_size(&areamgr->list[n], pages * PAGE_SIZE, DONTLOCK);
@@ -710,7 +724,7 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr)
 
 		/* If area is too big it should be splitted and left-over should be
 		 * reinserted. */
-		if (!by_addr && (area->size > pages * PAGE_SIZE)) {
+		if ((pages != 0) && (area->size > pages * PAGE_SIZE)) {
 			area_t *newarea = NULL;
 
 			arealst_split_area(&areamgr->global, &area, &newarea, pages, LOCK);
@@ -718,18 +732,22 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr)
 			areamgr_free_area(areamgr, newarea);
 		}
 	} else {
-		DEBUG("Area not found - will create one\n");
+		if (addr == NULL) {
+			DEBUG("Area not found - will create one!\n");
 
-		/* If area was not found then create one */
-		if ((area = area_new(PM_MMAP, pages))) {
+			/* If area was not found then create one */
+			if ((area = area_new(PM_MMAP, pages))) {
 
-			arealst_wrlock(&areamgr->global);
+				arealst_wrlock(&areamgr->global);
 
-			arealst_global_add_area(&areamgr->global, area, DONTLOCK);
+				arealst_global_add_area(&areamgr->global, area, DONTLOCK);
 
-			areamgr->pagecnt += SIZE_IN_PAGES(area->size);
+				areamgr->pagecnt += SIZE_IN_PAGES(area->size);
 
-			arealst_unlock(&areamgr->global);
+				arealst_unlock(&areamgr->global);
+			}
+		} else {
+			DEBUG("Area not found!\n");
 		}
 	}
 
@@ -755,12 +773,33 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
 	DEBUG("Will try to free area [$%.8x, %u, $%.2x] at $%.8x\n",
 			(uint32_t)newarea, newarea->size, newarea->flags, (uint32_t)area_begining(newarea));
 
+	assert(area_is_used(newarea));
+
 	/* mark area as free */
 	{
+		area_t *prev = areamgr_alloc_area(areamgr, 0, area_begining(newarea) - 1);
+		area_t *next = areamgr_alloc_area(areamgr, 0, area_end(newarea) + 1);
+
 		arealst_wrlock(&areamgr->global);
 
-		area_valid(newarea);
-		assert(area_is_used(newarea));
+		if (prev != NULL) {
+			DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
+					(uint32_t)prev, prev->size, prev->flags);
+
+			newarea = arealst_join_area(&areamgr->global, prev, newarea, DONTLOCK);
+
+			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
+		}
+
+		if (next != NULL) {
+			DEBUG("Coalescing with right neighbour [$%.8x; $%x; $%.2x]\n",
+					(uint32_t)next, next->size, next->flags);
+
+			newarea = arealst_join_area(&areamgr->global, newarea, next, DONTLOCK);
+
+			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
+		}
+
 		newarea->flags &= ~AREA_FLAG_USED;
 		area_touch(newarea);
 
@@ -786,7 +825,6 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
  * @return
  */
 
-#if 0
 area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
 {
 	area_valid(area);
@@ -832,119 +870,71 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
 
 	return area;
 }
-#endif
 
 /**
  *
  * @param areamgr
  * @param area
- * @param to_left
  * @param pages
  * @return
  */
 
-#if 0
-uint32_t areamgr_expand_area(areamgr_t *areamgr, area_t *area, bool to_left, uint32_t pages)
+bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages)
 {
-	area_valid(area);
-	assert(!area_is_used(area));
+	area_t *newarea = *area;
 
-	DEBUG("Will shrink area [$%.8x; %u; $%.2x] at the end by %u pages\n",
-		  (uint32_t)area, area->size, area->flags, pages);
+	area_valid(newarea);
 
-	void *address = (void *)((uint32_t)area + area->size - (pages * PAGE_SIZE));
-	bool result	  = FALSE;
+	assert(pages > 0);
+	assert(area_is_used(newarea));
 
-	if (area_is_sbrk(area))
-		result = pm_sbrk_free(address, pages);
+	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n",
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags, pages);
 
-	if (area_is_mmap(area))
-		result = pm_mmap_free(address, pages);
+	area_t *expansion = areamgr_alloc_area(areamgr, pages, area_end(newarea) + 1);
 
-	if (!result) {
-		DEBUG("Cannot unmap memory\n");
-		return FALSE;
-	}
+	if (expansion != NULL)
+		*area = arealst_join_area(&areamgr->global, newarea, expansion, LOCK);
 
-	area->size -= pages * PAGE_SIZE;
+	DEBUG("Area at $%.8x expanded to [$%.8x; %u; $%.2x]\n",
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
 
-	area_touch(area);
-
-	DEBUG("Shrinked area [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
-
-	return TRUE;
+	return expansion != NULL;
 }
-#endif
 
 /**
  *
+ * @param areamgr
+ * @param area
+ * @param direction
+ * @param pages
  */
 
-#if 0
-bool area_shrink_at_beginning(area_t **to_shrink, uint32_t pages)
+void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, direction_t direction, uint32_t pages)
 {
-	area_t *area = *to_shrink;
+	area_t *newarea = *area;
 
-	area_valid(area);
+	area_valid(newarea);
 
-	assert(area_is_mmap(area));
 	assert(pages > 0);
+	assert(direction != NONE);
+	assert(area_is_used(newarea));
 
-	DEBUG("Will shrink area [$%.8x; %u; $%.2x] at the beginning by %u pages\n",
-		  (uint32_t)area, area->size, area->flags, pages);
+	DEBUG("Will shrink area at $%.8x [$%.8x; %u; $%.2x] from %s side by %u pages\n",
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
+			direction == LEFT ? "left" : "right", pages);
 
-	area_t *newarea = (area_t *)((uint32_t)area + pages * PAGE_SIZE);
+	area_t *leftover = newarea;
 
-	memcpy(newarea, area, sizeof(areamgr_t));
+	if (direction == RIGHT)
+		arealst_split_area(&areamgr->global, &newarea, &leftover, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
+	else
+		arealst_split_area(&areamgr->global, &leftover, &newarea, pages, LOCK);
 
-	if (!pm_mmap_free((void *)area, pages)) {
-		DEBUG("Cannot unmap memory\n");
-		return FALSE;
-	}
+	areamgr_free_area(areamgr, leftover);
 
-	newarea->size		-= pages * PAGE_SIZE;
-	newarea->global.next->global.prev  = newarea;
-	newarea->global.prev->global.next  = newarea;
+	DEBUG("Area at $%.8x shrinked to [$%.8x; %u; $%.2x]\n",
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
 
-	area_touch(newarea);
-	area_touch(newarea->global.prev);
-	area_touch(newarea->global.next);
-
-	*to_shrink = newarea;
-
-	DEBUG("Area shrinked to [$%.8x; %u; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
-
-	return TRUE;
+	*area = newarea;
 }
-#endif
-
-/*
- * Expand sbrk memory area by 'pages' number of pages.
- */
-
-#if 0
-bool area_expand(area_t *area, uint32_t pages)
-{
-	area_valid(area);
-
-	assert(area_is_sbrk(area));
-	assert(pages > 0);
-
-	DEBUG("Expanding area $%.8x - $%.8x by %u pages\n", (uint32_t)area, (uint32_t)area + area->size - 1, pages);
-
-	void *memory = pm_sbrk_alloc(pages);
-
-	if (memory == NULL) {
-		DEBUG("Cannot get %u pages from\n", pages);
-		return FALSE;
-	}
-
-	assert((uint32_t)area + area->size == (uint32_t)memory);
-
-	area->size += pages * PAGE_SIZE;
-
-	area_touch(area);
-
-	return TRUE;
-}
-#endif
