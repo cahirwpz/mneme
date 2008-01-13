@@ -132,7 +132,7 @@ int main(int argc, char **argv)
 			DEBUG("memalign(%d, %d) = %p\n", s, alignment, blocks.array[blocks.last + 1].ptr);
 
 			blocks.last++;
-		} else if (op <= 9 * (RAND_MAX >> 4)) {
+		} else if (op <= 8 * (RAND_MAX >> 4)) {
 			/* case for memmgr_alloc */
 			if (blocks.last == MAX_BLOCK_NUM)
 				continue;

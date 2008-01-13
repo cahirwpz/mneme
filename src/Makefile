@@ -8,7 +8,7 @@ LDFLAGS	=	-rpath /usr/local/lib -lrt
 
 OBJS	=	memmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
 
-all:	cscope.out libmymalloc.la tst-random tests/t-test1 tests/t-test2
+all:	cscope.out tags libmymalloc.la tst-random tests/t-test1 tests/t-test2
 
 libmymalloc.la:	$(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^)
@@ -43,6 +43,7 @@ clean:
 	@find -regextype posix-extended -regex ".*(~|\.(o|lo|a|la|loT|so))" | xargs rm -vf
 	@rm -vrf .libs tests/.libs
 	@rm -vf tst-random tests/{t-test1,t-test2}
+	@rm -vf cscope.out tags
 
 lines:
 	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | xargs cat | wc
@@ -50,5 +51,8 @@ lines:
 
 cscope.out: $(wildcard *.c *.h)
 	cscope -b $^
+
+tags: $(wildcard *.c *.h)
+	ctags-exuberant --extra=+fq --fields=+afmikKlnsStz $^
 
 .PHONY:	lines clean

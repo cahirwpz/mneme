@@ -631,16 +631,24 @@ static area_t *arealst_pullout_area(arealst_t *arealst, area_t *addr, uint32_t p
 
 	area_t *area = NULL;
 
-	if (addr != NULL)
-		area = (arealst_has_area(arealst, addr, DONTLOCK) && (addr->size >= pages * PAGE_SIZE)) ? addr : NULL;
-	else
-		area = arealst_find_area_by_size(arealst, pages * PAGE_SIZE, DONTLOCK);
+	if (arealst->areacnt > 0) {
+		if (addr != NULL) {
+			DEBUG("Seeking area of size %u pages at %.8x in list at %.8x\n",
+				  pages, (uint32_t)addr, (uint32_t)arealst);
 
-	if (area != NULL) {
-		DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
-				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+			area = (arealst_has_area(arealst, addr, DONTLOCK) && (addr->size >= pages * PAGE_SIZE)) ? addr : NULL;
+		} else {
+			DEBUG("Seeking area of size %u pages in list at %.8x\n", pages, (uint32_t)arealst);
 
-		arealst_remove_area(arealst, area, DONTLOCK);
+			area = arealst_find_area_by_size(arealst, pages * PAGE_SIZE, DONTLOCK);
+		}
+
+		if (area != NULL) {
+			DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
+					(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+
+			arealst_remove_area(arealst, area, DONTLOCK);
+		}
 	}
 
 	if (locking)
@@ -764,8 +772,9 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 
 area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t pages, direction_t side)/*{{{*/
 {
-	DEBUG("Will try to find area of size %u pages adjacent to area [$%.8x, %u, $%.2x] at %.8x\n",
-		  pages, (uint32_t)addr, addr->size, addr->flags, (uint32_t)area_begining(addr));
+	DEBUG("Seeking area of size %u pages %s-adjacent to area [$%.8x, %u, $%.2x] at %.8x\n",
+		  pages, (side == LEFT) ? "left" : "right",
+		  (uint32_t)addr, addr->size, addr->flags, (uint32_t)area_begining(addr));
 
 	assert((side == LEFT) || (side == RIGHT));
 	assert(pages > 0);
@@ -773,33 +782,37 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 	area_t *area = NULL;
 
 	bool alloc = TRUE;
-	uint32_t n = 0;
 
 	do {
 		/* Check if next/previous area is adjacent */
 		arealst_rdlock(&areamgr->global);
 
 		if (side == RIGHT) {
-			alloc = (!area_is_guard(addr->global.next) && !area_is_used(addr->global.next) &&
-					((void *)addr + sizeof(area_t) == area_begining(addr->global.next)) &&
-					addr->global.next->size >= PAGE_SIZE * pages);
+			area = addr->global.next;
 
-			n = addr->global.next->size;
+			alloc = ((area->size >= PAGE_SIZE * pages) && !area_is_global_guard(area) &&
+					 !area_is_used(area) && (area_end(addr) == area_begining(area)));
 		} else {
-			alloc = (!area_is_guard(addr->global.prev) && !area_is_used(addr->global.prev) &&
-					((void *)addr->global.prev + sizeof(area_t) == area_begining(addr)) &&
-					addr->global.prev->size >= PAGE_SIZE * pages);
+			area = addr->global.prev;
 
-			n = addr->global.prev->size;
+			alloc = ((area->size >= PAGE_SIZE * pages) && !area_is_global_guard(area) &&
+					 !area_is_used(area) && (area_end(area) == area_begining(addr)));
 		}
 
 		arealst_unlock(&areamgr->global);
 
 		if (alloc) {
+			uint32_t n = SIZE_IN_PAGES(area->size) - 1;
+
 			if (n > AREAMGR_LIST_COUNT - 1)
 				n = AREAMGR_LIST_COUNT - 1;
 
-			area = arealst_pullout_area(&areamgr->list[n], addr, pages, LOCK);
+			DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
+					(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+
+			area = arealst_pullout_area(&areamgr->list[n], area, pages, LOCK);
+		} else {
+			area = NULL;
 		}
 	} while (alloc && area == NULL);
 
@@ -887,8 +900,8 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 
 	/* mark area as free */
 	{
-		area_t *prev = areamgr_alloc_adjacent_area(areamgr, newarea, 0, LEFT);
-		area_t *next = areamgr_alloc_adjacent_area(areamgr, newarea, 0, RIGHT);
+		area_t *prev = areamgr_alloc_adjacent_area(areamgr, newarea, 1, LEFT);
+		area_t *next = areamgr_alloc_adjacent_area(areamgr, newarea, 1, RIGHT);
 
 		arealst_wrlock(&areamgr->global);
 
@@ -956,7 +969,7 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 			  (uint32_t)area->global.next, area->global.next->size, area->global.next->flags);
 
 		area = arealst_join_area(&areamgr->global, area,
-								 areamgr_alloc_adjacent_area(areamgr, area, 0, RIGHT), DONTLOCK);
+								 areamgr_alloc_adjacent_area(areamgr, area, 1, RIGHT), DONTLOCK);
 
 		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
 	}
@@ -968,7 +981,7 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 		DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
 			  (uint32_t)area->global.prev, area->global.prev->size, area->global.prev->flags);
 
-		area = arealst_join_area(&areamgr->global, areamgr_alloc_adjacent_area(areamgr, area, 0, LEFT),
+		area = arealst_join_area(&areamgr->global, areamgr_alloc_adjacent_area(areamgr, area, 1, LEFT),
 								 area, DONTLOCK);
 
 		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);

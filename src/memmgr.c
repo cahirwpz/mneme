@@ -2,11 +2,15 @@
 #include "mmapmgr.h"
 #include "memmgr.h"
 
-/* */
+#define MANAGER 1
 
 #define PROCNUM	1
 
-memmgr_t *memmgr_init()
+/**
+ * Memory manager initialization.
+ */
+
+memmgr_t *memmgr_init()/*{{{*/
 {
 	uint32_t memmgr_size = sizeof(memmgr_t) + sizeof(percpumgr_t) * PROCNUM;
 
@@ -20,30 +24,52 @@ memmgr_t *memmgr_init()
 	}
 
 	return memmgr;
-}
+}/*}}}*/
 
-void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)
+/**
+ * Allocate memory block.
+ */
+
+void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)/*{{{*/
 {
-	/* return mmapmgr_alloc(&memmgr->percpumgr[0].mmapmgr, size, alignment); */
-
+#if MANAGER == 1
+	return mmapmgr_alloc(&memmgr->percpumgr[0].mmapmgr, size, alignment);
+#elif MANAGER == 2
 	return blkmgr_alloc(&memmgr->percpumgr[0].blkmgr, size, alignment);
-}
+#endif
+}/*}}}*/
 
-bool memmgr_realloc(memmgr_t *memmgr, void *memory, uint32_t new_size)
+/**
+ * Reallocate memory block.
+ */
+
+bool memmgr_realloc(memmgr_t *memmgr, void *memory, uint32_t new_size)/*{{{*/
 {
-	/* return mmapmgr_realloc(&memmgr->percpumgr[0].mmapmgr, memory, new_size); */
-
+#if MANAGER == 1
+	return mmapmgr_realloc(&memmgr->percpumgr[0].mmapmgr, memory, new_size);
+#elif MANAGER == 2
 	return blkmgr_realloc(&memmgr->percpumgr[0].blkmgr, memory, new_size);
-}
+#endif
+}/*}}}*/
 
-bool memmgr_free(memmgr_t *memmgr, void *memory)
+/**
+ * Free memory block.
+ */
+
+bool memmgr_free(memmgr_t *memmgr, void *memory)/*{{{*/
 {
-	/* return mmapmgr_free(&memmgr->percpumgr[0].mmapmgr, memory); */
-
+#if MANAGER == 1
+	return mmapmgr_free(&memmgr->percpumgr[0].mmapmgr, memory);
+#elif MANAGER == 2
 	return blkmgr_free(&memmgr->percpumgr[0].blkmgr, memory);
-}
+#endif
+}/*}}}*/
 
-void memmgr_print(memmgr_t *memmgr)
+/**
+ * Print memory manager structures.
+ */
+
+void memmgr_print(memmgr_t *memmgr)/*{{{*/
 {
 	arealst_rdlock(&memmgr->areamgr.global);
 
@@ -82,4 +108,5 @@ void memmgr_print(memmgr_t *memmgr)
 
 	mmapmgr_print(&memmgr->percpumgr[0].mmapmgr);
 	blkmgr_print(&memmgr->percpumgr[0].blkmgr);
-}
+}/*}}}*/
+
