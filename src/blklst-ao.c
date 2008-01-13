@@ -1,5 +1,6 @@
 /*
- * Block manager implementation - address ordered list.
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	Block manager implementation - address ordered list
  */
 
 #include "blklst-ao.h"
@@ -243,7 +244,7 @@ void mb_print(mb_list_t *list)
 	/* find first block */
 	mb_t *blk = (mb_t *)((uint32_t)list + sizeof(mb_list_t));
 
-	fprintf(stderr, "\033[1;36mBlocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)list + list->size));
+	fprintf(stderr, "  \033[1;36mblocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)list + list->size));
 
 	uint32_t used = 0, free = 0, largest = 0, free_blocks = 0, used_blocks = 0;
 
@@ -261,7 +262,7 @@ void mb_print(mb_list_t *list)
 				last_free = (mb_free_t *)blk;
 		}
 
-		fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %c%c : %5d",
+		fprintf(stderr, "\033[1;3%cm   $%.8x - $%.8x : %c%c : %5d",
 				mb_is_used(blk) ? '1' : '2', (uint32_t)blk, (uint32_t)blk + blk->size,
 				mb_is_first(blk) ? 'F' : '-', mb_is_last(blk) ? 'L' : '-', blk->size);
 
@@ -300,10 +301,10 @@ void mb_print(mb_list_t *list)
 
 	float fragmentation = (free != 0) ? ((float)(largest - sizeof(mb_t)) / (float)free) * 100.0 : 0.0;
 
-	fprintf(stderr, "\033[1;36mSize: %d, Used: %d, Free: %d\033[0m\n", list->size, used, list->fmemcnt);
-	fprintf(stderr, "\033[1;36mLargest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, fragmentation);
-	fprintf(stderr, "\033[0;36mBlocks: %u, free blocks: %u, used blocks: %u.\033[0m\n", list->blkcnt, list->blkcnt - list->ublkcnt, list->ublkcnt);
-	fprintf(stderr, "\033[0;36mFirst free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
+	fprintf(stderr, "\033[1;36m   Size: %d, Used: %d, Free: %d\033[0m\n", list->size, used, list->fmemcnt);
+	fprintf(stderr, "\033[1;36m   Largest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, fragmentation);
+	fprintf(stderr, "\033[0;36m   Blocks: %u, free blocks: %u, used blocks: %u.\033[0m\n", list->blkcnt, list->blkcnt - list->ublkcnt, list->ublkcnt);
+	fprintf(stderr, "\033[0;36m   First free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
 
 	assert(list->blkcnt == used_blocks + free_blocks);
 	assert(list->ublkcnt == used_blocks);

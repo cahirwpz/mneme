@@ -1,3 +1,8 @@
+/*
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	Manager for areas (sets of OS pages)
+ */
+
 #include "areamgr.h"
 #include <string.h>
 
@@ -19,7 +24,7 @@
  * @return
  */
 
-area_t *area_new(pm_type_t type, uint32_t pages)
+area_t *area_new(pm_type_t type, uint32_t pages)/*{{{*/
 {
 	void   *begining = NULL;
 	area_t *area = NULL;
@@ -63,7 +68,7 @@ area_t *area_new(pm_type_t type, uint32_t pages)
 			(uint32_t)area_begining(area), area->size, area->flags);
 
 	return area;
-}
+}/*}}}*/
 
 /**
  * Removes the area completely - unmaps its memory.
@@ -75,7 +80,7 @@ area_t *area_new(pm_type_t type, uint32_t pages)
  * @return
  */
 
-bool area_delete(area_t *area)
+bool area_delete(area_t *area)/*{{{*/
 {
 	area_valid(area);
 	assert(area_is_used(area));
@@ -90,7 +95,7 @@ bool area_delete(area_t *area)
 	DEBUG("Cannot remove area at $%.8x\n", (uint32_t)area);
 
 	return FALSE;
-}
+}/*}}}*/
 
 /**
  * Initializes list of areas.
@@ -98,7 +103,7 @@ bool area_delete(area_t *area)
  * @param arealst
  */
 
-void arealst_init(arealst_t *arealst)
+void arealst_init(arealst_t *arealst)/*{{{*/
 {
 	memset(arealst, 0, sizeof(arealst_t));
 
@@ -112,7 +117,7 @@ void arealst_init(arealst_t *arealst)
 	pthread_rwlockattr_init(&arealst->lock_attr);
 	pthread_rwlockattr_setpshared(&arealst->lock_attr, 1);
 	pthread_rwlock_init(&arealst->lock, &arealst->lock_attr);
-}
+}/*}}}*/
 
 /**
  * Adds area to global list.
@@ -122,7 +127,7 @@ void arealst_init(arealst_t *arealst)
  * @param locking
  */
 
-void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t locking)
+void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t locking)/*{{{*/
 {
 	DEBUG("Will add area at $%.8x to global list at $%.8x %s locking\n",
 			(uint32_t)newarea, (uint32_t)arealst, locking ? "with" : "without");
@@ -169,7 +174,7 @@ void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t lock
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
 
 /**
  * Removes the area from global list.
@@ -178,7 +183,7 @@ void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t lock
  * @param area
  */
 
-void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t locking)
+void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t locking)/*{{{*/
 {
 	DEBUG("Will remove area at $%.8x from global list at $%.8x %s locking\n",
 			(uint32_t)area, (uint32_t)arealst, locking ? "with" : "without");
@@ -209,7 +214,45 @@ void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t lock
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
+
+/**
+ * Checks if given area belongs to the list.
+ *
+ * @param arealst
+ * @param addr
+ * @return
+ */
+
+bool arealst_has_area(arealst_t *arealst, area_t *addr, locking_t locking)/*{{{*/
+{
+	if (locking)
+		arealst_rdlock(arealst);
+
+	area_t *area = arealst->local.next;
+
+	bool result = FALSE;
+
+	/* check if there is an area of proper address on the list */
+	while (TRUE) {
+		area_valid(area);
+
+		if (area_is_guard(area))
+			break;
+
+		if (addr == area) {
+			result = TRUE;
+			break;
+		}
+
+		area = area->local.next;
+	}
+
+	if (locking)
+		arealst_unlock(arealst);
+
+	return result;
+}/*}}}*/
 
 /**
  * Finds on given list an area that contains given address.
@@ -219,7 +262,7 @@ void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t lock
  * @return
  */
 
-area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t locking)
+area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t locking)/*{{{*/
 {
 	if (locking)
 		arealst_rdlock(arealst);
@@ -230,8 +273,10 @@ area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t lock
 	while (TRUE) {
 		area_valid(area);
 
-		if (area_is_guard(area))
-			return NULL;
+		if (area_is_guard(area)) {
+			area = NULL;
+			break;
+		}
 
 		if ((addr >= area_begining(area)) && (addr < area_end(area)))
 			break;
@@ -243,7 +288,7 @@ area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t lock
 		arealst_unlock(arealst);
 
 	return area;
-}
+}/*}}}*/
 
 /**
  * Finds on given list an area of size greater or equal to given.
@@ -253,7 +298,7 @@ area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t lock
  * @return
  */
 
-area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t locking)
+area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t locking)/*{{{*/
 {
 	if (locking)
 		arealst_rdlock(arealst);
@@ -264,8 +309,10 @@ area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t l
 	while (TRUE) {
 		area_valid(area);
 
-		if (area_is_guard(area))
-			return NULL;
+		if (area_is_guard(area)) {
+			area = NULL;
+			break;
+		}
 
 		if (area->size >= size)
 			break;
@@ -277,7 +324,7 @@ area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t l
 		arealst_unlock(arealst);
 
 	return area;
-}
+}/*}}}*/
 
 /**
  * Inserts area after given item of supplied list.
@@ -289,7 +336,7 @@ area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t l
  * @return newarea
  */
 
-void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, locking_t locking)
+void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, locking_t locking)/*{{{*/
 {
 	if (locking)
 		arealst_wrlock(arealst);
@@ -310,7 +357,7 @@ void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, loc
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
 
 /**
  * Finds area on list that has begining at given address. Insert <i>new area</i>
@@ -320,7 +367,7 @@ void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, loc
  * @param newarea
  */
 
-void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t locking)
+void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t locking)/*{{{*/
 {
 	DEBUG("Will insert area at $%.8x [$%.8x; %u; $%.2x] to list at $%.8x %s locking\n",
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
@@ -349,7 +396,7 @@ void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t 
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
 
 /**
  * Finds area on list that has size greater or equal to the given size Insert
@@ -360,7 +407,7 @@ void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t 
  * @return
  */
 
-void arealst_insert_area_by_size(arealst_t *arealst, area_t *newarea, locking_t locking)
+void arealst_insert_area_by_size(arealst_t *arealst, area_t *newarea, locking_t locking)/*{{{*/
 {
 	DEBUG("Will insert area at $%.8x to list at $%.8x %s locking\n",
 			(uint32_t)newarea, (uint32_t)arealst, locking ? "with" : "without");
@@ -386,7 +433,7 @@ void arealst_insert_area_by_size(arealst_t *arealst, area_t *newarea, locking_t 
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
 
 /**
  * Removes the area from given list.
@@ -398,7 +445,7 @@ void arealst_insert_area_by_size(arealst_t *arealst, area_t *newarea, locking_t 
  * @return
  */
 
-void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)
+void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)/*{{{*/
 {
 	DEBUG("Will remove area at $%.8x from list at $%.8x %s locking\n",
 			(uint32_t)area, (uint32_t)arealst, locking ? "with" : "without");
@@ -429,7 +476,7 @@ void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)
 
 	if (locking)
 		arealst_unlock(arealst);
-}
+}/*}}}*/
 
 /**
  * Joins two adjacent areas.
@@ -443,7 +490,7 @@ void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)
  * @return
  */
 
-area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, locking_t locking)
+area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, locking_t locking)/*{{{*/
 {
 	if (locking)
 		arealst_wrlock(global);
@@ -485,7 +532,7 @@ area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, lock
 		arealst_unlock(global);
 
 	return second;
-}
+}/*}}}*/
 
 /**
  * Splits memory area.
@@ -500,7 +547,7 @@ area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, lock
  * @param locking
  */
 
-void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder, uint32_t pages, locking_t locking)
+void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder, uint32_t pages, locking_t locking)/*{{{*/
 {
 	if (locking)
 		arealst_wrlock(global);
@@ -562,7 +609,45 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 
 	if (locking)
 		arealst_unlock(global);
-}
+}/*}}}*/
+
+/**
+ * Internal procedure for area allocation. Pulls out area of at least size
+ * <i>pages</i> from arealst. If <i>area</i> parameter is not null then
+ * returned area will have that address.
+ *
+ * @param areamgr
+ * @param area
+ * @param pages
+ * @return
+ */
+
+static area_t *arealst_pullout_area(arealst_t *arealst, area_t *addr, uint32_t pages, locking_t locking)/*{{{*/
+{
+	assert(pages > 0);
+
+	if (locking)
+		arealst_wrlock(arealst);
+
+	area_t *area = NULL;
+
+	if (addr != NULL)
+		area = (arealst_has_area(arealst, addr, DONTLOCK) && (addr->size >= pages * PAGE_SIZE)) ? addr : NULL;
+	else
+		area = arealst_find_area_by_size(arealst, pages * PAGE_SIZE, DONTLOCK);
+
+	if (area != NULL) {
+		DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
+				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+
+		arealst_remove_area(arealst, area, DONTLOCK);
+	}
+
+	if (locking)
+		arealst_unlock(arealst);
+
+	return area;
+}/*}}}*/
 
 /**
  * Takes an area and use its begining as space for area manager.
@@ -571,7 +656,7 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
  * @return
  */
 
-areamgr_t *areamgr_init(area_t *area)
+areamgr_t *areamgr_init(area_t *area)/*{{{*/
 {
 	DEBUG("Using area at $%.8x [$%.8x; %u; $%.2x]\n", (uint32_t)area,
 			(uint32_t)area_begining(area), area->size, area->flags);
@@ -603,7 +688,7 @@ areamgr_t *areamgr_init(area_t *area)
 	DEBUG("Created area manager at $%.8x\n", (uint32_t)areamgr);
 
 	return areamgr;
-}
+}/*}}}*/
 
 /**
  * Adds new memory area to memory area manager.
@@ -613,7 +698,7 @@ areamgr_t *areamgr_init(area_t *area)
  * @return
  */
 
-void areamgr_add_area(areamgr_t *areamgr, area_t *newarea)
+void areamgr_add_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 {
 	area_valid(newarea);
 
@@ -631,7 +716,7 @@ void areamgr_add_area(areamgr_t *areamgr, area_t *newarea)
 
 	/* SECOND STEP: Area is treated as it was used - so make it free */
 	areamgr_free_area(areamgr, newarea);
-}
+}/*}}}*/
 
 /**
  * Remove the area from the global list.
@@ -643,7 +728,7 @@ void areamgr_add_area(areamgr_t *areamgr, area_t *newarea)
  * @return
  */
 
-void areamgr_remove_area(areamgr_t *areamgr, area_t *area)
+void areamgr_remove_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 {
 	area_valid(area);
 
@@ -661,114 +746,139 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area)
 
 		arealst_unlock(&areamgr->global);
 	}
-}
+}/*}}}*/
 
 /**
- * Allocates memory area from area manager.
+ * Allocates from area manager an area adjacent from left/right <i>side</i> to
+ * area at <i>addr</i>  Area has to be of size <i>pages</i> or greater.
  *
- * If as a result no area was found then a new area has to be created by
- * the caller. Both locks must be taken.
+ * Returned area is at least of size <i>pages</i>. Caller may want to shrink it
+ * using <i>areamgr_shrink_area</i>.
  *
  * @param areamgr
+ * @param addr
  * @param pages
+ * @param side
  * @return
  */
 
-area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr)
+area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t pages, direction_t side)/*{{{*/
 {
-	if (addr != NULL) {
-		DEBUG("Will try to find area of size %u pages and containing address $%.8x\n", pages, (uint32_t)addr);
-	} else {
-		DEBUG("Will try to find area of size %u pages\n", pages);
-	}
+	DEBUG("Will try to find area of size %u pages adjacent to area [$%.8x, %u, $%.2x] at %.8x\n",
+		  pages, (uint32_t)addr, addr->size, addr->flags, (uint32_t)area_begining(addr));
 
-	/* begin searching from areas' list of proper size*/
-	int32_t n = (pages == 0) ? pages : pages - 1;
-
-	/* last list stores areas of size bigger than AREAMGR_LIST_COUNT pages */
-	if (n >= AREAMGR_LIST_COUNT - 1)
-		n = AREAMGR_LIST_COUNT;
+	assert((side == LEFT) || (side == RIGHT));
+	assert(pages > 0);
 
 	area_t *area = NULL;
 
+	bool alloc = TRUE;
+	uint32_t n = 0;
+
+	do {
+		/* Check if next/previous area is adjacent */
+		arealst_rdlock(&areamgr->global);
+
+		if (side == RIGHT) {
+			alloc = (!area_is_guard(addr->global.next) && !area_is_used(addr->global.next) &&
+					((void *)addr + sizeof(area_t) == area_begining(addr->global.next)) &&
+					addr->global.next->size >= PAGE_SIZE * pages);
+
+			n = addr->global.next->size;
+		} else {
+			alloc = (!area_is_guard(addr->global.prev) && !area_is_used(addr->global.prev) &&
+					((void *)addr->global.prev + sizeof(area_t) == area_begining(addr)) &&
+					addr->global.prev->size >= PAGE_SIZE * pages);
+
+			n = addr->global.prev->size;
+		}
+
+		arealst_unlock(&areamgr->global);
+
+		if (alloc) {
+			if (n > AREAMGR_LIST_COUNT - 1)
+				n = AREAMGR_LIST_COUNT - 1;
+
+			area = arealst_pullout_area(&areamgr->list[n], addr, pages, LOCK);
+		}
+	} while (alloc && area == NULL);
+
+	if (area != NULL) {
+		area->flags |= AREA_FLAG_USED;
+		area_touch(area);
+
+		DEBUG("Found area [$%.8x, %u, $%.2x] at $%.8x\n",
+				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+	} else {
+		DEBUG("Area not found!\n");
+	}
+
+	return area;
+}/*}}}*/
+
+/**
+ * Allocates memory area from area manager. Allocated area will have exact size
+ * of <i>pages</i>. If no area of satisfying size was found then call to the OS
+ * will be done in order to obtain new pages.
+ *
+ * @param areamgr
+ * @param pages
+ * @return			area of exact size <i>pages</i> or NULL
+ */
+
+area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
+{
+	DEBUG("Will try to find area of size %u pages\n", pages);
+
+	assert(pages > 0);
+
+	int32_t n = pages - 1;
+
+	if (n > AREAMGR_LIST_COUNT - 1)
+		n = AREAMGR_LIST_COUNT - 1;
+
 	/* browse through lists till proper area is not found */
+	area_t *area = NULL;
+
 	while (n < AREAMGR_LIST_COUNT) {
-		arealst_wrlock(&areamgr->list[n]);
-
-		if (addr != NULL)
-			area = arealst_find_area_by_addr(&areamgr->list[n], addr, DONTLOCK);
-		else
-			area = arealst_find_area_by_size(&areamgr->list[n], pages * PAGE_SIZE, DONTLOCK);
-
-		if (area)
+		if ((area = arealst_pullout_area(&areamgr->list[n], NULL, pages, LOCK)))
 			break;
-
-		arealst_unlock(&areamgr->list[n]);
 
 		n++;
 	}
 
 	/* If area was found then reserve it */
 	if (area != NULL) {
-		DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
-				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
-
-		arealst_remove_area(&areamgr->list[n], area, DONTLOCK);
-
-		/* Mark area as used */
 		area->flags |= AREA_FLAG_USED;
-
 		area_touch(area);
 
-		arealst_unlock(&areamgr->list[n]);
+		DEBUG("Found area [$%.8x, %u, $%.2x] at $%.8x\n",
+				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
 
-		/* If area is too big it should be splitted and left-over should be
-		 * reinserted. */
-		if ((pages != 0) && (area->size > pages * PAGE_SIZE)) {
-			area_t *newarea = NULL;
-
-			arealst_split_area(&areamgr->global, &area, &newarea, pages, LOCK);
-
-			areamgr_free_area(areamgr, newarea);
-		}
+		/* If area is too big it should be shrinked */
+		if (area->size > pages * PAGE_SIZE)
+			areamgr_shrink_area(areamgr, &area, pages, RIGHT);
 	} else {
-		if (addr == NULL) {
-			DEBUG("Area not found - will create one!\n");
+		DEBUG("Area not found - will create one!\n");
 
-			/* If area was not found then create one */
-			if ((area = area_new(PM_MMAP, pages))) {
-
-				arealst_wrlock(&areamgr->global);
-
-				arealst_global_add_area(&areamgr->global, area, DONTLOCK);
-
-				areamgr->pagecnt += SIZE_IN_PAGES(area->size);
-
-				arealst_unlock(&areamgr->global);
-			}
-		} else {
-			DEBUG("Area not found!\n");
-		}
+		if ((area = area_new(PM_MMAP, pages)))
+			arealst_global_add_area(&areamgr->global, area, LOCK);
 	}
 
 	return area;
-}
+}/*}}}*/
 
 /**
- * Frees memory area to area manager.
+ * Frees memory area for use by area manager.
  *
- * If suitable then before insertion area should be coalesced with adjacent
- * areas. After insertion a threshold can be exceeded triggering a few pages
- * being returned to the operating system.
- *
- * Area <i>newarea</i> must be marked as used!
+ * Idea for caller: After freeing some pages a threshold (unused pages count)
+ * can be exceeded triggering a few pages being returned to the OS.
  *
  * @param areamgr
  * @param newarea
- * @return
  */
 
-void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
+void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 {
 	DEBUG("Will try to free area [$%.8x, %u, $%.2x] at $%.8x\n",
 			(uint32_t)newarea, newarea->size, newarea->flags, (uint32_t)area_begining(newarea));
@@ -777,8 +887,8 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
 
 	/* mark area as free */
 	{
-		area_t *prev = areamgr_alloc_area(areamgr, 0, area_begining(newarea) - 1);
-		area_t *next = areamgr_alloc_area(areamgr, 0, area_end(newarea) + 1);
+		area_t *prev = areamgr_alloc_adjacent_area(areamgr, newarea, 0, LEFT);
+		area_t *next = areamgr_alloc_adjacent_area(areamgr, newarea, 0, RIGHT);
 
 		arealst_wrlock(&areamgr->global);
 
@@ -814,10 +924,12 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
 
 	/* insert area on proper free list */
 	arealst_insert_area_by_size(&areamgr->list[n], newarea, LOCK);
-}
+}/*}}}*/
 
 /**
  * Coalesces memory area with adjacent areas.
+ *
+ * WARNING: This function is quite useless now... and undeniably it's buggy.
  *
  * @param aremgr
  * @param area
@@ -825,7 +937,7 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)
  * @return
  */
 
-area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
+area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 {
 	area_valid(area);
 	assert(area_is_used(area));
@@ -843,10 +955,8 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
 		DEBUG("Coalescing with right neighbour [$%.8x; $%x; $%.2x]\n",
 			  (uint32_t)area->global.next, area->global.next->size, area->global.next->flags);
 
-		area = arealst_join_area(&areamgr->global,
-								 areamgr_alloc_area(areamgr, 0, area),
-						 		 areamgr_alloc_area(areamgr, 0, area->global.next),
-								 DONTLOCK);
+		area = arealst_join_area(&areamgr->global, area,
+								 areamgr_alloc_adjacent_area(areamgr, area, 0, RIGHT), DONTLOCK);
 
 		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
 	}
@@ -858,10 +968,8 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
 		DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
 			  (uint32_t)area->global.prev, area->global.prev->size, area->global.prev->flags);
 
-		area = arealst_join_area(&areamgr->global,
-								 areamgr_alloc_area(areamgr, 0, area->global.prev),
-						 		 areamgr_alloc_area(areamgr, 0, area),
-								 DONTLOCK);
+		area = arealst_join_area(&areamgr->global, areamgr_alloc_adjacent_area(areamgr, area, 0, LEFT),
+								 area, DONTLOCK);
 
 		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
 	}
@@ -869,17 +977,24 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)
 	areamgr_free_area(areamgr, area);
 
 	return area;
-}
+}/*}}}*/
 
 /**
+ * Expands area from given <i>side</i>. Area will be expanded only if there is
+ * proper free area within area manager (no new pages will be taken from OS).
+ *
+ * If function returned TRUE then area was expanded to size <i>pages</i> or
+ * greater. Caller may want to shrink area if it's too big.
  *
  * @param areamgr
- * @param area
+ * @param area		pointer to expanded area, if call was successful it will
+ *					contain area of size <i>pages</i> or greater
  * @param pages
+ * @param side
  * @return
  */
 
-bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages)
+bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, direction_t side)/*{{{*/
 {
 	area_t *newarea = *area;
 
@@ -891,42 +1006,50 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages)
 	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n",
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags, pages);
 
-	area_t *expansion = areamgr_alloc_area(areamgr, pages, area_end(newarea) + 1);
+	area_t *expansion = areamgr_alloc_adjacent_area(areamgr, newarea, pages, side);
 
-	if (expansion != NULL)
-		*area = arealst_join_area(&areamgr->global, newarea, expansion, LOCK);
+	if (expansion != NULL) {
+		if (side == RIGHT)
+			newarea = arealst_join_area(&areamgr->global, newarea, expansion, LOCK);
+		else 
+			newarea = arealst_join_area(&areamgr->global, expansion, newarea, LOCK);
+	}
 
 	DEBUG("Area at $%.8x expanded to [$%.8x; %u; $%.2x]\n",
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
 
+	*area = newarea;
+
 	return expansion != NULL;
-}
+}/*}}}*/
 
 /**
+ * Shrinks area from given <i>side</i> - splits it and inserts leftover to area
+ * manager. Shrinked area will have exact size of <i>pages</i>.
  *
  * @param areamgr
- * @param area
- * @param direction
+ * @param area		pointer to an area which will be shrinked
  * @param pages
+ * @param side
  */
 
-void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, direction_t direction, uint32_t pages)
+void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, direction_t side)/*{{{*/
 {
 	area_t *newarea = *area;
 
 	area_valid(newarea);
 
 	assert(pages > 0);
-	assert(direction != NONE);
+	assert((side == LEFT) || (side == RIGHT));
 	assert(area_is_used(newarea));
 
 	DEBUG("Will shrink area at $%.8x [$%.8x; %u; $%.2x] from %s side by %u pages\n",
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
-			direction == LEFT ? "left" : "right", pages);
+			side == LEFT ? "left" : "right", pages);
 
 	area_t *leftover = newarea;
 
-	if (direction == RIGHT)
+	if (side == RIGHT)
 		arealst_split_area(&areamgr->global, &newarea, &leftover, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
 	else
 		arealst_split_area(&areamgr->global, &leftover, &newarea, pages, LOCK);
@@ -937,4 +1060,5 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, direction_t directio
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
 
 	*area = newarea;
-}
+}/*}}}*/
+

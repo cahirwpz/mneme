@@ -1,14 +1,14 @@
 CC		=	libtool --mode=compile gcc -ggdb -static -fms-extensions
 INCLUDE	=	-I./tests -I./tests/sysdeps/pthread -I./tests/sysdeps/generic 
 DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBOSE=1
-CFLAGS	=	-march=i686 -O2 -Wall $(DEFS) $(INCLUDE)
+CFLAGS	=	-march=i686 -O0 -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g -static 
 LDFLAGS	=	-rpath /usr/local/lib -lrt
 
-OBJS	=	memmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
+OBJS	=	memmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
 
-all:	libmymalloc.la tst-random tests/t-test1 tests/t-test2
+all:	cscope.out libmymalloc.la tst-random tests/t-test1 tests/t-test2
 
 libmymalloc.la:	$(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^)
@@ -47,5 +47,8 @@ clean:
 lines:
 	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | xargs cat | wc
 	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | xargs cat | sed '/^$$/d' | wc
+
+cscope.out: $(wildcard *.c *.h)
+	cscope -b $^
 
 .PHONY:	lines clean

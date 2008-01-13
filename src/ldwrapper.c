@@ -1,3 +1,8 @@
+/*
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	
+ */
+
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>

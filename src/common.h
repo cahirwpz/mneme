@@ -7,9 +7,9 @@
 #include <stdio.h>
 
 typedef enum { FALSE, TRUE } bool;
-typedef enum { NONE, LEFT, RIGHT } direction_t;
+typedef enum { NONE, LEFT, RIGHT, BOTH } direction_t;
 
-typedef enum { DONTLOCK, LOCK} locking_t;
+typedef enum { DONTLOCK, LOCK } locking_t;
 
 #define ALIGN_UP(data, size)	(((uint32_t)(data) + ((size) - 1)) & ~((size) - 1))
 #define ALIGN_DOWN(data, size)	((uint32_t)(data) & ~((size) - 1))
@@ -45,6 +45,20 @@ static inline uint16_t checksum(uint16_t *data, uint32_t words)
 	}
 
 	return sum;
+}
+
+static inline void hexdump(void *data, uint32_t size)
+{
+	uint32_t i;
+
+	fprintf(stderr, "Dumping %u bytes at %.8x:", size, (uint32_t)data);
+
+	for (i = 0; i < size; i++) {
+		if (i % 32)
+			fprintf(stderr, "\n  ");
+
+		fprintf(stderr, "%.2x ", ((uint8_t *)data)[i]);
+	}
 }
 
 #endif

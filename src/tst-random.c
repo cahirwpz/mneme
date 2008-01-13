@@ -1,5 +1,6 @@
 /*
- * Random malloc / free test.
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	Random malloc / free test
  */
 
 #include "memmgr.h"
@@ -7,11 +8,11 @@
 
 #define MAX_BLOCK_NUM		(1 << 16)
 #define MAX_MEM_USED		(1 << 20)
-#define MAX_BLOCK_SIZE		(1 << 14)
-#define MAX_REALLOC_SIZE	(1 << 10)
+#define MAX_BLOCK_SIZE		(1 << 12)
+#define MAX_REALLOC_SIZE	(1 << 8)
 #define MAX_ALIGN_BITS		16
 
-#define MM_PRINT_AT_ITERATION 0
+#define MM_PRINT_AT_ITERATION 1
 
 struct block
 {
@@ -80,10 +81,11 @@ int main(int argc, char **argv)
 	{
 		uint32_t op = rand();
 
-		//memmgr_print(mm);
+		memmgr_print(mm);
 
 		if (op <= 2 * (RAND_MAX >> 4)) {
 			/* case for mm_realloc */
+			continue;
 
 			if (blocks.last == -1)
 				continue;
@@ -91,7 +93,7 @@ int main(int argc, char **argv)
 			int32_t i = rand() % (blocks.last + 1);
 			int32_t s = rand();
 
-			s = ((s * s) & (MAX_REALLOC_SIZE - 1)) - (MAX_REALLOC_SIZE >> 1);
+			s = (s & (MAX_REALLOC_SIZE - 1)) - (MAX_REALLOC_SIZE >> 1);
 			
 			s += blocks.array[i].size;
 
@@ -107,7 +109,7 @@ int main(int argc, char **argv)
 
 			int32_t s = rand();
 
-			s = (s * s) & (MAX_BLOCK_SIZE - 1);
+			s = s & (MAX_BLOCK_SIZE - 1);
 
 			if (s < 4)
 				s = 4;
@@ -137,7 +139,7 @@ int main(int argc, char **argv)
 
 			int32_t s = rand();
 
-			s = (s * s) & (MAX_BLOCK_SIZE - 1);
+			s = s & (MAX_BLOCK_SIZE - 1);
 
 			if (s < 4)
 				s = 4;

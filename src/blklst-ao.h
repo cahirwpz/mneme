@@ -78,7 +78,7 @@ static inline bool mb_is_last_internal(mb_t *blk) {
 }
 
 static inline mb_list_t *mb_list_from_memarea(area_t *area) {
-	return (mb_list_t *)ALIGN((uint32_t)(area + 1), MB_GRANULARITY);
+	return (mb_list_t *)area_begining(area);
 }
 
 /* Calculate checksum of memory block structure. */

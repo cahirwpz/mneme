@@ -1,7 +1,6 @@
 /*
- * Author:	Krystian Bacławski <krystian.baclawski@gmail.com>
- *
- * Page manager: sbrk implementation.
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	Page manager -- sbrk implementation
  */
 
 #if !defined DBG_SYSMEM && !defined NDEBUG

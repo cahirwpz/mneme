@@ -1,7 +1,7 @@
 /*
- * Author:	Krystian Bacławski <krystian.baclawski@gmail.com>
- *
- * Page manager: sbrk emulation through implementation in constant-sized shared memory area.
+ * Author:	Krystian Bacławski <name.surname@gmail.com>
+ * Desc:	Page manager -- sbrk emulation through implementation in
+ * 			constant-sized shared memory area.
  */
 
 #if !defined DBG_SYSMEM && !defined NDEBUG

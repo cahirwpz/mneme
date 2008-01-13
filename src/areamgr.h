@@ -170,7 +170,8 @@ typedef struct areamgr areamgr_t;
 
 /* Memory manager procedures */
 areamgr_t *areamgr_init(area_t *area);
-area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages, area_t *addr);
+area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages);
+area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t pages, direction_t side);
 void areamgr_free_area(areamgr_t *areamgr, area_t *area);
 
 void areamgr_add_area(areamgr_t *areamgr, area_t *newarea);
@@ -178,7 +179,7 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area);
 
 area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area);
 
-bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages);
-void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, direction_t direction, uint32_t pages);
+bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, direction_t side);
+void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, direction_t side);
 
 #endif

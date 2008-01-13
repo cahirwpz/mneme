@@ -3,11 +3,13 @@
 
 #include "common.h"
 #include "areamgr.h"
+#include "blkmgr.h"
 #include "mmapmgr.h"
 
 /* */
 
 struct percpumgr {
+	blkmgr_t  blkmgr;
 	mmapmgr_t mmapmgr;
 };
 

@@ -1,3 +1,4 @@
+#include "blkmgr.h"
 #include "mmapmgr.h"
 #include "memmgr.h"
 
@@ -15,6 +16,7 @@ memmgr_t *memmgr_init()
 	
 	for (i = 0; i < PROCNUM; i++) {
 		mmapmgr_init(&memmgr->percpumgr[0].mmapmgr, &memmgr->areamgr);
+		blkmgr_init(&memmgr->percpumgr[0].blkmgr, &memmgr->areamgr);
 	}
 
 	return memmgr;
@@ -22,17 +24,23 @@ memmgr_t *memmgr_init()
 
 void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)
 {
-	return mmapmgr_alloc(&memmgr->percpumgr[0].mmapmgr, size, alignment);
+	/* return mmapmgr_alloc(&memmgr->percpumgr[0].mmapmgr, size, alignment); */
+
+	return blkmgr_alloc(&memmgr->percpumgr[0].blkmgr, size, alignment);
 }
 
 bool memmgr_realloc(memmgr_t *memmgr, void *memory, uint32_t new_size)
 {
-	return mmapmgr_realloc(&memmgr->percpumgr[0].mmapmgr, memory, new_size);
+	/* return mmapmgr_realloc(&memmgr->percpumgr[0].mmapmgr, memory, new_size); */
+
+	return blkmgr_realloc(&memmgr->percpumgr[0].blkmgr, memory, new_size);
 }
 
 bool memmgr_free(memmgr_t *memmgr, void *memory)
 {
-	return mmapmgr_free(&memmgr->percpumgr[0].mmapmgr, memory);
+	/* return mmapmgr_free(&memmgr->percpumgr[0].mmapmgr, memory); */
+
+	return blkmgr_free(&memmgr->percpumgr[0].blkmgr, memory);
 }
 
 void memmgr_print(memmgr_t *memmgr)
@@ -54,7 +62,7 @@ void memmgr_print(memmgr_t *memmgr)
 			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x: %8d\033[0m\n", area_is_used(area) ? '1' : '2',
 					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size);
 		else
-			fprintf(stderr, "\033[1;33m  $%.8x : guard area\033[0m\n", (uint32_t)area);
+			fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s\033[0m\n", (uint32_t)area, "", "guard");
 
 		if (area_is_global_guard(area->global.next))
 			break;
@@ -73,4 +81,5 @@ void memmgr_print(memmgr_t *memmgr)
 	arealst_unlock(&memmgr->areamgr.global);
 
 	mmapmgr_print(&memmgr->percpumgr[0].mmapmgr);
+	blkmgr_print(&memmgr->percpumgr[0].blkmgr);
 }
