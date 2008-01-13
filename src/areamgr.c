@@ -1056,16 +1056,16 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	assert((side == LEFT) || (side == RIGHT));
 	assert(area_is_used(newarea));
 
-	DEBUG("Will shrink area at $%.8x [$%.8x; %u; $%.2x] from %s side by %u pages\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
-			side == LEFT ? "left" : "right", pages);
+	DEBUG("Will %s-shrink area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n", (side == LEFT) ? "left" : "right", 
+		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
+		  SIZE_IN_PAGES(newarea->size) - pages);
 
 	area_t *leftover = newarea;
 
 	if (side == RIGHT)
-		arealst_split_area(&areamgr->global, &newarea, &leftover, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
+		arealst_split_area(&areamgr->global, &newarea, &leftover, pages, LOCK);
 	else
-		arealst_split_area(&areamgr->global, &leftover, &newarea, pages, LOCK);
+		arealst_split_area(&areamgr->global, &leftover, &newarea, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
 
 	areamgr_free_area(areamgr, leftover);
 

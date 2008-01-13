@@ -2,7 +2,7 @@
 #include "mmapmgr.h"
 #include "memmgr.h"
 
-#define MANAGER 1
+#define MANAGER 2
 
 #define PROCNUM	1
 

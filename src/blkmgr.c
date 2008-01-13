@@ -237,3 +237,4 @@ void blkmgr_print(blkmgr_t *blkmgr)
 
 	arealst_unlock(&blkmgr->blklst);
 }
+

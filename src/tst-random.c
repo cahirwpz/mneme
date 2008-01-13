@@ -81,7 +81,9 @@ int main(int argc, char **argv)
 	{
 		uint32_t op = rand();
 
+#if VERBOSE == 1
 		memmgr_print(mm);
+#endif
 
 		if (op <= 2 * (RAND_MAX >> 4)) {
 			/* case for mm_realloc */
