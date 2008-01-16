@@ -12,12 +12,12 @@
  * @param areamgr
  */
 
-void blkmgr_init(blkmgr_t *blkmgr, areamgr_t *areamgr)
+void blkmgr_init(blkmgr_t *blkmgr, areamgr_t *areamgr)/*{{{*/
 {
 	arealst_init(&blkmgr->blklst);
 
 	blkmgr->areamgr = areamgr;
-}
+}/*}}}*/
 
 /**
  * Memory block allocation procedure.
@@ -27,7 +27,7 @@ void blkmgr_init(blkmgr_t *blkmgr, areamgr_t *areamgr)
  * @return
  */
 
-void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)
+void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
 {
 	arealst_rdlock(&blkmgr->blklst);
 
@@ -90,7 +90,7 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)
 	arealst_insert_area_by_addr(&blkmgr->blklst, (void *)newarea, LOCK);
 
 	return alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
-}
+}/*}}}*/
 
 /**
  * Resizing allocated block procedure.
@@ -99,7 +99,7 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)
  * @return
  */
 
-bool blkmgr_realloc(blkmgr_t *blkmgr, void *memory, uint32_t new_size)
+bool blkmgr_realloc(blkmgr_t *blkmgr, void *memory, uint32_t new_size)/*{{{*/
 {
 	DEBUG("\033[37;1mResizing block at $%.8x to %u bytes.\033[0m\n", (uint32_t)memory, new_size);
 
@@ -117,7 +117,7 @@ bool blkmgr_realloc(blkmgr_t *blkmgr, void *memory, uint32_t new_size)
 		/* if that happens, user has given wrong pointer */
 		assert(!area_is_guard(area));
 	}
-}
+}/*}}}*/
 
 /**
  * Memory block deallocation procedure.
@@ -125,7 +125,7 @@ bool blkmgr_realloc(blkmgr_t *blkmgr, void *memory, uint32_t new_size)
  * @param memory
  */
 
-bool blkmgr_free(blkmgr_t *blkmgr, void *memory)
+bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 {
 	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
@@ -188,13 +188,13 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)
 	}
 
 	return result;
-}
+}/*}}}*/
 
 /*
  * Print memory areas contents in given memory manager.
  */
 
-void blkmgr_print(blkmgr_t *blkmgr)
+void blkmgr_print(blkmgr_t *blkmgr)/*{{{*/
 {
 	arealst_rdlock(&blkmgr->blklst);
 
@@ -236,5 +236,5 @@ void blkmgr_print(blkmgr_t *blkmgr)
 	assert(areacnt == blkmgr->blklst.areacnt);
 
 	arealst_unlock(&blkmgr->blklst);
-}
+}/*}}}*/
 
