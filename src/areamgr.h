@@ -134,6 +134,8 @@ void arealst_init(arealst_t *arealst);
 void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t locking);
 void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t locking);
 
+bool arealst_has_area(arealst_t *arealst, area_t *addr, locking_t locking);
+
 area_t *arealst_find_area_by_addr(arealst_t *arealst, void *addr, locking_t locking);
 area_t *arealst_find_area_by_size(arealst_t *arealst, uint32_t size, locking_t locking);
 

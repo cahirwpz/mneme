@@ -925,7 +925,7 @@ void mb_list_expand(mb_list_t *list, uint32_t pages)
  * @param space
  */
 
-void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
+mb_list_t *mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 {
 	mb_valid(first);
 	mb_valid(second);
@@ -1001,6 +1001,8 @@ void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 
 	DEBUG("merged into: [$%.8x; %u; $%.2x; %u; %u]\n",
 		  (uint32_t)first, first->size, first->flags, first->blkcnt, first->ublkcnt);
+
+	return first;
 }
 
 /**

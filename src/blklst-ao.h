@@ -153,6 +153,6 @@ uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, u
 mb_list_t *mb_list_split(mb_list_t *first, mb_free_t *to_split, uint32_t pages, uint32_t space);
 
 void mb_list_expand(mb_list_t *guard, uint32_t pages);
-void mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space);
+mb_list_t *mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space);
 
 #endif
