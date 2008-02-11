@@ -27,7 +27,9 @@ typedef enum { DONTLOCK, LOCK } locking_t;
  * A few constants meaningful for Pentium 4 cache facts.
  */
 
+#define L1_SECTOR_SIZE	32
 #define L1_LINE_SIZE	64
+#define L2_SECTOR_SIZE	32
 #define L2_LINE_SIZE	64
 #define L3_LINE_SIZE	128
 

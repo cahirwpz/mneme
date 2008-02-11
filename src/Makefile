@@ -6,7 +6,7 @@ CFLAGS	=	-march=i686 -O0 -Wall $(DEFS) $(INCLUDE)
 LD		=	libtool --mode=link gcc -g -static 
 LDFLAGS	=	-rpath /usr/local/lib -lrt
 
-OBJS	=	memmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
+OBJS	=	memmgr.lo eqsbmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
 
 all:	cscope.out tags libmymalloc.la tst-random tests/t-test1 tests/t-test2
 
@@ -28,6 +28,7 @@ tests/t-test2:		tests/t-test2.lo ldwrapper.lo libmymalloc.la
 areamgr.o:			areamgr.c areamgr.h common.h sysmem.h
 blklst-ao.o: 		blklst-ao.c blklst-ao.h common.h areamgr.h sysmem.h
 blkmgr.o: 			blkmgr.c blkmgr.h blklst-ao.h common.h areamgr.h sysmem.h
+eqsbmgr.o:			eqsbmgr.c eqsbmgr.h common.h areamgr.h sysmem.h common-list0.c
 ldwrapper.o: 		ldwrapper.c memmgr.h common.h areamgr.h sysmem.h
 mmapmgr.o:			mmapmgr.c mmapmgr.h common.h areamgr.h sysmem.h
 sysmem-mmap.o:		sysmem-mmap.c sysmem.h common.h
