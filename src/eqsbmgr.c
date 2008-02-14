@@ -9,8 +9,8 @@
 #include <strings.h>
 #include <string.h>
 
-#define SB_SIZE				1024
-#define SB_MAX_AREA_SIZE	32764
+#define SB_SIZE			1024
+#define AREA_MAX_SIZE 	32764 * SB_SIZE
 
 /* Super-block structure */
 
@@ -18,11 +18,11 @@ struct sb
 {
 	/* superblock's control field */
 	uint16_t 	checksum;
-	uint8_t		fblkcnt:7;				/* if fblkcnt == 127 then block is free */
-	uint8_t		size:7;
-	uint8_t		blksize:2;
+	uint16_t	fblkcnt:7;				/* if fblkcnt == 127 then block is free */
+	uint16_t	size:7;
+	uint16_t	blksize:2;
 
-	/* superblocks's list pointers */
+	/* superblocks' list pointers */
 	int16_t	prev;
 	int16_t	next;
 
@@ -82,26 +82,28 @@ struct sb_mgr
 
 typedef struct sb_mgr sb_mgr_t;
 
+static void sb_mgr_print(sb_mgr_t *self);
+
 /* Declaration of superblocks' list */
 
 static inline sb_t *sb_get_prev(sb_t *self)/*{{{*/
 {
-	return (void *)self + self->prev * SB_SIZE;
+	return (self->prev == 0) ? NULL : (void *)self + self->prev * SB_SIZE;
 }/*}}}*/
 
 static inline void sb_set_prev(sb_t *self, sb_t *prev)/*{{{*/
 {
-	self->prev = ((int32_t)prev / SB_SIZE) - ((int32_t)self / SB_SIZE);
+	self->prev = (prev == NULL) ? 0 : ((int32_t)prev / SB_SIZE) - ((int32_t)self / SB_SIZE);
 }/*}}}*/
 
 static inline sb_t *sb_get_next(sb_t *self)/*{{{*/
 {
-	return (void *)self + self->next * SB_SIZE;
+	return (self->next == 0) ? NULL : (void *)self + self->next * SB_SIZE;
 }/*}}}*/
 
 static inline void sb_set_next(sb_t *self, sb_t *next)/*{{{*/
 {
-	self->next = ((int32_t)next / SB_SIZE) - ((int32_t)self / SB_SIZE);
+	self->next = (next == NULL) ? 0 : ((int32_t)next / SB_SIZE) - ((int32_t)self / SB_SIZE);
 }/*}}}*/
 
 #define __LIST				sb_list
@@ -132,7 +134,7 @@ static inline void sb_set_next(sb_t *self, sb_t *next)/*{{{*/
 
 static uint8_t sb_get_blocks(sb_t *self)/*{{{*/
 {
-	int32_t blocks  = (self->size << 3);
+	int32_t blocks  = (self->size + 1) << 3;
 
 	if (self->blksize == 0)
 		blocks -= offsetof(sb_t, blk8.data);
@@ -179,24 +181,23 @@ static inline void *sb_get_data(sb_t *self)/*{{{*/
 }/*}}}*/
 
 /**
- * Initialize superblock of given length and blocks' size.
+ * Prepare superblock to provide blocks of size <i>blksize</i>.
  *
  * @param self
  * @param blksize
- * @param size
  */
 
-static void sb_init(sb_t *self, uint8_t blksize, uint32_t size)/*{{{*/
+static void sb_prepare(sb_t *self, uint8_t blksize)/*{{{*/
 {
 	assert(blksize < 4);
-	assert(!(((uint32_t)self + sizeof(sb_t) - size) & (SB_SIZE - 1)));
 
 	self->blksize = blksize;
-	self->size    = size >> 3;
 
 	/* initialize bitmap */
 	uint8_t *bitmap = (uint8_t *)self->bitmap;
 	int32_t blocks  = sb_get_blocks(self);
+
+	self->fblkcnt = blocks;
 
 	int32_t i;
 
@@ -211,8 +212,6 @@ static void sb_init(sb_t *self, uint8_t blksize, uint32_t size)/*{{{*/
 			blocks--;
 		}
 	}
-
-	self->fblkcnt = blocks;
 }/*}}}*/
 
 /**
@@ -250,6 +249,7 @@ static int16_t sb_alloc(sb_t *self)/*{{{*/
  * @return 
  */
 
+#if 0
 static uint16_t sb_alloc_indexed(sb_t *self, uint32_t index)/*{{{*/
 {
 	if (self->fblkcnt == 0)
@@ -267,6 +267,7 @@ static uint16_t sb_alloc_indexed(sb_t *self, uint32_t index)/*{{{*/
 
 	return -1;
 }/*}}}*/
+#endif
 
 /**
  * Free a block that has given index.
@@ -328,6 +329,8 @@ static inline sb_mgr_t *sb_mgr_from_area(area_t *self) {/*{{{*/
 
 static void sb_mgr_init(sb_mgr_t *self)/*{{{*/
 {
+	DEBUG("Initialize SBs' manager at $%.8x.\n", (uint32_t)self);
+
 	uint32_t i;
 
 	for (i = 0; i < 4; i++) {
@@ -348,12 +351,14 @@ static void sb_mgr_init(sb_mgr_t *self)/*{{{*/
 
 static sb_t *sb_mgr_alloc(sb_mgr_t *self)/*{{{*/
 {
+	DEBUG("Allocate new SB from SBs' manager at $%.8x.\n", (uint32_t)self);
+
 	sb_t *sb = NULL;
 
 	if (self->free > 0) {
 		int32_t i = 0;
 
-		while ((i < 4) && (self->groups[i].first))
+		while ((i < 4) && (self->groups[i].first == NULL))
 			i++;
 
 		if (i < 4) {
@@ -365,7 +370,7 @@ static sb_t *sb_mgr_alloc(sb_mgr_t *self)/*{{{*/
 			if (sb->blksize > 0) {
 				shorter->blksize = sb->blksize - 1;
 
-				sb_list_push(&self->groups[sb->blksize], shorter, DONTLOCK);
+				sb_list_push(&self->groups[shorter->blksize], shorter, DONTLOCK);
 			}
 
 			sb->fblkcnt = sb_get_blocks(sb);
@@ -426,18 +431,115 @@ static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 }/*}}}*/
 
 /**
+ * Add memory pages to superblocks' manager and initialize them.
+ */
+
+static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*/
+{
+	DEBUG("Add %u SBs starting at $%.8x to SBs' manager at $%.8x.\n",
+		  (uint32_t)superblocks, (uint32_t)memory, (uint32_t)self);
+
+	uint16_t i;
+	sb_t *sb;
+
+	for (i = 0; i < superblocks; i++) {
+		sb = (sb_t *)((uint32_t)memory + i * SB_SIZE);
+
+		sb->size = (SB_SIZE - 1) >> 3;
+		sb->fblkcnt = 127;
+		sb->blksize = 3;
+
+		sb->prev = 0;
+		sb->next = 0;
+
+		if ((i & 3) == 0)
+			sb_list_push(&self->groups[sb->blksize], sb, DONTLOCK);
+
+		self->free++;
+		self->all++;
+	}
+
+	/* if added memory overlaps superblocks' manager then shorten last superblock */
+	if (sb == sb_get_from_address(self)) {
+		sb->size = ((uint32_t)self - (uint32_t)sb) >> 3;
+
+		sb_t *prev = (sb_t *)((uint32_t)sb_get_from_address(memory) - SB_SIZE);
+
+		/* check if first block before added pages exists */
+		if (self->free > superblocks) {
+			int32_t old_blocks  = sb_get_blocks(prev);
+
+			prev->size    = 127;
+
+			int32_t blocks = sb_get_blocks(prev);
+
+			if (prev->fblkcnt < 127) {
+				while (blocks >= old_blocks)
+					sb_free(prev, --blocks);
+
+				if (old_blocks == 0)
+					sb_list_push(&self->nonempty[prev->blksize], prev, DONTLOCK);
+			}
+		}
+	}
+}/*}}}*/
+
+
+/**
  *
  */
 
 static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 {
+	fprintf(stderr, "\033[1;34m  eqsbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
+			(uint32_t)self, self->all, self->free);
+
+	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (self->all - 1) * SB_SIZE);
+
+	uint32_t i;
+
+	for (i = 0; i < self->all; i++) {
+		sb_t *sb = (sb_t *)((uint32_t)base + SB_SIZE * i);
+
+		if (sb->fblkcnt == 127) {
+			fprintf(stderr, "\033[1;32m   $%.8x: %4d\033[0m\n",
+					(uint32_t)sb, (sb->size + 1) << 3);
+		} else {
+			fprintf(stderr, "\033[1;31m   $%.8x: %4d : %d : %d \033[0m\n",
+					(uint32_t)sb, (sb->size + 1) << 3, (sb->blksize + 1) << 3, sb->fblkcnt);
+		}
+	}
+
+	
+	for (i = 0; i < 4; i++) {
+		if (i == 0)
+			fprintf(stderr, "\033[1;34m  nonempty : ");
+		
+		fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->nonempty[i].first,
+				(uint32_t)self->nonempty[i].last, self->nonempty[i].sbcnt);
+
+		if (i == 3)
+			fprintf(stderr, "\033[0m\n");
+	}
+
+	for (i = 0; i < 4; i++) {
+		if (i == 0)
+			fprintf(stderr, "\033[1;34m  groups   : ");
+		
+		fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->groups[i].first,
+				(uint32_t)self->groups[i].last, self->groups[i].sbcnt);
+
+		if (i == 3)
+			fprintf(stderr, "\033[0m\n");
+	}
+	
 }/*}}}*/
 
 /**
  *
  */
 
-void eqsblkmgr_init(eqsbmgr_t *self, areamgr_t *areamgr)/*{{{*/
+void eqsbmgr_init(eqsbmgr_t *self, areamgr_t *areamgr)/*{{{*/
 {
 	arealst_init(&self->arealst);
 
@@ -450,45 +552,154 @@ void eqsblkmgr_init(eqsbmgr_t *self, areamgr_t *areamgr)/*{{{*/
 
 void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 {
+	if (alignment) {
+		DEBUG("\033[37;1mRequested block of size %u aligned to %u bytes boundary.\033[0m\n", size, alignment);
+	} else {
+		DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
+	}
+
 	uint8_t blksize = (size - 1) >> 3;
 
-	assert(size < 4);
+	assert(blksize < 4);
 
 	/* alignment is not supported due to much more complex implementation */
-	assert(alignment == 0);
+	assert(alignment <= 8);
 
-	sb_t *sb = NULL;
+	sb_t   *sb   = NULL;
+	area_t *area = NULL;
 
-	/* browse list of managed areas */
-	area_t *area = (area_t *)self->arealst.local.next;
+	DEBUG("Try to find superblock with free blocks.\n");
+	{
+		area = (area_t *)self->arealst.local.next;
 
-	while (!area_is_guard(area)) {
-		sb_mgr_t *mgr = sb_mgr_from_area(area);
+		while (!area_is_guard(area)) {
+			sb_mgr_t *mgr = sb_mgr_from_area(area);
 
-		/* get first superblock from nonempty sbs stack */
-		sb = mgr->nonempty[blksize].first;
+			/* get first superblock from nonempty sbs stack */
+			sb = mgr->nonempty[blksize].first;
 
-		/* if no superblock found get one from free superblocks list */
-		if (sb == NULL)
+			if (sb != NULL)
+				break;
+
+			area = area->local.next;
+		}
+	}
+
+	if (sb == NULL) {
+		DEBUG("Try to allocate unused superblock.\n");
+
+		area = (area_t *)self->arealst.local.next;
+
+		while (!area_is_guard(area)) {
+			sb_mgr_t *mgr = sb_mgr_from_area(area);
+
+			/* try to allocate superblock */
 			sb = sb_mgr_alloc(mgr);
 
-		if (sb != NULL)
-			break;
+			if (sb != NULL) {
+				sb_prepare(sb, blksize);
+				break;
+			}
 
-		area = area->local.next;
+			area = area->local.next;
+		}
 	}
 
-	/* ouch... need to get new pages from area manager */
+	/* last attempt: ouch... need to get new pages from area manager */
 	if (sb == NULL) {
-		area_t *newarea = areamgr_alloc_area(self->areamgr, 1);
+		DEBUG("No free blocks and superblocks found!\n");
+		
+		/* first attempt: try adjacent areas */
+		area = (area_t *)self->arealst.local.next;
 
-		arealst_insert_area_by_addr(&self->arealst, (void *)newarea, LOCK);
+		DEBUG("Try to merge adjacent pages to one of superblocks' manager.\n");
 
-		/* failed to obtain new pages :( */
-		return NULL;
+		while (!area_is_guard(area)) {
+			sb_mgr_t *mgr = sb_mgr_from_area(area);
+
+			if (mgr->all * SB_SIZE < AREA_MAX_SIZE) {
+				uint32_t oldsize = area->size;
+				uint32_t newsize;
+
+				if (areamgr_expand_area(self->areamgr, &area, 1, LEFT)) {
+					/* area cannot be larger than AREA_MAX_SIZE */
+					if (area->size > AREA_MAX_SIZE)
+						newsize = AREA_MAX_SIZE; 
+					/* extending by more than 4 pages is waste (or maybe not?) */
+					if (area->size - oldsize > PAGE_SIZE * 4)
+						newsize = PAGE_SIZE * 4 + oldsize;
+					/* if new area is to big then shrink it */
+					if (area->size > newsize)
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), LEFT);
+
+					/* add newly allocated pages to superblocks' manager */
+					uint32_t newsbs = (newsize - oldsize) / SB_SIZE;
+
+					sb_mgr_add(mgr, area_begining(area), newsbs);
+				} else if (areamgr_expand_area(self->areamgr, &area, 1, RIGHT)) {
+					if (area->size > AREA_MAX_SIZE)
+						newsize = AREA_MAX_SIZE;
+					if (area->size - oldsize > PAGE_SIZE * 4)
+						newsize = PAGE_SIZE * 4 + oldsize;
+					if (area->size > newsize)
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), RIGHT);
+
+					/* copy old superblocks' manager to new location */
+					sb_mgr_t *oldmgr = mgr;
+					
+					mgr = sb_mgr_from_area(area);
+					
+					memcpy(mgr, oldmgr, sizeof(sb_mgr_t));
+
+					/* add newly allocated pages to superblocks' manager */
+					uint32_t newsbs = (newsize - oldsize) / SB_SIZE;
+
+					sb_mgr_add(mgr, area_end(area) - (newsbs * SB_SIZE), newsbs);
+				}
+
+				sb = sb_mgr_alloc(mgr);
+				sb_prepare(sb, blksize);
+			}
+
+			if (sb != NULL)
+				break;
+
+			area = area->local.next;
+		}
+		
+		if (sb == NULL) {
+			DEBUG("No adjacent areas found - try to create new superblocks' manager.\n");
+			/* second attempt: create new superblocks' manager */
+			area_t *newarea = areamgr_alloc_area(self->areamgr, 1);
+
+			if (newarea) {
+				sb_mgr_t *mgr = sb_mgr_from_area(newarea);
+
+				sb_mgr_init(mgr);
+				sb_mgr_add(mgr, area_begining(newarea), newarea->size / SB_SIZE);
+
+				sb_mgr_print(mgr);
+
+				sb = sb_mgr_alloc(mgr);
+				sb_prepare(sb, blksize);
+
+				sb_mgr_print(mgr);
+
+				arealst_insert_area_by_addr(&self->arealst, (void *)newarea, LOCK);
+			} else {
+				DEBUG("Failed to create new superblocks' manager :(\n");
+			}
+		}
 	}
 
-	return sb_get_data(sb) + sb_alloc(sb) * ((blksize + 1) << 3);
+	int32_t index = sb_alloc(sb);
+
+	DEBUG("$%.8x %d\n", (uint32_t)sb_get_data(sb), index);
+
+	if (index < 0)
+		sb = NULL;
+
+	return (sb != NULL) ? (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3)) : NULL;
 }/*}}}*/
 
 /**
@@ -578,7 +789,7 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 
 	area_t *area = (area_t *)&self->arealst;
 
-	fprintf(stderr, "\033[1;36m blkmgr at $%.8x [%d areas]:\033[0m\n",
+	fprintf(stderr, "\033[1;36m eqsbmgr at $%.8x [%d areas]:\033[0m\n",
 			(uint32_t)self, self->arealst.areacnt);
 
 	bool error = FALSE;

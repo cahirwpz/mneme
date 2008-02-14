@@ -191,7 +191,7 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 		if ((blkmgr->blklst.areacnt > 1) && mb_is_first(list->next) && mb_is_last(list->next)) {
 			arealst_remove_area(&blkmgr->blklst, (void *)area, DONTLOCK);
 		} else {
-			if ((list->fblkcnt >= 4 * PAGE_SIZE) && (list->ublkcnt < list->fblkcnt)) {
+			if (((list->blkcnt - list->ublkcnt) >= 4 * PAGE_SIZE) && (list->ublkcnt < (list->blkcnt / 2))) {
 				/* can area be shrinked at the end ? */
 				shrink_right_pages = mb_list_can_shrink_at_end(list);
 

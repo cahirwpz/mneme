@@ -176,7 +176,7 @@ __ITEM_T *__METHOD_ARGS(__LIST_DECL, pop, locking_t lock)
 
 	__ITEM_T *result = __FIRST(self);
 
-	if ((__FIRST(self) == NULL) && (__LAST(self) == NULL)) {
+	if (__FIRST(self) == __LAST(self)) {
 		__FIRST(self) = NULL;
 		__LAST(self) = NULL;
 	} else {

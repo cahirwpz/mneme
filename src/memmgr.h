@@ -3,12 +3,14 @@
 
 #include "common.h"
 #include "areamgr.h"
+#include "eqsbmgr.h"
 #include "blkmgr.h"
 #include "mmapmgr.h"
 
 /* */
 
 struct percpumgr {
+	eqsbmgr_t  eqsbmgr;
 	blkmgr_t  blkmgr;
 	mmapmgr_t mmapmgr;
 };

@@ -8,9 +8,9 @@
 
 #define MAX_BLOCK_NUM		(1 << 16)
 #define MAX_MEM_USED		(1 << 20)
-#define MAX_BLOCK_SIZE		(1 << 10)
-#define MAX_REALLOC_SIZE	(1 << 6)
-#define MAX_ALIGN_BITS		16
+#define MAX_BLOCK_SIZE		(1 << 5)
+#define MAX_REALLOC_SIZE	(1 << 4)
+#define MAX_ALIGN_BITS		0
 
 #define MM_PRINT_AT_ITERATION 1
 
