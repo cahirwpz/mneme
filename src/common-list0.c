@@ -184,10 +184,12 @@ __ITEM_T *__METHOD_ARGS(__LIST_DECL, pop, locking_t lock)
 		__SET_PREV(__FIRST(self), NULL);
 	}
 
-	__SET_PREV(result, NULL);
-	__SET_NEXT(result, NULL);
+	if (result) {
+		__SET_PREV(result, NULL);
+		__SET_NEXT(result, NULL);
 
-	__COUNTER(self)--;
+		__COUNTER(self)--;
+	}
 	
 	if (lock)
 		__CALL(__LIST, unlock);
@@ -285,7 +287,7 @@ void __METHOD_ARGS(__LIST_DECL, remove, __ITEM_T *item, locking_t lock)
 	if (lock)
 		__CALL(__LIST, wrlock);
 
-	if ((__FIRST(self) == item) && (__LAST(self) == item)) {
+	if ((__FIRST(self) == __LAST(self)) && (__FIRST(self) == item)) {
 		/* the only item on the list */
 		__FIRST(self) = NULL;
 		__LAST(self) = NULL;

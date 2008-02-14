@@ -194,24 +194,17 @@ static void sb_prepare(sb_t *self, uint8_t blksize)/*{{{*/
 	self->blksize = blksize;
 
 	/* initialize bitmap */
-	uint8_t *bitmap = (uint8_t *)self->bitmap;
-	int32_t blocks  = sb_get_blocks(self);
+	int32_t blocks = sb_get_blocks(self);
 
 	self->fblkcnt = blocks;
 
 	int32_t i;
 
-	for (i = 0; blocks > 7; blocks -= 8, i++)
-		bitmap[i] = 0xFF;
+	for (i = 0; blocks > 31; blocks -= 32, i++)
+		self->bitmap[i] = 0xFFFFFFFF;
 
-	if (blocks > 0) {
-		bitmap[i] = 0x00;
-
-		while (blocks > 0) {
-			self->bitmap[i] |= (1 << (8 - blocks));
-			blocks--;
-		}
-	}
+	if (blocks > 0)
+		self->bitmap[i] = ~((1 << (32 - blocks)) - 1);
 }/*}}}*/
 
 /**
@@ -228,17 +221,23 @@ static int16_t sb_alloc(sb_t *self)/*{{{*/
 
 	uint32_t i = 0, j = 0, lastblk = sb_get_blocks(self);
 
-	while ((j == 0) && (i < lastblk)) {
-		j = ffs(self->bitmap[i >> 5]);
+	while (i < lastblk) {
+		uint32_t data = self->bitmap[i >> 5];
+
+		j = (data == 0) ? 0 : __builtin_clz(data) + 1;
+		
+		if (j > 0)
+			break;
+
 		i += 32;
 	}
 
 	assert(j > 0);
 
 	self->fblkcnt--;
-	self->bitmap[i >> 5] |= (1 << --j);
+	self->bitmap[i >> 5] &= ~(1 << (32 - j));
 
-	return (i + j);
+	return (i + j - 1);
 }/*}}}*/
 
 /**
@@ -276,15 +275,17 @@ static uint16_t sb_alloc_indexed(sb_t *self, uint32_t index)/*{{{*/
  * @param index
  */
 
-static void sb_free(sb_t *self, uint16_t index)/*{{{*/
+static void sb_free(sb_t *self, uint32_t index)/*{{{*/
 {
-	uint32_t i = index >> 5, j = index & 0x1F, lastblk = sb_get_blocks(self);
+	DEBUG("Free block of index %u in SB at $%.8x\n", index, (uint32_t)self);
+
+	uint32_t i = index >> 5, j = 31 - (index & 0x1F), lastblk = sb_get_blocks(self);
 
 	assert(index < lastblk);
-	assert(self->bitmap[i] & (1 << j));
+	assert((self->bitmap[i] & (1 << j)) == 0);
 
 	self->fblkcnt++;
-	self->bitmap[i] &= ~(1 << j);
+	self->bitmap[i] |= ~(1 << j);
 }/*}}}*/
 
 /**
@@ -349,7 +350,7 @@ static void sb_mgr_init(sb_mgr_t *self)/*{{{*/
  * @return
  */
 
-static sb_t *sb_mgr_alloc(sb_mgr_t *self)/*{{{*/
+static sb_t *sb_mgr_alloc(sb_mgr_t *self, uint16_t blksize)/*{{{*/
 {
 	DEBUG("Allocate new SB from SBs' manager at $%.8x.\n", (uint32_t)self);
 
@@ -377,6 +378,9 @@ static sb_t *sb_mgr_alloc(sb_mgr_t *self)/*{{{*/
 
 			self->free--;
 		}
+
+		sb_prepare(sb, blksize);
+		sb_list_push(&self->nonempty[sb->blksize], sb, DONTLOCK);
 	}
 
 	return sb;
@@ -391,7 +395,12 @@ static sb_t *sb_mgr_alloc(sb_mgr_t *self)/*{{{*/
 
 static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 {
+	DEBUG("Return SB at $%.8x to SBs' manager at $%.8x.\n", (uint32_t)sb, (uint32_t)self);
+
 	int32_t i = sb_grp_index(sb);
+
+	sb->blksize = 0;
+	sb->fblkcnt = 127;
 
 	if (i < 3) {
 		sb_t *next = sb_grp_nth(sb, i + 1);
@@ -403,27 +412,27 @@ static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 		}
 	}
 
+	int32_t old_i = i;
+
 	while (i > 0) {
 		sb_t *prev = sb_grp_nth(sb, i - 1);
 
-		if (prev->fblkcnt != 127) {
-			sb_t *curr = sb_grp_nth(sb, i);
-
-			if (curr != sb) {
-				sb_list_remove(&self->groups[curr->blksize], curr, DONTLOCK);
-
-				curr->blksize += sb->blksize + 1;
-
-				sb = curr;
-			}
-	
+		if (prev->fblkcnt != 127)
 			break;
-		}
 
 		i--;
 	}
 
-	sb->fblkcnt = 127;
+	if (i != old_i) {
+		DEBUG("Replacing %u\n", i);
+		sb_t *curr = sb_grp_nth(sb, i);
+
+		sb_list_remove(&self->groups[curr->blksize], curr, DONTLOCK);
+
+		curr->blksize += sb->blksize + 1;
+
+		sb = curr;
+	}
 
 	sb_list_push(&self->groups[sb->blksize], sb, DONTLOCK);
 
@@ -469,7 +478,7 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 		if (self->free > superblocks) {
 			int32_t old_blocks  = sb_get_blocks(prev);
 
-			prev->size    = 127;
+			prev->size = 127;
 
 			int32_t blocks = sb_get_blocks(prev);
 
@@ -484,7 +493,6 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 	}
 }/*}}}*/
 
-
 /**
  *
  */
@@ -496,7 +504,7 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 
 	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (self->all - 1) * SB_SIZE);
 
-	uint32_t i;
+	uint32_t i, j;
 
 	for (i = 0; i < self->all; i++) {
 		sb_t *sb = (sb_t *)((uint32_t)base + SB_SIZE * i);
@@ -505,8 +513,15 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 			fprintf(stderr, "\033[1;32m   $%.8x: %4d\033[0m\n",
 					(uint32_t)sb, (sb->size + 1) << 3);
 		} else {
-			fprintf(stderr, "\033[1;31m   $%.8x: %4d : %d : %d \033[0m\n",
+			fprintf(stderr, "\033[1;31m   $%.8x: %4d : %4d : %4d : ",
 					(uint32_t)sb, (sb->size + 1) << 3, (sb->blksize + 1) << 3, sb->fblkcnt);
+
+			uint32_t *data = (uint32_t *)sb->bitmap;
+
+			for (j = 0; j < sb_get_blocks(sb); j += 32)
+				fprintf(stderr, "%.8x ", data[j >> 5]);
+
+			fprintf(stderr, "\033[0m\n");
 		}
 	}
 
@@ -591,15 +606,11 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		area = (area_t *)self->arealst.local.next;
 
 		while (!area_is_guard(area)) {
-			sb_mgr_t *mgr = sb_mgr_from_area(area);
-
 			/* try to allocate superblock */
-			sb = sb_mgr_alloc(mgr);
+			sb = sb_mgr_alloc(sb_mgr_from_area(area), blksize);
 
-			if (sb != NULL) {
-				sb_prepare(sb, blksize);
+			if (sb != NULL)
 				break;
-			}
 
 			area = area->local.next;
 		}
@@ -657,8 +668,7 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 					sb_mgr_add(mgr, area_end(area) - (newsbs * SB_SIZE), newsbs);
 				}
 
-				sb = sb_mgr_alloc(mgr);
-				sb_prepare(sb, blksize);
+				sb = sb_mgr_alloc(mgr, blksize);
 			}
 
 			if (sb != NULL)
@@ -678,12 +688,7 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 				sb_mgr_init(mgr);
 				sb_mgr_add(mgr, area_begining(newarea), newarea->size / SB_SIZE);
 
-				sb_mgr_print(mgr);
-
-				sb = sb_mgr_alloc(mgr);
-				sb_prepare(sb, blksize);
-
-				sb_mgr_print(mgr);
+				sb = sb_mgr_alloc(mgr, blksize);
 
 				arealst_insert_area_by_addr(&self->arealst, (void *)newarea, LOCK);
 			} else {
@@ -692,14 +697,18 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		}
 	}
 
-	int32_t index = sb_alloc(sb);
+	void *memory = NULL;
 
-	DEBUG("$%.8x %d\n", (uint32_t)sb_get_data(sb), index);
+	if (sb != NULL) {
+		int32_t index = sb_alloc(sb);
 
-	if (index < 0)
-		sb = NULL;
+		DEBUG("$%.8x %d\n", (uint32_t)sb_get_data(sb), index);
 
-	return (sb != NULL) ? (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3)) : NULL;
+		if (index >= 0)
+			memory = (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3));
+	}
+
+	return memory;
 }/*}}}*/
 
 /**
@@ -731,8 +740,10 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 
 		uint8_t blocks = sb_get_blocks(sb);
 
-		if (blocks == sb->fblkcnt)
+		if (blocks == sb->fblkcnt) {
+			sb_list_remove(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
 			sb_mgr_free(mgr, sb);
+		}
 	}
 
 	return (mgr != NULL);
