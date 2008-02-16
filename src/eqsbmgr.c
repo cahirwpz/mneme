@@ -157,7 +157,7 @@ static uint8_t sb_get_blocks(sb_t *self)/*{{{*/
 
 static inline sb_t *sb_get_from_address(void *address)/*{{{*/
 {
-	return (sb_t *)((uint32_t)address & 0xFFFFC00);
+	return (sb_t *)((uint32_t)address & 0xFFFFFC00);
 }/*}}}*/
 
 /**
@@ -285,7 +285,7 @@ static void sb_free(sb_t *self, uint32_t index)/*{{{*/
 	assert((self->bitmap[i] & (1 << j)) == 0);
 
 	self->fblkcnt++;
-	self->bitmap[i] |= ~(1 << j);
+	self->bitmap[i] |= (1 << j);
 }/*}}}*/
 
 /**
@@ -424,7 +424,6 @@ static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 	}
 
 	if (i != old_i) {
-		DEBUG("Replacing %u\n", i);
 		sb_t *curr = sb_grp_nth(sb, i);
 
 		sb_list_remove(&self->groups[curr->blksize], curr, DONTLOCK);
@@ -449,7 +448,7 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 		  (uint32_t)superblocks, (uint32_t)memory, (uint32_t)self);
 
 	uint16_t i;
-	sb_t *sb;
+	sb_t *sb = NULL;
 
 	for (i = 0; i < superblocks; i++) {
 		sb = (sb_t *)((uint32_t)memory + i * SB_SIZE);
@@ -502,7 +501,7 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 	fprintf(stderr, "\033[1;34m  eqsbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
 			(uint32_t)self, self->all, self->free);
 
-	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (self->all - 1) * SB_SIZE);
+	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (uint32_t)(self->all - 1) * SB_SIZE);
 
 	uint32_t i, j;
 
@@ -524,30 +523,26 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 			fprintf(stderr, "\033[0m\n");
 		}
 	}
-
 	
-	for (i = 0; i < 4; i++) {
-		if (i == 0)
-			fprintf(stderr, "\033[1;34m  nonempty : ");
-		
-		fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->nonempty[i].first,
-				(uint32_t)self->nonempty[i].last, self->nonempty[i].sbcnt);
+	{
+		fprintf(stderr, "\033[0;35m   nonempty : ");
 
-		if (i == 3)
-			fprintf(stderr, "\033[0m\n");
+		for (i = 0; i < 4; i++)
+			fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->nonempty[i].first,
+					(uint32_t)self->nonempty[i].last, self->nonempty[i].sbcnt);
+
+		fprintf(stderr, "\033[0m\n");
 	}
 
-	for (i = 0; i < 4; i++) {
-		if (i == 0)
-			fprintf(stderr, "\033[1;34m  groups   : ");
-		
-		fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->groups[i].first,
-				(uint32_t)self->groups[i].last, self->groups[i].sbcnt);
+	{
+		fprintf(stderr, "\033[0;35m   groups   : ");
 
-		if (i == 3)
-			fprintf(stderr, "\033[0m\n");
+		for (i = 0; i < 4; i++)
+			fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->groups[i].first,
+					(uint32_t)self->groups[i].last, self->groups[i].sbcnt);
+
+		fprintf(stderr, "\033[0m\n");
 	}
-	
 }/*}}}*/
 
 /**
@@ -580,15 +575,16 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 	/* alignment is not supported due to much more complex implementation */
 	assert(alignment <= 8);
 
-	sb_t   *sb   = NULL;
-	area_t *area = NULL;
+	sb_t     *sb   = NULL;
+    sb_mgr_t *mgr  = NULL;
+	area_t   *area = NULL;
 
 	DEBUG("Try to find superblock with free blocks.\n");
 	{
 		area = (area_t *)self->arealst.local.next;
 
 		while (!area_is_guard(area)) {
-			sb_mgr_t *mgr = sb_mgr_from_area(area);
+			mgr = sb_mgr_from_area(area);
 
 			/* get first superblock from nonempty sbs stack */
 			sb = mgr->nonempty[blksize].first;
@@ -621,18 +617,22 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		DEBUG("No free blocks and superblocks found!\n");
 		
 		/* first attempt: try adjacent areas */
+		areamgr_prealloc_area(self->areamgr, 1);
+
 		area = (area_t *)self->arealst.local.next;
 
 		DEBUG("Try to merge adjacent pages to one of superblocks' manager.\n");
 
 		while (!area_is_guard(area)) {
-			sb_mgr_t *mgr = sb_mgr_from_area(area);
+			mgr = sb_mgr_from_area(area);
 
 			if (mgr->all * SB_SIZE < AREA_MAX_SIZE) {
 				uint32_t oldsize = area->size;
 				uint32_t newsize;
 
 				if (areamgr_expand_area(self->areamgr, &area, 1, LEFT)) {
+					newsize = area->size;
+
 					/* area cannot be larger than AREA_MAX_SIZE */
 					if (area->size > AREA_MAX_SIZE)
 						newsize = AREA_MAX_SIZE; 
@@ -648,6 +648,8 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 					sb_mgr_add(mgr, area_begining(area), newsbs);
 				} else if (areamgr_expand_area(self->areamgr, &area, 1, RIGHT)) {
+					newsize = area->size;
+
 					if (area->size > AREA_MAX_SIZE)
 						newsize = AREA_MAX_SIZE;
 					if (area->size - oldsize > PAGE_SIZE * 4)
@@ -657,15 +659,33 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 					/* copy old superblocks' manager to new location */
 					sb_mgr_t *oldmgr = mgr;
+					sb_t     *oldsb  = sb_get_from_address(mgr);
 					
 					mgr = sb_mgr_from_area(area);
-					
+
 					memcpy(mgr, oldmgr, sizeof(sb_mgr_t));
 
 					/* add newly allocated pages to superblocks' manager */
 					uint32_t newsbs = (newsize - oldsize) / SB_SIZE;
 
 					sb_mgr_add(mgr, area_end(area) - (newsbs * SB_SIZE), newsbs);
+					
+					/* free some unused blocks */
+					uint32_t old_blocks = sb_get_blocks(oldsb);
+
+					oldsb->size = (SB_SIZE >> 3) - 1;
+
+					uint32_t blocks = sb_get_blocks(oldsb);
+
+					DEBUG("Freeing %u unused blocks in SB at $%.8x\n", blocks - old_blocks, (uint32_t)oldsb);
+
+					uint32_t freeblocks = oldsb->fblkcnt;
+
+					while (blocks > old_blocks)
+						sb_free(oldsb, --blocks);
+
+					if (freeblocks == 0)
+						sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb, DONTLOCK);
 				}
 
 				sb = sb_mgr_alloc(mgr, blksize);
@@ -683,7 +703,7 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 			area_t *newarea = areamgr_alloc_area(self->areamgr, 1);
 
 			if (newarea) {
-				sb_mgr_t *mgr = sb_mgr_from_area(newarea);
+				mgr = sb_mgr_from_area(newarea);
 
 				sb_mgr_init(mgr);
 				sb_mgr_add(mgr, area_begining(newarea), newarea->size / SB_SIZE);
@@ -702,10 +722,11 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 	if (sb != NULL) {
 		int32_t index = sb_alloc(sb);
 
-		DEBUG("$%.8x %d\n", (uint32_t)sb_get_data(sb), index);
-
 		if (index >= 0)
 			memory = (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3));
+
+		if (sb->fblkcnt == 0)
+			sb_list_remove(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
 	}
 
 	return memory;
@@ -717,6 +738,8 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 {
+	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
+
 	sb_mgr_t *mgr = NULL;
 
 	/* browse list of managed areas */
@@ -744,6 +767,9 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 			sb_list_remove(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
 			sb_mgr_free(mgr, sb);
 		}
+
+		if (sb->fblkcnt == 1)
+			sb_list_push(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
 	}
 
 	return (mgr != NULL);
@@ -765,6 +791,8 @@ uint32_t eqsbmgr_purge(eqsbmgr_t *self, bool aggressive)/*{{{*/
 
 bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 {
+	DEBUG("\033[37;1mResizing block at $%.8x to %u bytes.\033[0m\n", (uint32_t)memory, new_size);
+
 	assert(new_size <= 32);
 
 	uint8_t  new_blksize = (new_size - 1) >> 3;

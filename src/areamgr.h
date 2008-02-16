@@ -72,45 +72,45 @@ static inline bool area_is_global_guard(area_t *area) {
 
 /* Checksum functions for memory area structure */
 
-static inline uint16_t area_checksum(area_t *area)
+static inline uint16_t area_checksum(area_t *area)/*{{{*/
 {
 	uint32_t bytes = offsetof(area_t, global) - offsetof(area_t, flags);
 
 	return (uint16_t)(((uint32_t)area) >> 16) ^
 		   (uint16_t)(((uint32_t)area) & 0xFFFF) ^
 		   (uint16_t)checksum((uint16_t *)&area->flags, bytes >> 1);
-}
+}/*}}}*/
 
-static inline void area_touch(area_t *area)
+static inline void area_touch(area_t *area)/*{{{*/
 {
 	area->checksum = area_checksum(area);
-}
+}/*}}}*/
 
-static inline void area_valid(area_t *area)
+static inline void area_valid(area_t *area)/*{{{*/
 {
 	if (area_checksum(area) != area->checksum) {
 		fprintf(stderr, "invalid area: [$%.8x; %u; $%.4x] [calc:$%.4x != orig:$%.4x]\n",
 				(uint32_t)area, area->size, area->flags, area_checksum(area), area->checksum);
 		abort();
 	}
-}
+}/*}}}*/
 
 /* Address calculation procedures */
 
-static inline area_t *area_footer(void *begining, uint32_t pages)
+static inline area_t *area_footer(void *begining, uint32_t pages)/*{{{*/
 {
 	return (area_t *)(begining + pages * PAGE_SIZE - sizeof(area_t));
-}
+}/*}}}*/
 
-static inline void *area_begining(area_t *area)
+static inline void *area_begining(area_t *area)/*{{{*/
 {
 	return (void *)area + sizeof(area_t) - area->size;
-}
+}/*}}}*/
 
-static inline void *area_end(area_t *area)
+static inline void *area_end(area_t *area)/*{{{*/
 {
 	return (void *)area + sizeof(area_t);
-}
+}/*}}}*/
 
 /* Contructor and destructor for memory area */
 area_t *area_new(pm_type_t type, uint32_t pages);
@@ -175,6 +175,7 @@ areamgr_t *areamgr_init(area_t *area);
 area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages);
 area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t pages, direction_t side);
 void areamgr_free_area(areamgr_t *areamgr, area_t *area);
+bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages);
 
 void areamgr_add_area(areamgr_t *areamgr, area_t *newarea);
 void areamgr_remove_area(areamgr_t *areamgr, area_t *area);

@@ -882,6 +882,42 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 }/*}}}*/
 
 /**
+ * Put some pages on free list if there are no free pages.
+ */
+
+bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)
+{
+	area_t *newarea = NULL;
+
+	arealst_wrlock(&areamgr->global);
+
+	if (areamgr->freecnt == 0) {
+		DEBUG("Will prealloc area of size %u pages.\n", pages);
+
+		if ((newarea = area_new(PM_MMAP, pages)))
+			arealst_global_add_area(&areamgr->global, newarea, DONTLOCK);
+
+		newarea->flags &= ~AREA_FLAG_USED;
+		area_touch(newarea);
+	}
+
+	arealst_unlock(&areamgr->global);
+
+	if (newarea != NULL) {
+		/* qualify area for insertion into proper free-list */
+		int n = SIZE_IN_PAGES(newarea->size) - 1;
+
+		if (n >= AREAMGR_LIST_COUNT - 1)
+			n = AREAMGR_LIST_COUNT - 1;
+
+		/* insert area on proper free list */
+		arealst_insert_area_by_size(&areamgr->list[n], newarea, LOCK);
+	}
+
+	return (newarea != NULL);
+}
+
+/**
  * Frees memory area for use by area manager.
  *
  * Idea for caller: After freeing some pages a threshold (unused pages count)

@@ -12,7 +12,11 @@
 #define MAX_REALLOC_SIZE	(1 << 4)
 #define MAX_ALIGN_BITS		0
 
-#define MM_PRINT_AT_ITERATION 1
+#define PPB_REALLOC			0
+#define PPB_ALLOC_ALIGNED	0
+#define PPB_ALLOC			8
+
+#define MM_PRINT_AT_ITERATION 0
 
 struct block
 {
@@ -85,7 +89,7 @@ int main(int argc, char **argv)
 		memmgr_print(mm);
 #endif
 
-		if (op <= 2 * (RAND_MAX >> 4)) {
+		if (op <= PPB_REALLOC * (RAND_MAX >> 4)) {
 			/* case for mm_realloc */
 			continue;
 
@@ -104,7 +108,7 @@ int main(int argc, char **argv)
 
 			if (memmgr_realloc(mm, blocks.array[i].ptr, s))
 				blocks.array[blocks.last + 1].size = s;
-		} else if (op <= 3 * (RAND_MAX >> 4)) {
+		} else if (op <= PPB_ALLOC_ALIGNED * (RAND_MAX >> 4)) {
 			/* case for mm_alloc_aligned */
 			if (blocks.last == MAX_BLOCK_NUM)
 				continue;
@@ -134,7 +138,7 @@ int main(int argc, char **argv)
 			DEBUG("memalign(%d, %d) = %p\n", s, alignment, blocks.array[blocks.last + 1].ptr);
 
 			blocks.last++;
-		} else if (op <= 8 * (RAND_MAX >> 4)) {
+		} else if (op <= PPB_ALLOC * (RAND_MAX >> 4)) {
 			/* case for memmgr_alloc */
 			if (blocks.last == MAX_BLOCK_NUM)
 				continue;

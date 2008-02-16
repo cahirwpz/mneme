@@ -331,7 +331,7 @@ void __METHOD_ARGS(__LIST_DECL, split, __LIST_T *list, __ITEM_T *item, locking_t
 
 	__ITEM_T *iter = __FIRST(self);
 
-	uint32_t counter;
+	uint32_t counter = 0;
 
 	while (iter && (iter == item)) {
 		iter = __NEXT(iter);
