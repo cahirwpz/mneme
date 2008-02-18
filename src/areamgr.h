@@ -15,13 +15,13 @@ struct area				/* size of this structure will be aligned to 8 bytes boundary */
 	uint32_t size;
 
 	struct {
-		uint16_t checksum;
+		/* uint16_t checksum; */
 		struct area *prev;	/* previous area on global list */
 		struct area *next;	/* next area on global list */
 	} global;
 
 	struct {
-		uint16_t checksum;
+		/* uint16_t checksum; */
 		struct area *prev;	/* previous area on size bucket list */
 		struct area *next;	/* next area on size bucket list */
 	} local;

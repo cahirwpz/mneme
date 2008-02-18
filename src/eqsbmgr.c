@@ -61,10 +61,6 @@ struct sb_list
 
 	/* list guard fields */
 	uint32_t sbcnt;
-
-	/* list guard block */
-	pthread_rwlock_t	 lock;
-	pthread_rwlockattr_t lock_attr;
 };
 
 typedef struct sb_list sb_list_t;
@@ -78,6 +74,9 @@ struct sb_mgr
 
 	uint16_t free;
 	uint16_t all;
+	
+	pthread_rwlock_t		lock;
+	pthread_rwlockattr_t	lock_attr;
 };
 
 typedef struct sb_mgr sb_mgr_t;
@@ -118,12 +117,10 @@ static inline void sb_set_next(sb_t *self, sb_t *next)/*{{{*/
 #define __SET_PREV(obj,ptr)	sb_set_prev(obj, ptr)
 #define __SET_NEXT(obj,ptr)	sb_set_next(obj, ptr)
 #define __KEY(obj)			obj
-#define __LOCK(obj)			obj->lock
-#define __LOCK_ATTR(obj)	obj->lock_attr
 #define __KEY_LT(a,b)		(a) < (b)
 #define __KEY_EQ(a,b)		(a) == (b)
 
-#include "common-list0.c"
+#include "common-list1.c"
 
 /**
  * Calculate how many blocks are managed by given superblock.
@@ -365,13 +362,13 @@ static sb_t *sb_mgr_alloc(sb_mgr_t *self, uint16_t blksize)/*{{{*/
 		if (i < 4) {
 			sb_t *shorter;
 
-			sb      = sb_list_pop(&self->groups[i], DONTLOCK);
+			sb      = sb_list_pop(&self->groups[i]);
 			shorter = (sb_t *)((void *)sb + SB_SIZE);
 
 			if (sb->blksize > 0) {
 				shorter->blksize = sb->blksize - 1;
 
-				sb_list_push(&self->groups[shorter->blksize], shorter, DONTLOCK);
+				sb_list_push(&self->groups[shorter->blksize], shorter);
 			}
 
 			sb->fblkcnt = sb_get_blocks(sb);
@@ -380,7 +377,7 @@ static sb_t *sb_mgr_alloc(sb_mgr_t *self, uint16_t blksize)/*{{{*/
 		}
 
 		sb_prepare(sb, blksize);
-		sb_list_push(&self->nonempty[sb->blksize], sb, DONTLOCK);
+		sb_list_push(&self->nonempty[sb->blksize], sb);
 	}
 
 	return sb;
@@ -408,7 +405,7 @@ static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 		if (next->fblkcnt == 127) {
 			sb->blksize = next->blksize + 1;
 
-			sb_list_remove(&self->groups[next->blksize], next, DONTLOCK);
+			sb_list_remove(&self->groups[next->blksize], next);
 		}
 	}
 
@@ -426,14 +423,14 @@ static void sb_mgr_free(sb_mgr_t *self, sb_t *sb)/*{{{*/
 	if (i != old_i) {
 		sb_t *curr = sb_grp_nth(sb, i);
 
-		sb_list_remove(&self->groups[curr->blksize], curr, DONTLOCK);
+		sb_list_remove(&self->groups[curr->blksize], curr);
 
 		curr->blksize += sb->blksize + 1;
 
 		sb = curr;
 	}
 
-	sb_list_push(&self->groups[sb->blksize], sb, DONTLOCK);
+	sb_list_push(&self->groups[sb->blksize], sb);
 
 	self->free++;
 }/*}}}*/
@@ -461,7 +458,7 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 		sb->next = 0;
 
 		if ((i & 3) == 0)
-			sb_list_push(&self->groups[sb->blksize], sb, DONTLOCK);
+			sb_list_push(&self->groups[sb->blksize], sb);
 
 		self->free++;
 		self->all++;
@@ -469,7 +466,7 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 
 	/* if added memory overlaps superblocks' manager then shorten last superblock */
 	if (sb == sb_get_from_address(self)) {
-		sb->size = ((uint32_t)self - (uint32_t)sb) >> 3;
+		sb->size = (((uint32_t)self - (uint32_t)sb) >> 3) - 1;
 
 		sb_t *prev = (sb_t *)((uint32_t)sb_get_from_address(memory) - SB_SIZE);
 
@@ -486,14 +483,14 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 					sb_free(prev, --blocks);
 
 				if (old_blocks == 0)
-					sb_list_push(&self->nonempty[prev->blksize], prev, DONTLOCK);
+					sb_list_push(&self->nonempty[prev->blksize], prev);
 			}
 		}
 	}
 }/*}}}*/
 
 /**
- *
+ * Print all superblocks in this SBs' manager.
  */
 
 static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
@@ -546,7 +543,10 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 }/*}}}*/
 
 /**
+ * Initialize equally-sized blocks' manager.
  *
+ * @param self		equally-sized blocks' manager structure
+ * @param areamgr	address of global area manager
  */
 
 void eqsbmgr_init(eqsbmgr_t *self, areamgr_t *areamgr)/*{{{*/
@@ -557,7 +557,13 @@ void eqsbmgr_init(eqsbmgr_t *self, areamgr_t *areamgr)/*{{{*/
 }/*}}}*/
 
 /**
+ * Allocate a block from equally-sized blocks' manager.
+ * Manager does not support alignment!
  *
+ * @param self		equally-sized blocks' manager structure
+ * @param size		{i: i \in [1; 32] }
+ * @param alignment {i: i = 2^k, k \in [0, 3] }
+ * @return			address of allocated block
  */
 
 void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
@@ -685,7 +691,7 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 						sb_free(oldsb, --blocks);
 
 					if (freeblocks == 0)
-						sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb, DONTLOCK);
+						sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb);
 				}
 
 				sb = sb_mgr_alloc(mgr, blksize);
@@ -726,14 +732,18 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 			memory = (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3));
 
 		if (sb->fblkcnt == 0)
-			sb_list_remove(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
+			sb_list_remove(&mgr->nonempty[sb->blksize], sb);
 	}
 
 	return memory;
 }/*}}}*/
 
 /**
+ * Return a block to equally-sized blocks' manager.
  *
+ * @param self		equally-sized blocks' manager structure
+ * @param memory	address of blocks to be freed
+ * @return			TRUE if block was managed by this manager
  */
 
 bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
@@ -754,6 +764,7 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 		area = area->local.next;
 	}
 
+	/* SBs' manager found - free block */
 	if (mgr != NULL) {
 		sb_t *sb = sb_get_from_address(memory);
 
@@ -764,24 +775,22 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 		uint8_t blocks = sb_get_blocks(sb);
 
 		if (blocks == sb->fblkcnt) {
-			sb_list_remove(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
+			sb_list_remove(&mgr->nonempty[sb->blksize], sb);
 			sb_mgr_free(mgr, sb);
 		}
 
 		if (sb->fblkcnt == 1)
-			sb_list_push(&mgr->nonempty[sb->blksize], sb, DONTLOCK);
+			sb_list_push(&mgr->nonempty[sb->blksize], sb);
+	}
+
+	/* Check if there are no pages to free */
+	if (mgr->groups[3].first) {
+		DEBUG("freecnt = %d, pages free = %d\n", mgr->free, mgr->groups[3].sbcnt);
+			
+		/* assert(freecnt <= 4); */
 	}
 
 	return (mgr != NULL);
-}/*}}}*/
-
-/**
- *
- */
-
-uint32_t eqsbmgr_purge(eqsbmgr_t *self, bool aggressive)/*{{{*/
-{
-	return 0;
 }/*}}}*/
 
 /**
@@ -819,7 +828,9 @@ bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 }/*}}}*/
 
 /**
- *
+ * Print all internal structures of equally-sized blocks' manager.
+ * 
+ * @param self		equally-sized bloks' manager structure
  */
 
 void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
@@ -827,6 +838,9 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 	arealst_rdlock(&self->arealst);
 
 	area_t *area = (area_t *)&self->arealst;
+
+	fprintf(stderr, "\033[1;36m sizeof(area_t) = %u.\033[0m\n", sizeof(area_t));
+	fprintf(stderr, "\033[1;36m sizeof(sb_mgr_t) = %u.\033[0m\n", sizeof(sb_mgr_t));
 
 	fprintf(stderr, "\033[1;36m eqsbmgr at $%.8x [%d areas]:\033[0m\n",
 			(uint32_t)self, self->arealst.areacnt);
@@ -864,6 +878,5 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 	assert(areacnt == self->arealst.areacnt);
 
 	arealst_unlock(&self->arealst);
-
 }/*}}}*/
 
