@@ -15,13 +15,13 @@
 
 #define PPB_REALLOC			0
 #define PPB_ALLOC_ALIGNED	0
-#define PPB_ALLOC			12
-#define PPB_FREE			4
+#define PPB_ALLOC			10
+#define PPB_FREE			6
 
 #define LEN_REALLOC			0
 #define LEN_ALLOC_ALIGNED	0
-#define LEN_ALLOC			4
-#define LEN_FREE			12
+#define LEN_ALLOC			6
+#define LEN_FREE			10
 
 #if (PPB_REALLOC + PPB_ALLOC_ALIGNED + PPB_ALLOC + PPB_FREE) != 16
 #error "Check propabilites for operations!"
@@ -31,7 +31,7 @@
 #error "Check length for operations!"
 #endif
 
-#define MM_PRINT_AT_ITERATION 1
+#define MM_PRINT_AT_ITERATION 0
 
 struct block
 {
@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 		}
 
 		while (opstream--) {
-#if VERBOSE == 1
+#if MM_PRINT_AT_ITERATION == 1 && VERBOSE == 1
 			memmgr_print(mm);
 #endif
 

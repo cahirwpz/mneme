@@ -885,7 +885,7 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
  * Put some pages on free list if there are no free pages.
  */
 
-bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)
+bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 {
 	area_t *newarea = NULL;
 
@@ -915,7 +915,7 @@ bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)
 	}
 
 	return (newarea != NULL);
-}
+}/*}}}*/
 
 /**
  * Frees memory area for use by area manager.
@@ -1076,6 +1076,9 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
  * Shrinks area from given <i>side</i> - splits it and inserts leftover to area
  * manager. Shrinked area will have exact size of <i>pages</i>.
  *
+ * If area is shrinked from the right side it means that its begining won't
+ * be moved. If from the left side then its end.
+ *
  * @param areamgr
  * @param area		pointer to an area which will be shrinked
  * @param pages
@@ -1098,10 +1101,19 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 
 	area_t *leftover = newarea;
 
-	if (side == RIGHT)
+	if (side == RIGHT) {
 		arealst_split_area(&areamgr->global, &newarea, &leftover, pages, LOCK);
-	else
+	} else {
 		arealst_split_area(&areamgr->global, &leftover, &newarea, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
+
+		if ((leftover->local.prev != NULL) && (leftover->local.next != NULL)) {
+			newarea->local.prev = leftover->local.prev;
+			newarea->local.next = leftover->local.next;
+
+			newarea->local.prev->local.next = newarea;
+			newarea->local.next->local.prev = newarea;
+		}
+	}
 
 	areamgr_free_area(areamgr, leftover);
 

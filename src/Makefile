@@ -1,6 +1,6 @@
-CC		=	libtool --mode=compile gcc -ggdb -static -fms-extensions
+CC		=	libtool --mode=compile gcc -ggdb -static -fms-extensions 
 INCLUDE	=	-I./tests -I./tests/sysdeps/pthread -I./tests/sysdeps/generic 
-DEFS	=	-DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBOSE=1
+DEFS	=	-D__USE_GNU -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBOSE=1
 CFLAGS	=	-march=i686 -O0 -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g -static 
@@ -47,8 +47,8 @@ clean:
 	@rm -vf cscope.out tags
 
 lines:
-	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | xargs cat | wc
-	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | xargs cat | sed '/^$$/d' | wc
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*(list0|splay0).*/d' | xargs cat | wc
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*(list0|splay0).*/d' | xargs cat | sed '/^$$/d' | wc
 
 cscope.out: $(wildcard *.c *.h)
 	cscope -b $^

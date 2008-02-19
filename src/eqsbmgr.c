@@ -72,11 +72,10 @@ struct sb_mgr
 	sb_list_t nonempty[4];		/* 0: 8B; 1: 16B; 2: 24B; 3: 32B */
 	sb_list_t groups[4];		/* 0: 1 SBs; 1: 2 SBs; 2: 3SBs; 3: 4SBs */
 
+	pthread_mutex_t mutex;
+
 	uint16_t free;
 	uint16_t all;
-	
-	pthread_rwlock_t		lock;
-	pthread_rwlockattr_t	lock_attr;
 };
 
 typedef struct sb_mgr sb_mgr_t;
@@ -320,6 +319,13 @@ static inline sb_mgr_t *sb_mgr_from_area(area_t *self) {/*{{{*/
 }/*}}}*/
 
 /**
+ * Locking inlines.
+ */
+
+static inline void sb_mgr_lock(sb_mgr_t *self) { int r = pthread_mutex_lock(&self->mutex); assert(r == 0); }
+static inline void sb_mgr_unlock(sb_mgr_t *self) { int r = pthread_mutex_unlock(&self->mutex); assert(r == 0); }
+
+/**
  * Initialize superblocks' manager.
  *
  * @param self
@@ -338,6 +344,18 @@ static void sb_mgr_init(sb_mgr_t *self)/*{{{*/
 
 	self->free = 0;
 	self->all  = 0;
+
+	/* Initialize locking mechanism */
+	pthread_mutexattr_t	mutex_attr;
+
+#ifdef __USE_GNU
+	self->mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
+#endif
+
+	pthread_mutexattr_init(&mutex_attr);
+	pthread_mutexattr_setpshared(&mutex_attr, 1);
+	pthread_mutex_init(&self->mutex, &mutex_attr);
+	pthread_mutexattr_destroy(&mutex_attr);
 }/*}}}*/
 
 /**
@@ -585,37 +603,51 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
     sb_mgr_t *mgr  = NULL;
 	area_t   *area = NULL;
 
-	DEBUG("Try to find superblock with free blocks.\n");
 	{
+		DEBUG("Try to find superblock with free blocks.\n");
+
+		arealst_rdlock(&self->arealst);
+
 		area = (area_t *)self->arealst.local.next;
 
 		while (!area_is_guard(area)) {
 			mgr = sb_mgr_from_area(area);
 
 			/* get first superblock from nonempty sbs stack */
-			sb = mgr->nonempty[blksize].first;
+			sb_mgr_lock(mgr);
 
-			if (sb != NULL)
+			if ((sb = mgr->nonempty[blksize].first))
 				break;
+
+			sb_mgr_unlock(mgr);
 
 			area = area->local.next;
 		}
+
+		arealst_unlock(&self->arealst);
 	}
 
 	if (sb == NULL) {
 		DEBUG("Try to allocate unused superblock.\n");
 
+		arealst_rdlock(&self->arealst);
+
 		area = (area_t *)self->arealst.local.next;
 
 		while (!area_is_guard(area)) {
-			/* try to allocate superblock */
-			sb = sb_mgr_alloc(sb_mgr_from_area(area), blksize);
+			mgr = sb_mgr_from_area(area);
 
-			if (sb != NULL)
+			/* try to allocate superblock */
+			sb_mgr_lock(mgr);
+
+			if ((sb = sb_mgr_alloc(mgr, blksize)))
 				break;
+
+			sb_mgr_unlock(mgr);
 
 			area = area->local.next;
 		}
+		arealst_unlock(&self->arealst);
 	}
 
 	/* last attempt: ouch... need to get new pages from area manager */
@@ -625,12 +657,16 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		/* first attempt: try adjacent areas */
 		areamgr_prealloc_area(self->areamgr, 1);
 
+		arealst_wrlock(&self->arealst);
+
 		area = (area_t *)self->arealst.local.next;
 
 		DEBUG("Try to merge adjacent pages to one of superblocks' manager.\n");
 
 		while (!area_is_guard(area)) {
 			mgr = sb_mgr_from_area(area);
+
+			sb_mgr_lock(mgr);
 
 			if (mgr->all * SB_SIZE < AREA_MAX_SIZE) {
 				uint32_t oldsize = area->size;
@@ -702,6 +738,8 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 			area = area->local.next;
 		}
+
+		arealst_unlock(&self->arealst);
 		
 		if (sb == NULL) {
 			DEBUG("No adjacent areas found - try to create new superblocks' manager.\n");
@@ -712,6 +750,7 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 				mgr = sb_mgr_from_area(newarea);
 
 				sb_mgr_init(mgr);
+				sb_mgr_lock(mgr);
 				sb_mgr_add(mgr, area_begining(newarea), newarea->size / SB_SIZE);
 
 				sb = sb_mgr_alloc(mgr, blksize);
@@ -733,6 +772,8 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 		if (sb->fblkcnt == 0)
 			sb_list_remove(&mgr->nonempty[sb->blksize], sb);
+
+		sb_mgr_unlock(mgr);
 	}
 
 	return memory;
@@ -753,11 +794,14 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 	sb_mgr_t *mgr = NULL;
 
 	/* browse list of managed areas */
+	arealst_wrlock(&self->arealst);
+
 	area_t *area = (area_t *)self->arealst.local.next;
 
 	while (!area_is_guard(area)) {
 		if ((area_begining(area) <= memory) && (memory <= area_end(area))) {
 			mgr = sb_mgr_from_area(area);
+			sb_mgr_lock(mgr);
 			break;
 		}
 
@@ -781,14 +825,66 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 
 		if (sb->fblkcnt == 1)
 			sb_list_push(&mgr->nonempty[sb->blksize], sb);
+
+		/* Check if there are no pages to free */
+		if (mgr->groups[3].first) {
+			DEBUG("freecnt = %d, pages free = %d\n", mgr->free, mgr->groups[3].sbcnt);
+			
+			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
+					sb_t *tmp = (sb_t *)area_begining(area);
+
+					DEBUG("Try to remove from the begining of area. Check superblock at $%.8x.\n", (uint32_t)tmp);
+
+					if ((tmp->fblkcnt == 127) && (tmp->blksize == 3)) {
+						sb_list_remove(&mgr->groups[3], tmp);
+
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, LEFT);
+
+						mgr->free -= 4;
+						mgr->all  -= 4;
+
+						sb_mgr_print(mgr);
+					}
+			}
+
+			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
+				sb_t *to_free = (sb_t *)((uint32_t)area_end(area) - PAGE_SIZE);
+
+				DEBUG("Try to remove from the end of area. Check superblock at $%.8x.\n", (uint32_t)to_free);
+
+				if ((to_free->fblkcnt == 127) && (to_free->blksize == 3)) {
+					sb_mgr_t *new_mgr    = (sb_mgr_t *)((uint32_t)to_free - (sizeof(area_t) + sizeof(sb_mgr_t)));
+					sb_t     *new_lastsb = sb_get_from_address(new_mgr);
+					sb_t     *lastsb	 = sb_get_from_address(mgr);
+
+					if (new_lastsb->fblkcnt == 127) {
+						/* check if there is space fo area structure and SBs' manager structure */
+						sb_list_remove(&mgr->groups[3], to_free);
+
+						memcpy(new_mgr, mgr, sizeof(sb_mgr_t));
+
+						mgr = new_mgr;
+
+						mgr->free -= 4;
+						mgr->all  -= 4;
+
+						new_lastsb->size = lastsb->size;
+
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, RIGHT);
+
+						sb_mgr_print(mgr);
+					}
+				}
+			}
+		}
+
+		sb_mgr_unlock(mgr);
 	}
 
-	/* Check if there are no pages to free */
-	if (mgr->groups[3].first) {
-		DEBUG("freecnt = %d, pages free = %d\n", mgr->free, mgr->groups[3].sbcnt);
-			
-		/* assert(freecnt <= 4); */
-	}
+	arealst_unlock(&self->arealst);
+
+	if (mgr == NULL)
+		eqsbmgr_print(self);
 
 	return (mgr != NULL);
 }/*}}}*/
@@ -808,6 +904,8 @@ bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 	sb_mgr_t *mgr = NULL;
 
 	/* browse list of managed areas */
+	arealst_rdlock(&self->arealst);
+
 	area_t *area = (area_t *)self->arealst.local.next;
 
 	while (!area_is_guard(area)) {
@@ -819,12 +917,21 @@ bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 		area = area->local.next;
 	}
 
-	assert(mgr != NULL);
+	bool res = FALSE;
+		
+	if (mgr != NULL) {
+		/* check if there is need to resize block */
+		sb_t *sb = sb_get_from_address(memory);
 
-	/* check if there is need to resize block */
-	sb_t *sb = sb_get_from_address(memory);
+		res = (sb->blksize == new_blksize);
 
-	return (sb->blksize == new_blksize);
+		sb_mgr_unlock(mgr);
+	} else {
+		DEBUG("Block at $%.8x not found!\n", (uint32_t)memory);
+		abort();
+	}
+
+	return res;
 }/*}}}*/
 
 /**
@@ -838,9 +945,6 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 	arealst_rdlock(&self->arealst);
 
 	area_t *area = (area_t *)&self->arealst;
-
-	fprintf(stderr, "\033[1;36m sizeof(area_t) = %u.\033[0m\n", sizeof(area_t));
-	fprintf(stderr, "\033[1;36m sizeof(sb_mgr_t) = %u.\033[0m\n", sizeof(sb_mgr_t));
 
 	fprintf(stderr, "\033[1;36m eqsbmgr at $%.8x [%d areas]:\033[0m\n",
 			(uint32_t)self, self->arealst.areacnt);
@@ -856,7 +960,11 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
 					(uint32_t)area->local.prev, (uint32_t)area->local.next);
 
-			sb_mgr_print(sb_mgr_from_area(area));
+			sb_mgr_t *mgr = sb_mgr_from_area(area);
+
+			sb_mgr_lock(mgr);
+			sb_mgr_print(mgr);
+			sb_mgr_unlock(mgr);
 		}
 		else
 			fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",
