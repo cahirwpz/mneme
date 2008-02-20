@@ -9,7 +9,7 @@ my $t = 5000;
 while ($i <= 1000) { 
 	print "tst-random $i $t\n";
 
-	system("./tst-random $i $t 2>/dev/null");
+	system("./tst-random -s $i -c $t 2>/dev/null");
 
 	die if ($? != 0);
 

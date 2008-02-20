@@ -4,7 +4,7 @@
 #include "areamgr.h"
 #include <pthread.h>
 
-#define AREA_TYPE_MMAPBLK 3
+#define AREA_MGR_MMAPBLK 3
 
 struct mmapmgr
 {

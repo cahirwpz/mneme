@@ -5,6 +5,8 @@
  * global pool of allocated bins.
  */
 
+#include "../common.h"
+
 #if (defined __STDC__ && __STDC__) || defined __cplusplus
 # include <stdlib.h>
 #endif
@@ -55,6 +57,8 @@ struct block {
 } *blocks;
 
 int n_blocks;
+
+bool verbose = FALSE;
 
 #if TEST > 0
 

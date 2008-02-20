@@ -3,6 +3,9 @@
  * Desc:	
  */
 
+#undef VERBOSE
+#define VERBOSE 0
+
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>

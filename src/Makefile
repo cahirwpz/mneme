@@ -4,7 +4,7 @@ DEFS	=	-D__USE_GNU -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBO
 CFLAGS	=	-march=i686 -O0 -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g -static 
-LDFLAGS	=	-rpath /usr/local/lib -lrt
+LDFLAGS	=	-rpath /usr/local/lib -lrt -lm
 
 OBJS	=	memmgr.lo eqsbmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
 
@@ -13,7 +13,7 @@ all:	cscope.out tags libmymalloc.la tst-random tests/t-test1 tests/t-test2
 libmymalloc.la:	$(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^)
 
-tst-random:	tst-random.lo libmymalloc.la
+tst-random:	libmymalloc.la tst-random.lo 
 	$(LD) $(LDFLAGS) -o $@ $^
 
 tests/t-test1:		tests/t-test1.lo ldwrapper.lo libmymalloc.la

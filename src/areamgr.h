@@ -11,7 +11,23 @@
 struct area				/* size of this structure will be aligned to 8 bytes boundary */
 {
 	uint16_t checksum;
-	uint16_t flags;	
+
+	/* flags */
+	union {
+		struct {
+			uint8_t	used:1;
+			uint8_t ready:1;
+			uint8_t guard:1;
+			uint8_t global_guard:1;
+			uint8_t	type:2; 
+			uint8_t manager:2;
+		};
+		uint8_t flags0;
+	};
+
+	/* cpu which allocated this area */
+	uint8_t	 cpu;
+
 	uint32_t size;
 
 	struct {
@@ -31,54 +47,33 @@ typedef struct area area_t;
 
 /* Area flags definition */
 
-#define AREA_FLAG_USED			1
-#define AREA_FLAG_MMAP			2
-#define AREA_FLAG_SBRK			4
-#define AREA_FLAG_SBRK_TOP		8
-#define AREA_FLAG_SHM			16
-#define AREA_FLAG_READY			32
-#define AREA_FLAG_GUARD			64
-#define AREA_FLAG_GLOBAL_GUARD	128
+#define AREA_TYPE_MMAP			0
+#define AREA_TYPE_SBRK			1
+#define AREA_TYPE_SBRK_TOP		2
+#define AREA_TYPE_SHM			3
+
+#define AREA_MGR_UNMANAGED		0
 
 /* Useful inlines for querying flags status */
 
-static inline bool area_is_used(area_t *area) {
-	return (area->flags & AREA_FLAG_USED);
-}
+static inline bool area_is_used(area_t *area)			{ return area->used; }
+static inline bool area_is_ready(area_t *area)			{ return area->ready; }
+static inline bool area_is_guard(area_t *area)			{ return area->guard; }
+static inline bool area_is_global_guard(area_t *area)	{ return area->global_guard; }
 
-static inline bool area_is_sbrk(area_t *area) {
-	return (area->flags & AREA_FLAG_SBRK);
-}
-
-static inline bool area_is_mmap(area_t *area) {
-	return (area->flags & AREA_FLAG_MMAP);
-}
-
-static inline bool area_is_shm(area_t *area) {
-	return (area->flags & AREA_FLAG_SHM);
-}
-
-static inline bool area_is_ready(area_t *area) {
-	return (area->flags & AREA_FLAG_READY);
-}
-
-static inline bool area_is_guard(area_t *area) {
-	return (area->flags & AREA_FLAG_GUARD);
-}
-
-static inline bool area_is_global_guard(area_t *area) {
-	return (area->flags & AREA_FLAG_GLOBAL_GUARD);
-}
+static inline bool area_is_sbrk(area_t *area)	{ return (area->type == AREA_TYPE_SBRK); }
+static inline bool area_is_mmap(area_t *area)	{ return (area->type == AREA_TYPE_MMAP); }
+static inline bool area_is_shm(area_t *area)	{ return (area->type == AREA_TYPE_SHM); }
 
 /* Checksum functions for memory area structure */
 
 static inline uint16_t area_checksum(area_t *area)/*{{{*/
 {
-	uint32_t bytes = offsetof(area_t, global) - offsetof(area_t, flags);
+	uint32_t bytes = offsetof(area_t, global) - sizeof(uint16_t);
 
 	return (uint16_t)(((uint32_t)area) >> 16) ^
 		   (uint16_t)(((uint32_t)area) & 0xFFFF) ^
-		   (uint16_t)checksum((uint16_t *)&area->flags, bytes >> 1);
+		   (uint16_t)checksum((uint16_t *)&area->checksum + 1, bytes >> 1);
 }/*}}}*/
 
 static inline void area_touch(area_t *area)/*{{{*/
@@ -89,8 +84,9 @@ static inline void area_touch(area_t *area)/*{{{*/
 static inline void area_valid(area_t *area)/*{{{*/
 {
 	if (area_checksum(area) != area->checksum) {
-		fprintf(stderr, "invalid area: [$%.8x; %u; $%.4x] [calc:$%.4x != orig:$%.4x]\n",
-				(uint32_t)area, area->size, area->flags, area_checksum(area), area->checksum);
+		fprintf(stderr, "invalid area: [$%.8x; %u; $%.2x] [calc:$%.4x != orig:$%.4x]\n",
+				(uint32_t)area, area->size, area->flags0, area_checksum(area), area->checksum);
+		hexdump(area, sizeof(area_t));
 		abort();
 	}
 }/*}}}*/

@@ -74,7 +74,7 @@ void *mmapmgr_alloc(mmapmgr_t *mmapmgr, uint32_t size, uint32_t alignment)/*{{{*
 
 		arealst_insert_area_by_addr(&mmapmgr->blklst, (void *)area, LOCK);
 
-		DEBUG("Will use block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags);
+		DEBUG("Will use block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags0);
 	}
 
 	return area ? area_begining(area) : NULL;
@@ -116,7 +116,7 @@ bool mmapmgr_realloc(mmapmgr_t *mmapmgr, void *memory, uint32_t size)/*{{{*/
 		}
 
 		if (area != NULL) {
-			DEBUG("Resized block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags);
+			DEBUG("Resized block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags0);
 		} else {
 			DEBUG("Cannot resize!\n");
 		}

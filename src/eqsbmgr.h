@@ -4,6 +4,8 @@
 #include "common.h"
 #include "areamgr.h"
 
+#define AREA_MGR_EQSBMGR 1
+
 /* Manager structure */
 
 struct eqsbmgr

@@ -44,11 +44,11 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
 	while (!area_is_guard(area)) {
 		mb_list_t *list = mb_list_from_memarea(area);
 
-		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags0);
 
 		if (!area_is_ready(area)) {
 			mb_init(list, area->size - sizeof(area_t));
-			area->flags |= AREA_FLAG_READY;
+			area->ready = TRUE;
 			area_touch(area);
 		} 
 
@@ -83,7 +83,7 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
 
 	mb_init(list, newarea->size - sizeof(area_t));
 
-	newarea->flags |= AREA_FLAG_READY;
+	newarea->ready = TRUE;
 	area_touch(newarea);
 
 	/* area is ready - we can try to merge it with adjacent areas from blklst */
@@ -167,7 +167,7 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
 	/* define actions on area */
-	void     *cut_addr = NULL;
+	/* void     *cut_addr = NULL; */
 	uint32_t cut_pages = 0;
 
 	uint32_t shrink_left_pages  = 0;
@@ -181,11 +181,11 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 
 	if (area) {
 		mb_list_t *list = mb_list_from_memarea(area);
-		mb_free_t *free = mb_free(list, memory);
+		/* mb_free_t *free = mb_free(list, memory); */
 
 		result = TRUE;
 
-		uint32_t pages;
+		uint32_t pages = 0;
 
 		/* is area completely empty (has exactly one block and it's free) */
 		if ((blkmgr->blklst.areacnt > 1) && mb_is_first(list->next) && mb_is_last(list->next)) {

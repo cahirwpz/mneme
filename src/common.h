@@ -11,12 +11,14 @@ typedef enum { NONE, LEFT, RIGHT, BOTH } direction_t;
 
 typedef enum { DONTLOCK, LOCK } locking_t;
 
+extern bool verbose;
+
 #define ALIGN_UP(data, size)	(((uint32_t)(data) + ((size) - 1)) & ~((size) - 1))
 #define ALIGN_DOWN(data, size)	((uint32_t)(data) & ~((size) - 1))
 #define ALIGN(data, size)		ALIGN_UP((data), (size))
 
 #if VERBOSE == 1
-#define DEBUG(format, args...) fprintf(stderr, "\033[1m%s:%d\033[0m " format, __func__, __LINE__, ##args)
+#define DEBUG(format, args...) if (verbose) fprintf(stderr, "\033[1m%s:%d\033[0m " format, __func__, __LINE__, ##args)
 #else
 #define DEBUG(format, args...)
 #endif
@@ -56,11 +58,13 @@ static inline void hexdump(void *data, uint32_t size)
 	fprintf(stderr, "Dumping %u bytes at %.8x:", size, (uint32_t)data);
 
 	for (i = 0; i < size; i++) {
-		if (i % 32)
+		if (i % 32 == 0)
 			fprintf(stderr, "\n  ");
 
 		fprintf(stderr, "%.2x ", ((uint8_t *)data)[i]);
 	}
+
+	fprintf(stderr, "\n");
 }
 
 #endif

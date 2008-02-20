@@ -5,6 +5,8 @@
  * allocated bins per thread.
  */
 
+#include "../common.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -53,6 +55,8 @@ struct bin_info {
 	struct bin *m;
 	unsigned long size, bins;
 };
+
+bool verbose = FALSE;
 
 #if TEST > 0
 

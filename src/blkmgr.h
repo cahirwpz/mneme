@@ -4,6 +4,8 @@
 #include "common.h"
 #include "areamgr.h"
 
+#define AREA_MGR_BLKMGR	2
+
 struct blkmgr
 {
 	arealst_t blklst;

@@ -46,26 +46,29 @@ area_t *area_new(pm_type_t type, uint32_t pages)/*{{{*/
 
 	area = area_footer(begining, pages);
 
+	memset(area, 0, sizeof(area_t));
+
+	/* Here is a little bug (in gcc?) - if this line is moved after switch block,
+	 * checksum is calculated in a strange way */
+	area->size = PAGE_SIZE * pages;
+	area->cpu  = 0;
+
 	switch (type) {
 		case PM_SBRK:
-			area->flags = AREA_FLAG_SBRK;
+			area->type = AREA_TYPE_SBRK;
 			break;
 		case PM_MMAP:
-			area->flags = AREA_FLAG_MMAP;
+			area->type = AREA_TYPE_MMAP;
 			break;
 		case PM_SHM:
-			area->flags = AREA_FLAG_SHM;
+			area->type = AREA_TYPE_SHM;
 			break;
 	}
 
-	memset(area, 0, sizeof(area_t));
-
-	area->size = PAGE_SIZE * pages;
-	
-	area_touch(area);
-
 	DEBUG("Created memory area at $%.8x [$%.8x; %u; $%.2x]\n", (uint32_t)area,
-			(uint32_t)area_begining(area), area->size, area->flags);
+			(uint32_t)area_begining(area), area->size, area->flags0);
+
+	area_touch(area);
 
 	return area;
 }/*}}}*/
@@ -107,9 +110,9 @@ void arealst_init(arealst_t *arealst)/*{{{*/
 {
 	memset(arealst, 0, sizeof(arealst_t));
 
-	arealst->local.prev		= (area_t *)arealst;
-	arealst->local.next		= (area_t *)arealst;
-	arealst->flags			= AREA_FLAG_GUARD;
+	arealst->local.prev	= (area_t *)arealst;
+	arealst->local.next	= (area_t *)arealst;
+	arealst->guard		= TRUE;
 
 	area_touch((area_t *)arealst);
 
@@ -156,9 +159,9 @@ void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t lock
 
 	DEBUG("Will insert after $%.8x at $%.8x\n", (uint32_t)after, (uint32_t)area_begining(after));
 
-	newarea->global.next  = after->global.next;
-	newarea->global.prev  = after;
-	newarea->flags 		 |= AREA_FLAG_USED;
+	newarea->global.next = after->global.next;
+	newarea->global.prev = after;
+	newarea->used		 = TRUE;
 		
 	newarea->global.next->global.prev = newarea;
 	newarea->global.prev->global.next = newarea;
@@ -370,7 +373,7 @@ void arealst_insert_area(arealst_t *arealst, area_t *after, area_t *newarea, loc
 void arealst_insert_area_by_addr(arealst_t *arealst, area_t *newarea, locking_t locking)/*{{{*/
 {
 	DEBUG("Will insert area at $%.8x [$%.8x; %u; $%.2x] to list at $%.8x %s locking\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0,
 			(uint32_t)arealst, locking ? "with" : "without");
 
 	if (locking)
@@ -558,7 +561,7 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 	assert(area_is_used(area));
 
 	DEBUG("Will split area [$%.8x; %u; $%.2x] at $%.8x with cut point at $%.8x\n",
-		  (uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area),
+		  (uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area),
 		  (uint32_t)area_begining(area) + pages * PAGE_SIZE);
 
 	assert(pages * PAGE_SIZE < area->size);
@@ -570,7 +573,7 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 
 	/* set up new area */
 	newarea->size	= pages * PAGE_SIZE;
-	newarea->flags	= area->flags;
+	newarea->flags0	= area->flags0;
 
 	newarea->global.next = area;
 	newarea->global.prev = area->global.prev;
@@ -599,8 +602,8 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 	global->areacnt++;
 
 	DEBUG("Area splitted to [$%.8x; %u; $%.2x] at $%.8x and [$%.8x; %u; $%.2x] at $%.8x\n",
-		  (uint32_t)newarea, newarea->size, newarea->flags, (uint32_t)area_begining(newarea),
-		  (uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+		  (uint32_t)newarea, newarea->size, newarea->flags0, (uint32_t)area_begining(newarea),
+		  (uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area));
 
 	*splitted  = newarea;
 	*remainder = area;
@@ -645,7 +648,7 @@ static area_t *arealst_pullout_area(arealst_t *arealst, area_t *addr, uint32_t p
 
 		if (area != NULL) {
 			DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
-					(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+					(uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area));
 
 			arealst_remove_area(arealst, area, DONTLOCK);
 		}
@@ -667,7 +670,7 @@ static area_t *arealst_pullout_area(arealst_t *arealst, area_t *addr, uint32_t p
 areamgr_t *areamgr_init(area_t *area)/*{{{*/
 {
 	DEBUG("Using area at $%.8x [$%.8x; %u; $%.2x]\n", (uint32_t)area,
-			(uint32_t)area_begining(area), area->size, area->flags);
+			(uint32_t)area_begining(area), area->size, area->flags0);
 
 	area_valid(area);
 
@@ -677,7 +680,7 @@ areamgr_t *areamgr_init(area_t *area)/*{{{*/
 	areamgr_t *areamgr = area_begining(area);
 
 	/* Initialize free areas' lists */
-	int i;
+	int32_t i;
 
 	for (i = 0; i < AREAMGR_LIST_COUNT; i++)
 		arealst_init(&areamgr->list[i]);
@@ -685,9 +688,9 @@ areamgr_t *areamgr_init(area_t *area)/*{{{*/
 	/* Initialize global list */
 	arealst_init(&areamgr->global);
 
-	areamgr->global.global.next = (area_t *)&areamgr->global;
-	areamgr->global.global.prev = (area_t *)&areamgr->global;
-	areamgr->global.flags |= AREA_FLAG_GLOBAL_GUARD;
+	areamgr->global.global.next  = (area_t *)&areamgr->global;
+	areamgr->global.global.prev  = (area_t *)&areamgr->global;
+	areamgr->global.global_guard = TRUE;
 	areamgr->global.areacnt = 1;
 	area_touch((area_t *)&areamgr->global);
 
@@ -710,7 +713,7 @@ void areamgr_add_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 {
 	area_valid(newarea);
 
-	DEBUG("Will add area [$%.8x; %u; $%.2x] to memory manager\n", (uint32_t)newarea, newarea->size, newarea->flags);
+	DEBUG("Will add area [$%.8x; %u; $%.2x] to memory manager\n", (uint32_t)newarea, newarea->size, newarea->flags0);
 
 	/* FIRST STEP: Insert onto all areas' list. */
 	{
@@ -743,7 +746,7 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 	assert(!area_is_guard(area));
 	assert(area_is_used(area));
 
-	DEBUG("Remove area [$%.8x, %u, $%.2x] from the global list\n", (uint32_t)area, area->size, area->flags);
+	DEBUG("Remove area [$%.8x, %u, $%.2x] from the global list\n", (uint32_t)area, area->size, area->flags0);
 
 	/* Remove it! */
 	{
@@ -774,7 +777,7 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 {
 	DEBUG("Seeking area of size %u pages %s-adjacent to area [$%.8x, %u, $%.2x] at %.8x\n",
 		  pages, (side == LEFT) ? "left" : "right",
-		  (uint32_t)addr, addr->size, addr->flags, (uint32_t)area_begining(addr));
+		  (uint32_t)addr, addr->size, addr->flags0, (uint32_t)area_begining(addr));
 
 	assert((side == LEFT) || (side == RIGHT));
 	assert(pages > 0);
@@ -808,7 +811,7 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 				n = AREAMGR_LIST_COUNT - 1;
 
 			DEBUG("Area found [$%.8x, %u, $%.2x] at $%.8x\n",
-					(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+					(uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area));
 
 			area = arealst_pullout_area(&areamgr->list[n], area, pages, LOCK);
 		} else {
@@ -817,11 +820,11 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 	} while (alloc && area == NULL);
 
 	if (area != NULL) {
-		area->flags |= AREA_FLAG_USED;
+		area->used = TRUE;
 		area_touch(area);
 
 		DEBUG("Found area [$%.8x, %u, $%.2x] at $%.8x\n",
-				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+				(uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area));
 	} else {
 		DEBUG("Area not found!\n");
 	}
@@ -862,11 +865,11 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 
 	/* If area was found then reserve it */
 	if (area != NULL) {
-		area->flags |= AREA_FLAG_USED;
+		area->used = TRUE;
 		area_touch(area);
 
 		DEBUG("Found area [$%.8x, %u, $%.2x] at $%.8x\n",
-				(uint32_t)area, area->size, area->flags, (uint32_t)area_begining(area));
+				(uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area));
 
 		/* If area is too big it should be shrinked */
 		if (area->size > pages * PAGE_SIZE)
@@ -897,7 +900,7 @@ bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 		if ((newarea = area_new(PM_MMAP, pages)))
 			arealst_global_add_area(&areamgr->global, newarea, DONTLOCK);
 
-		newarea->flags &= ~AREA_FLAG_USED;
+		newarea->used = FALSE;
 		area_touch(newarea);
 	}
 
@@ -930,7 +933,7 @@ bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 {
 	DEBUG("Will try to free area [$%.8x, %u, $%.2x] at $%.8x\n",
-			(uint32_t)newarea, newarea->size, newarea->flags, (uint32_t)area_begining(newarea));
+			(uint32_t)newarea, newarea->size, newarea->flags0, (uint32_t)area_begining(newarea));
 
 	assert(area_is_used(newarea));
 
@@ -941,25 +944,27 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 
 		arealst_wrlock(&areamgr->global);
 
+		areamgr->freecnt += SIZE_IN_PAGES(newarea->size);
+
 		if (prev != NULL) {
 			DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
-					(uint32_t)prev, prev->size, prev->flags);
+					(uint32_t)prev, prev->size, prev->flags0);
 
 			newarea = arealst_join_area(&areamgr->global, prev, newarea, DONTLOCK);
 
-			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
+			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags0);
 		}
 
 		if (next != NULL) {
 			DEBUG("Coalescing with right neighbour [$%.8x; $%x; $%.2x]\n",
-					(uint32_t)next, next->size, next->flags);
+					(uint32_t)next, next->size, next->flags0);
 
 			newarea = arealst_join_area(&areamgr->global, newarea, next, DONTLOCK);
 
-			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags);
+			DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)newarea, newarea->size, newarea->flags0);
 		}
 
-		newarea->flags &= ~AREA_FLAG_USED;
+		newarea->used = FALSE;
 		area_touch(newarea);
 
 		arealst_unlock(&areamgr->global);
@@ -992,7 +997,7 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 	assert(area_is_used(area));
 
 	DEBUG("Will try to coalesce area [$%.8x; $%x; $%.2x] with adjacent areas\n",
-		  (uint32_t)area, area->size, area->flags);
+		  (uint32_t)area, area->size, area->flags0);
 
 	area_valid(area->global.next);
 	area_valid(area->global.prev);
@@ -1002,12 +1007,12 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 		   ((void *)area + sizeof(area_t) == area_begining(area->global.next)))
 	{
 		DEBUG("Coalescing with right neighbour [$%.8x; $%x; $%.2x]\n",
-			  (uint32_t)area->global.next, area->global.next->size, area->global.next->flags);
+			  (uint32_t)area->global.next, area->global.next->size, area->global.next->flags0);
 
 		area = arealst_join_area(&areamgr->global, area,
 								 areamgr_alloc_adjacent_area(areamgr, area, 1, RIGHT), DONTLOCK);
 
-		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags0);
 	}
 
 	/* coalesce with previous area */
@@ -1015,12 +1020,12 @@ area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 		((void *)area->global.prev + sizeof(area_t) == area_begining(area)))
 	{
 		DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
-			  (uint32_t)area->global.prev, area->global.prev->size, area->global.prev->flags);
+			  (uint32_t)area->global.prev, area->global.prev->size, area->global.prev->flags0);
 
 		area = arealst_join_area(&areamgr->global, areamgr_alloc_adjacent_area(areamgr, area, 1, LEFT),
 								 area, DONTLOCK);
 
-		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags);
+		DEBUG("Coalesced into area [$%.8x; $%x; $%.2x]\n", (uint32_t)area, area->size, area->flags0);
 	}
 
 	areamgr_free_area(areamgr, area);
@@ -1053,7 +1058,7 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	assert(area_is_used(newarea));
 
 	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags, pages);
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0, pages);
 
 	area_t *expansion = areamgr_alloc_adjacent_area(areamgr, newarea, pages, side);
 
@@ -1065,7 +1070,7 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	}
 
 	DEBUG("Area at $%.8x expanded to [$%.8x; %u; $%.2x]\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0);
 
 	*area = newarea;
 
@@ -1096,7 +1101,7 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	assert(area_is_used(newarea));
 
 	DEBUG("Will %s-shrink area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n", (side == LEFT) ? "left" : "right", 
-		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags,
+		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0,
 		  SIZE_IN_PAGES(newarea->size) - pages);
 
 	area_t *leftover = newarea;
@@ -1118,7 +1123,7 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	areamgr_free_area(areamgr, leftover);
 
 	DEBUG("Area at $%.8x shrinked to [$%.8x; %u; $%.2x]\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags);
+			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0);
 
 	*area = newarea;
 }/*}}}*/
