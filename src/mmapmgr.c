@@ -72,7 +72,14 @@ void *mmapmgr_alloc(mmapmgr_t *mmapmgr, uint32_t size, uint32_t alignment)/*{{{*
 			assert(SIZE_IN_PAGES(area->size) == SIZE_IN_PAGES(size));
 		}
 
-		arealst_insert_area_by_addr(&mmapmgr->blklst, (void *)area, LOCK);
+		arealst_wrlock(&mmapmgr->blklst);
+
+		area->manager = AREA_MGR_MMAPMGR;
+		area_touch(area);
+
+		arealst_insert_area_by_addr(&mmapmgr->blklst, (void *)area, DONTLOCK);
+
+		arealst_unlock(&mmapmgr->blklst);
 
 		DEBUG("Will use block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags0);
 	}
@@ -96,33 +103,43 @@ bool mmapmgr_realloc(mmapmgr_t *mmapmgr, void *memory, uint32_t size)/*{{{*/
 
 	area_t *area = arealst_find_area_by_addr(&mmapmgr->blklst, memory, DONTLOCK);
 
-	arealst_unlock(&mmapmgr->blklst);
+	bool res = FALSE;
 
 	if (area != NULL) {
 		uint32_t newsize = SIZE_IN_PAGES(size + sizeof(area_t));
 		uint32_t oldsize = SIZE_IN_PAGES(area->size);
 
-		if (newsize == oldsize)
-			return TRUE;
-
-		DEBUG("Resizing from %u to %u pages!\n", oldsize, newsize);
-
-		if (newsize < oldsize)
-			areamgr_shrink_area(mmapmgr->areamgr, &area, oldsize - newsize, RIGHT);
-
-		if (newsize > oldsize) {
-			if (!areamgr_expand_area(mmapmgr->areamgr, &area, newsize - oldsize, RIGHT))
-				area = NULL;
-		}
-
-		if (area != NULL) {
-			DEBUG("Resized block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags0);
+		if (newsize == oldsize) {
+			res = TRUE;
 		} else {
-			DEBUG("Cannot resize!\n");
+			DEBUG("Resizing from %u to %u pages!\n", oldsize, newsize);
+
+			if (newsize < oldsize) {
+				areamgr_shrink_area(mmapmgr->areamgr, &area, newsize, RIGHT);
+				res = TRUE;
+			} else {
+				if (areamgr_expand_area(mmapmgr->areamgr, &area, newsize - oldsize, RIGHT)) {
+					if (SIZE_IN_PAGES(area->size) > newsize)
+						areamgr_shrink_area(mmapmgr->areamgr, &area, newsize, RIGHT);
+
+					area->manager = AREA_MGR_MMAPMGR;
+					area_touch(area);
+
+					res = TRUE;
+				}
+			}
+
+			if (res) {
+				DEBUG("Resized block [$%.8x; %u; $%.2x]\n", (uint32_t)area_begining(area), area->size, area->flags0);
+			} else {
+				DEBUG("Cannot resize!\n");
+			}
 		}
 	}
 
-	return (area != NULL);
+	arealst_unlock(&mmapmgr->blklst);
+
+	return res;
 }/*}}}*/
 
 /**
@@ -140,13 +157,12 @@ bool mmapmgr_free(mmapmgr_t *mmapmgr, void *memory)/*{{{*/
 
 	area_t *area = arealst_find_area_by_addr(&mmapmgr->blklst, memory, DONTLOCK);
 
-	if (area != NULL)
+	if (area != NULL) {
 		arealst_remove_area(&mmapmgr->blklst, area, DONTLOCK);
+		areamgr_free_area(mmapmgr->areamgr, area);
+	}
 
 	arealst_unlock(&mmapmgr->blklst);
-
-	if (area != NULL)
-		areamgr_free_area(mmapmgr->areamgr, area);
 
 	DEBUG("Area at $%.8x %sfreed!\n", (uint32_t)memory, (area) ? "" : "not ");
 
@@ -174,7 +190,8 @@ void mmapmgr_print(mmapmgr_t *mmapmgr)/*{{{*/
 		area_valid(blk);
 
 		if (!area_is_guard(blk))
-			fprintf(stderr, "\033[1;31m  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
+			fprintf(stderr, "\033[1;3%dm  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
+					(blk->manager == AREA_MGR_MMAPMGR),
 					(uint32_t)area_begining(blk), (uint32_t)area_end(blk), blk->size,
 					(uint32_t)blk->local.prev, (uint32_t)blk->local.next);
 		else

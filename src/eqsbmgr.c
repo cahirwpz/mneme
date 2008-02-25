@@ -492,7 +492,7 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
 
 static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 {
-	fprintf(stderr, "\033[1;34m  eqsbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
+	fprintf(stderr, "\033[1;34m   sbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
 			(uint32_t)self, self->all, self->free);
 
 	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (uint32_t)(self->all - 1) * SB_SIZE);

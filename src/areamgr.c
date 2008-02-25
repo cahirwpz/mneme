@@ -802,8 +802,6 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 					 !area_is_used(area) && (area_end(area) == area_begining(addr)));
 		}
 
-		arealst_unlock(&areamgr->global);
-
 		if (alloc) {
 			uint32_t n = SIZE_IN_PAGES(area->size) - 1;
 
@@ -817,6 +815,8 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 		} else {
 			area = NULL;
 		}
+
+		arealst_unlock(&areamgr->global);
 	} while (alloc && area == NULL);
 
 	if (area != NULL) {
@@ -936,6 +936,7 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 			(uint32_t)newarea, newarea->size, newarea->flags0, (uint32_t)area_begining(newarea));
 
 	assert(area_is_used(newarea));
+	assert((newarea->local.prev == NULL) && (newarea->local.next == NULL));
 
 	/* mark area as free */
 	{
@@ -965,6 +966,7 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 		}
 
 		newarea->used = FALSE;
+		newarea->manager = AREA_MGR_UNMANAGED;
 		area_touch(newarea);
 
 		arealst_unlock(&areamgr->global);

@@ -64,7 +64,7 @@ void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)/*{{{*/
 
 bool memmgr_realloc(memmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 {
-	uint8_t mgrtype = 0;
+	int8_t mgrtype = 0;
 
 	/* find to which area the block belongs */
 	arealst_rdlock(&self->areamgr.global);
@@ -72,14 +72,13 @@ bool memmgr_realloc(memmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 	area_t *area = (area_t *)self->areamgr.global.global.next;
 
 	while (!area->global_guard) {
-		if ((area_begining(area) <= memory) && (memory <= area_end(area)))
+		if ((area_begining(area) <= memory) && (memory < area_end(area)))
 			break;
 
 		area = area->global.next;
 	}
 
-	if (area != NULL)
-		mgrtype = area->manager;
+	mgrtype = (area != NULL) ? area->manager : -1;
 
 	arealst_unlock(&self->areamgr.global);
 
@@ -93,14 +92,19 @@ bool memmgr_realloc(memmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 			break;
 
 		case AREA_MGR_BLKMGR:
-			res = mmapmgr_realloc(&self->percpumgr[0].mmapmgr, memory, new_size);
-			break;
-
-		case AREA_MGR_MMAPBLK:
 			res = blkmgr_realloc(&self->percpumgr[0].blkmgr, memory, new_size);
 			break;
 
+		case AREA_MGR_MMAPMGR:
+			res = mmapmgr_realloc(&self->percpumgr[0].mmapmgr, memory, new_size);
+			break;
+
+		case AREA_MGR_UNMANAGED:
+			DEBUG("Area is not managed by any sub-allocator (id: %u)!\n", area->manager);
+			break;
+
 		default:
+			DEBUG("Area does not exists ?!\n");
 			break;
 	}
 
@@ -115,7 +119,7 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
 {
 	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
-	uint8_t mgrtype = 0;
+	int8_t mgrtype = 0;
 
 	/* find to which area the block belongs */
 	arealst_rdlock(&self->areamgr.global);
@@ -123,18 +127,15 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
 	area_t *area = (area_t *)self->areamgr.global.global.next;
 
 	while (!area->global_guard) {
-		if ((area_begining(area) <= memory) && (memory <= area_end(area)))
+		if ((area_begining(area) <= memory) && (memory < area_end(area)))
 			break;
 
 		area = area->global.next;
 	}
 
-	if (area != NULL)
-		mgrtype = area->manager;
+	mgrtype = (area != NULL) ? area->manager : -1;
 
 	arealst_unlock(&self->areamgr.global);
-
-	DEBUG("Block is managed by manager no. %u.\n", mgrtype);
 
 	/* redirect free request to proper manager */
 	bool res = FALSE;
@@ -146,14 +147,19 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
 			break;
 
 		case AREA_MGR_BLKMGR:
-			res = mmapmgr_free(&self->percpumgr[0].mmapmgr, memory);
-			break;
-
-		case AREA_MGR_MMAPBLK:
 			res = blkmgr_free(&self->percpumgr[0].blkmgr, memory);
 			break;
 
+		case AREA_MGR_MMAPMGR:
+			res = mmapmgr_free(&self->percpumgr[0].mmapmgr, memory);
+			break;
+
+		case AREA_MGR_UNMANAGED:
+			DEBUG("Area is not managed by any sub-allocator (id: %u)!\n", area->manager);
+			break;
+
 		default:
+			DEBUG("Area does not exists ?!\n");
 			break;
 	}
 
@@ -184,8 +190,8 @@ void memmgr_print(memmgr_t *memmgr)/*{{{*/
 		area_valid(area);
 
 		if (!area->guard)
-			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %8d\033[0m\n", area->used ? '1' : '2',
-					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size);
+			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %8d : %d\033[0m\n", area->used ? '1' : '2',
+					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size, area->manager);
 		else
 			fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s\033[0m\n", (uint32_t)area, "", "guard");
 
