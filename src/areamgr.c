@@ -51,6 +51,7 @@ area_t *area_new(pm_type_t type, uint32_t pages)/*{{{*/
 	/* Here is a little bug (in gcc?) - if this line is moved after switch block,
 	 * checksum is calculated in a strange way */
 	area->size = PAGE_SIZE * pages;
+	area->used = TRUE;
 	area->cpu  = 0;
 
 	switch (type) {
@@ -820,6 +821,7 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 	} while (alloc && area == NULL);
 
 	if (area != NULL) {
+		areamgr->freecnt -= SIZE_IN_PAGES(area->size);
 		area->used = TRUE;
 		area_touch(area);
 
@@ -865,6 +867,7 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 
 	/* If area was found then reserve it */
 	if (area != NULL) {
+		areamgr->freecnt -= SIZE_IN_PAGES(area->size);
 		area->used = TRUE;
 		area_touch(area);
 
@@ -900,6 +903,7 @@ bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 		if ((newarea = area_new(PM_MMAP, pages)))
 			arealst_global_add_area(&areamgr->global, newarea, DONTLOCK);
 
+		areamgr->freecnt += SIZE_IN_PAGES(newarea->size);
 		newarea->used = FALSE;
 		area_touch(newarea);
 	}
@@ -936,7 +940,6 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 			(uint32_t)newarea, newarea->size, newarea->flags0, (uint32_t)area_begining(newarea));
 
 	assert(area_is_used(newarea));
-	assert((newarea->local.prev == NULL) && (newarea->local.next == NULL));
 
 	/* mark area as free */
 	{
@@ -944,8 +947,6 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 		area_t *next = areamgr_alloc_adjacent_area(areamgr, newarea, 1, RIGHT);
 
 		arealst_wrlock(&areamgr->global);
-
-		areamgr->freecnt += SIZE_IN_PAGES(newarea->size);
 
 		if (prev != NULL) {
 			DEBUG("Coalescing with left neighbour [$%.8x; $%x; $%.2x]\n",
@@ -968,6 +969,8 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 		newarea->used = FALSE;
 		newarea->manager = AREA_MGR_UNMANAGED;
 		area_touch(newarea);
+
+		areamgr->freecnt += SIZE_IN_PAGES(newarea->size);
 
 		arealst_unlock(&areamgr->global);
 	}
@@ -1059,8 +1062,9 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	assert(pages > 0);
 	assert(area_is_used(newarea));
 
-	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n",
-			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0, pages);
+	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages from %s side.\n",
+		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0,
+		  pages, (side == LEFT) ? "left" : "right");
 
 	area_t *expansion = areamgr_alloc_adjacent_area(areamgr, newarea, pages, side);
 

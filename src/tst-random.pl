@@ -4,12 +4,12 @@ use strict;
 use warnings;
 
 my $i = 1;
-my $t = 5000;
+my $t = 10000;
 
 while ($i <= 1000) { 
 	print "tst-random $i $t\n";
 
-	system("./tst-random -s $i -c $t 2>/dev/null");
+	system("./tst-random -s $i -c $t -n 1 -t 0 2>/dev/null");
 
 	die if ($? != 0);
 

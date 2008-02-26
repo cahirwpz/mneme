@@ -27,10 +27,8 @@ void blkmgr_init(blkmgr_t *blkmgr, areamgr_t *areamgr)/*{{{*/
  * @return
  */
 
-void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
+void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 {
-	arealst_rdlock(&blkmgr->blklst);
-
 	void *memory = NULL;
 
 	if (alignment) {
@@ -39,20 +37,19 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
 		DEBUG("\033[37;1mRequested block of size %u.\033[0m\n", size);
 	}
 
-	area_t *area = (area_t *)blkmgr->blklst.local.next;
+	arealst_wrlock(&self->blklst);
+
+	/* looking for an area with free space */
+	area_t    *area = (area_t *)self->blklst.local.next;
+	mb_list_t *list = NULL;
 
 	while (!area_is_guard(area)) {
-		mb_list_t *list = mb_list_from_memarea(area);
+		assert(area_is_ready(area));
 
 		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags0);
 
-		if (!area_is_ready(area)) {
-			mb_init(list, area->size - sizeof(area_t));
-			area->ready = TRUE;
-			area_touch(area);
-		} 
-
-		memory = alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
+		list   = mb_list_from_area(area);
+		memory = (alignment > 0) ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
 
 		if (memory)
 			break;
@@ -60,73 +57,93 @@ void *blkmgr_alloc(blkmgr_t *blkmgr, uint32_t size, uint32_t alignment)/*{{{*/
 		area = area->local.next;
 	}
 
-	arealst_unlock(&blkmgr->blklst);
+	/* the area was not found - we must make some space */
+	if (memory == NULL) {
+		uint32_t area_size = size + sizeof(area_t) + sizeof(mb_list_t) + sizeof(mb_t);
 
-	if (memory)
-		return memory;
+		if (alignment > 0)
+			area_size += alignment;
 
-	DEBUG("Not enough memory - trying to find adjacent free areas to merge with.\n");
-	
-	DEBUG("Not enough memory - trying to get some from area manager.\n");
+		DEBUG("Trying to merge adjacent pages to managed areas.\n");
 
-	uint32_t area_size = size + sizeof(area_t) + sizeof(mb_list_t) + sizeof(mb_t);
+		areamgr_prealloc_area(self->areamgr, SIZE_IN_PAGES(area_size));
 
-	if (alignment)
-		area_size += alignment;
+		area = (area_t *)self->blklst.local.next;
 
-	area_t *newarea = areamgr_alloc_area(blkmgr->areamgr, SIZE_IN_PAGES(area_size));
+		bool merged = FALSE;
 
-	if (!newarea)
-		return NULL;
+		while (!area_is_guard(area)) {
+			mb_list_t *list = mb_list_from_area(area);
 
-	mb_list_t *list = mb_list_from_memarea(newarea);
+			uint32_t oldsize = area->size;
+			
+			if (areamgr_expand_area(self->areamgr, &area, SIZE_IN_PAGES(area_size), LEFT)) {
+				mb_list_t *to_merge = mb_list_from_area(area);
 
-	mb_init(list, newarea->size - sizeof(area_t));
+				mb_init(to_merge, area->size - oldsize - sizeof(area_t));
 
-	newarea->ready = TRUE;
-	area_touch(newarea);
+				list = mb_list_merge(to_merge, list, sizeof(area_t));
 
-	/* area is ready - we can try to merge it with adjacent areas from blklst */
+				area->manager = AREA_MGR_BLKMGR;
+				area_touch(area);
 
-	bool merged = FALSE;
+				merged = TRUE;
+			} else if (areamgr_expand_area(self->areamgr, &area, SIZE_IN_PAGES(area_size), RIGHT)) {
+				mb_list_t *to_merge = (mb_list_t *)((uint32_t)area_end(area) - (area->size - oldsize));
 
-	/* holy crap! double write locking is necessary :( */
-	arealst_wrlock(&blkmgr->areamgr->global);
-	arealst_wrlock(&blkmgr->blklst);
+				mb_init(to_merge, area->size - oldsize - sizeof(area_t));
 
-	/* get neighbours */
-	area_t *prev = newarea->global.prev;
-	area_t *next = newarea->global.next;
+				list = mb_list_merge(list, to_merge, sizeof(area_t));
 
-	/* check if neighbours are on managed list */
-	if (arealst_has_area(&blkmgr->blklst, prev, DONTLOCK) && (area_end(prev) == area_begining(newarea))) {
-		mb_list_t *to_merge = mb_list_from_memarea(prev);
+				area->manager = AREA_MGR_BLKMGR;
+				area_touch(area);
 
-		newarea = arealst_join_area(&blkmgr->areamgr->global, prev, newarea, DONTLOCK);
+				merged = TRUE;
+			} else {
+				merged = FALSE;
+			}
 
-		list = mb_list_merge(to_merge, list, sizeof(area_t));
+			if (merged) {
+				mb_list_t *to_merge = mb_list_from_area(area->local.next);
 
-		merged = TRUE;
+				if (area_end(area) == area_begining(area->local.next)) {
+					assert(area->local.next == area->global.next);
+
+					arealst_remove_area(&self->blklst, area->local.next, DONTLOCK);
+
+					arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);
+
+					list = mb_list_merge(list, to_merge, sizeof(area_t));
+				}
+
+				memory = alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
+				break;
+			}
+
+			area = area->local.next;
+		}
+
+		if (memory == NULL) {
+			DEBUG("No adjacent areas found - try to create new blocks' manager.\n");
+
+			area_t *newarea = areamgr_alloc_area(self->areamgr, SIZE_IN_PAGES(area_size));
+
+			if (newarea != NULL) {
+				mb_list_t *list = mb_list_from_area(newarea);
+
+				mb_init(list, newarea->size - sizeof(area_t));
+				newarea->ready = TRUE;
+				newarea->manager = AREA_MGR_BLKMGR;
+				area_touch(newarea);
+
+				arealst_insert_area_by_addr(&self->blklst, (void *)newarea, DONTLOCK);
+
+				memory = alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
+			}
+		}
 	}
 
-	if (arealst_has_area(&blkmgr->blklst, next, DONTLOCK) && (area_end(newarea) == area_begining(next))) {
-		mb_list_t *to_merge = mb_list_from_memarea(next);
-
-		newarea = arealst_join_area(&blkmgr->areamgr->global, newarea, next, DONTLOCK);
-
-		list = mb_list_merge(list, to_merge, sizeof(area_t));
-
-		merged = TRUE;
-	}
-
-	arealst_unlock(&blkmgr->blklst);
-	arealst_unlock(&blkmgr->areamgr->global);
-
-	memory = alignment ? mb_alloc_aligned(list, size, alignment) : mb_alloc(list, size, FALSE);
-
-	/* If not merged then just insert */
-	if (!merged)
-		arealst_insert_area_by_addr(&blkmgr->blklst, (void *)newarea, LOCK);
+	arealst_unlock(&self->blklst);
 
 	return memory;
 }/*}}}*/
@@ -149,7 +166,7 @@ bool blkmgr_realloc(blkmgr_t *blkmgr, void *memory, uint32_t new_size)/*{{{*/
 	area_t *area = arealst_find_area_by_addr(&blkmgr->blklst, memory, DONTLOCK);
 
 	if (area)
-		result = mb_resize(mb_list_from_memarea(area), memory, new_size);
+		result = mb_resize(mb_list_from_area(area), memory, new_size);
 
 	arealst_unlock(&blkmgr->blklst);
 
@@ -180,48 +197,48 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 	area_t *area = arealst_find_area_by_addr(&blkmgr->blklst, memory, DONTLOCK);
 
 	if (area) {
-		mb_list_t *list = mb_list_from_memarea(area);
-		/* mb_free_t *free = mb_free(list, memory); */
+		mb_list_t *list = mb_list_from_area(area);
+
+		(void)mb_free(list, memory);
 
 		result = TRUE;
-
-		uint32_t pages = 0;
 
 		/* is area completely empty (has exactly one block and it's free) */
 		if ((blkmgr->blklst.areacnt > 1) && mb_is_first(list->next) && mb_is_last(list->next)) {
 			arealst_remove_area(&blkmgr->blklst, (void *)area, DONTLOCK);
+			areamgr_free_area(blkmgr->areamgr, area);
 		} else {
-			if (((list->blkcnt - list->ublkcnt) >= 4 * PAGE_SIZE) && (list->ublkcnt < (list->blkcnt / 2))) {
-				/* can area be shrinked at the end ? */
-				shrink_right_pages = mb_list_can_shrink_at_end(list);
-
-				if (shrink_right_pages > 0)
-					mb_list_shrink_at_end(list, pages);
-
-				/* can area be shrinked at the beginning ? */
-				shrink_left_pages = mb_list_can_shrink_at_beginning(list, sizeof(area_t));
-
-				if (shrink_left_pages > 0)
-					mb_list_shrink_at_beginning(&list, pages, sizeof(area_t));
-
-				/* can area be splitted ? */
 #if 0
-				cut_pages = mb_list_find_split(list, &free, &cut_addr, sizeof(area_t));
+			/* can area be shrinked at the end ? */
+			shrink_right_pages = mb_list_can_shrink_at_end(list);
 
-				if (cut_pages > 0)
-					mb_list_split(mb_list_from_memarea(area), free, pages, sizeof(area_t));
+			if (shrink_right_pages > 0)
+				mb_list_shrink_at_end(list, shrink_right_pages);
+
+			/* can area be shrinked at the beginning ? */
+			shrink_left_pages = mb_list_can_shrink_at_beginning(list, sizeof(area_t));
+
+			if (shrink_left_pages > 0)
+				mb_list_shrink_at_beginning(&list, shrink_left_pages, sizeof(area_t));
 #endif
-			}
+
+			/* can area be splitted ? */
+#if 0
+			cut_pages = mb_list_find_split(list, &free, &cut_addr, sizeof(area_t));
+
+			if (cut_pages > 0)
+				mb_list_split(mb_list_from_area(area), free, pages, sizeof(area_t));
+#endif
 		}
 	}
 
 	arealst_unlock(&blkmgr->blklst);
 
 	if (shrink_right_pages)
-		areamgr_shrink_area(blkmgr->areamgr, &area, shrink_right_pages, RIGHT);
+		areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_right_pages, RIGHT);
 
 	if (shrink_left_pages)
-		areamgr_shrink_area(blkmgr->areamgr, &area, shrink_left_pages, LEFT);
+		areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_left_pages, LEFT);
 
 	if (cut_pages) {
 	}
@@ -253,7 +270,7 @@ void blkmgr_print(blkmgr_t *blkmgr)/*{{{*/
 					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
 					(uint32_t)area->local.prev, (uint32_t)area->local.next);
 
-			mb_print(mb_list_from_memarea(area));
+			mb_print(mb_list_from_area(area));
 		}
 		else
 			fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",

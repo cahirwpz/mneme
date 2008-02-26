@@ -284,6 +284,19 @@ static void *memmgr_test(void *args)
 						double range = block_classes[2].max_size - block_classes[0].min_size;
 
 						size = (uint32_t)(range * pbb) + block_classes[0].min_size;
+					} else if (test.type == 2) {
+						double pbb2 = drand48();
+
+						gaussian(&pbb, &pbb2);
+
+						pbb = fabs(pbb) / 16;
+
+						if (pbb > 1.0)
+							pbb = 1.0;
+
+						double range = block_classes[1].max_size - block_classes[1].min_size;
+
+						size = (uint32_t)(range * fabs(pbb)) + block_classes[1].min_size;
 					} else {
 						uint32_t i = test.type - 1;
 						double   range = block_classes[i].max_size - block_classes[i].min_size;

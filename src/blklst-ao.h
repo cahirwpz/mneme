@@ -77,7 +77,7 @@ static inline bool mb_is_last_internal(mb_t *blk) {
 	return (blk->flags & MB_FLAG_LAST);
 }
 
-static inline mb_list_t *mb_list_from_memarea(area_t *area) {
+static inline mb_list_t *mb_list_from_area(area_t *area) {
 	return (mb_list_t *)area_begining(area);
 }
 

@@ -10,7 +10,8 @@
 #include <string.h>
 
 #define SB_SIZE			1024
-#define AREA_MAX_SIZE 	32764 * SB_SIZE
+#define SB_COUNT_MAX	32764
+#define AREA_MAX_SIZE 	SB_COUNT_MAX * SB_SIZE
 
 /* Super-block structure */
 
@@ -540,6 +541,55 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
 }/*}}}*/
 
 /**
+ *
+ */
+
+sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)
+{
+	DEBUG("Will expand SB's manager at $%.8x by %u SBs from %s side.\n",
+		  (uint32_t)mgr, newsbs, (side == LEFT) ? "left" : "right");
+
+	assert(newsbs > 0);
+	assert(mgr->all <= SB_COUNT_MAX - newsbs);
+
+	sb_mgr_t *oldmgr = mgr;
+	sb_t     *oldsb  = sb_get_from_address(mgr);
+
+	if (side == LEFT) {
+		sb_mgr_add(mgr, (void *)((uint32_t)oldsb - (newsbs + mgr->all - 1) * SB_SIZE), newsbs);
+	} else {
+		/* copy old superblocks' manager to new location */
+		mgr = (sb_mgr_t *)((uint32_t)mgr + newsbs * SB_SIZE);
+
+		memcpy(mgr, oldmgr, sizeof(sb_mgr_t));
+
+		DEBUG("Moved SB's manager to $%.8x [%u/%u].\n", (uint32_t)mgr, mgr->free, mgr->all);
+
+		/* add newly allocated pages to superblocks' manager */
+		sb_mgr_add(mgr, (void *)((uint32_t)oldsb + SB_SIZE), newsbs);
+
+		/* free some unused blocks */
+		uint32_t old_blocks = sb_get_blocks(oldsb);
+
+		oldsb->size = (SB_SIZE >> 3) - 1;
+
+		uint32_t blocks = sb_get_blocks(oldsb);
+
+		DEBUG("Freeing %u unused blocks in SB at $%.8x\n", blocks - old_blocks, (uint32_t)oldsb);
+
+		uint32_t freeblocks = oldsb->fblkcnt;
+
+		while (blocks > old_blocks)
+			sb_free(oldsb, --blocks);
+
+		if (freeblocks == 0)
+			sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb);
+	}
+
+	return mgr;
+}
+
+/**
  * Initialize equally-sized blocks' manager.
  *
  * @param self		equally-sized blocks' manager structure
@@ -582,10 +632,10 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
     sb_mgr_t *mgr  = NULL;
 	area_t   *area = NULL;
 
+	arealst_wrlock(&self->arealst);
+
 	{
 		DEBUG("Try to find superblock with free blocks.\n");
-
-		arealst_rdlock(&self->arealst);
 
 		area = (area_t *)self->arealst.local.next;
 
@@ -598,15 +648,10 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 			area = area->local.next;
 		}
-
-		if (sb == NULL)
-			arealst_unlock(&self->arealst);
 	}
 
 	if (sb == NULL) {
 		DEBUG("Try to allocate unused superblock.\n");
-
-		arealst_rdlock(&self->arealst);
 
 		area = (area_t *)self->arealst.local.next;
 
@@ -619,9 +664,6 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 			area = area->local.next;
 		}
-
-		if (sb == NULL)
-			arealst_unlock(&self->arealst);
 	}
 
 	/* last attempt: ouch... need to get new pages from area manager */
@@ -630,8 +672,6 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		
 		/* first attempt: try adjacent areas */
 		areamgr_prealloc_area(self->areamgr, 1);
-
-		arealst_wrlock(&self->arealst);
 
 		area = (area_t *)self->arealst.local.next;
 
@@ -642,54 +682,57 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 			if (mgr->all * SB_SIZE < AREA_MAX_SIZE) {
 				uint32_t oldsize = area->size;
-				uint32_t newsize;
+				direction_t side = NONE;
 
-				if (areamgr_expand_area(self->areamgr, &area, 1, LEFT)) {
-					newsize = area->size;
+				if (areamgr_expand_area(self->areamgr, &area, 1, LEFT))
+					side = LEFT;
+				else if (areamgr_expand_area(self->areamgr, &area, 1, RIGHT))
+					side = RIGHT;
+
+				if (side != NONE) {
+					uint32_t newsize = area->size;
 
 					/* area cannot be larger than AREA_MAX_SIZE */
 					if (area->size > AREA_MAX_SIZE)
 						newsize = AREA_MAX_SIZE; 
-					/* extending by more than 4 pages is waste (or maybe not?) */
-					if (area->size - oldsize > PAGE_SIZE * 4)
-						newsize = PAGE_SIZE * 4 + oldsize;
+					/* extending by more than 2 pages is waste (or maybe not?) */
+					if (area->size - oldsize > PAGE_SIZE * 2)
+						newsize = PAGE_SIZE * 2 + oldsize;
 					/* if new area is to big then shrink it */
 					if (area->size > newsize)
-						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), LEFT);
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), side);
 
 					area->manager = AREA_MGR_EQSBMGR;
 					area_touch(area);
 
-					/* add newly allocated pages to superblocks' manager */
-					uint32_t newsbs = (newsize - oldsize) / SB_SIZE;
+					mgr = sb_mgr_expand(mgr, (newsize - oldsize) / SB_SIZE, side);
+				}
 
-					sb_mgr_add(mgr, area_begining(area), newsbs);
-				} else if (areamgr_expand_area(self->areamgr, &area, 1, RIGHT)) {
-					newsize = area->size;
+				if (area_end(area) == area_begining(area->local.next)) {
+					DEBUG("Area %.8x should be merged with area %.8x\n", (uint32_t)area, (uint32_t)area->local.next);
 
-					if (area->size > AREA_MAX_SIZE)
-						newsize = AREA_MAX_SIZE;
-					if (area->size - oldsize > PAGE_SIZE * 4)
-						newsize = PAGE_SIZE * 4 + oldsize;
-					if (area->size > newsize)
-						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), RIGHT);
-
-					area->manager = AREA_MGR_EQSBMGR;
-					area_touch(area);
-
-					/* copy old superblocks' manager to new location */
 					sb_mgr_t *oldmgr = mgr;
-					sb_t     *oldsb  = sb_get_from_address(mgr);
-					
-					mgr = sb_mgr_from_area(area);
+					sb_mgr_t *newmgr = NULL;
 
-					memcpy(mgr, oldmgr, sizeof(sb_mgr_t));
+					arealst_remove_area(&self->arealst, area->local.next, DONTLOCK);
+					area = arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);
 
-					/* add newly allocated pages to superblocks' manager */
-					uint32_t newsbs = (newsize - oldsize) / SB_SIZE;
+					newmgr = sb_mgr_from_area(area);
 
-					sb_mgr_add(mgr, area_end(area) - (newsbs * SB_SIZE), newsbs);
-					
+					newmgr->free += oldmgr->free;
+					newmgr->all  += oldmgr->all;
+
+					uint32_t i;
+
+					for (i = 0; i < 4; i++) {
+						sb_list_join(&newmgr->groups[i], &oldmgr->groups[i]);
+						sb_list_join(&newmgr->nonempty[i], &oldmgr->nonempty[i]);
+					}
+
+					sb_t *oldsb  = sb_get_from_address(mgr);
+
+					mgr = newmgr;
+
 					/* free some unused blocks */
 					uint32_t old_blocks = sb_get_blocks(oldsb);
 
@@ -717,17 +760,12 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 			area = area->local.next;
 		}
 
-		if (sb == NULL)
-			arealst_unlock(&self->arealst);
-		
 		if (sb == NULL) {
 			DEBUG("No adjacent areas found - try to create new superblocks' manager.\n");
 			/* second attempt: create new superblocks' manager */
 			area_t *newarea = areamgr_alloc_area(self->areamgr, 1);
 
 			if (newarea) {
-				arealst_wrlock(&self->arealst);
-
 				newarea->manager = AREA_MGR_EQSBMGR;
 
 				arealst_insert_area_by_addr(&self->arealst, (void *)newarea, DONTLOCK);
@@ -755,8 +793,9 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		if (sb->fblkcnt == 0)
 			sb_list_remove(&mgr->nonempty[sb->blksize], sb);
 
-		arealst_unlock(&self->arealst);
 	}
+
+	arealst_unlock(&self->arealst);
 
 	return memory;
 }/*}}}*/
@@ -810,22 +849,22 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 		/* Check if there are no pages to free */
 		if (mgr->groups[3].first) {
 			DEBUG("freecnt = %d, pages free = %d\n", mgr->free, mgr->groups[3].sbcnt);
-			
+
 			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
-					sb_t *tmp = (sb_t *)area_begining(area);
+				sb_t *tmp = (sb_t *)area_begining(area);
 
-					DEBUG("Try to remove from the begining of area. Check superblock at $%.8x.\n", (uint32_t)tmp);
+				DEBUG("Try to remove from the begining of area. Check superblock at $%.8x.\n", (uint32_t)tmp);
 
-					if ((tmp->fblkcnt == 127) && (tmp->blksize == 3)) {
-						sb_list_remove(&mgr->groups[3], tmp);
+				if ((tmp->fblkcnt == 127) && (tmp->blksize == 3)) {
+					sb_list_remove(&mgr->groups[3], tmp);
 
-						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, LEFT);
+					areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, LEFT);
 
-						mgr->free -= 4;
-						mgr->all  -= 4;
+					mgr->free -= 4;
+					mgr->all  -= 4;
 
-						if (verbose) sb_mgr_print(mgr);
-					}
+					if (verbose) sb_mgr_print(mgr);
+				}
 			}
 
 			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {

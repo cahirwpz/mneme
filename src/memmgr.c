@@ -178,22 +178,26 @@ void memmgr_print(memmgr_t *memmgr)/*{{{*/
 
 	fprintf(stderr, "\033[1;37mPrinting memory manager structures:\033[0m\n");
 
-	fprintf(stderr, "\033[1;35m areamgr at $%.8x [%d areas]:\033[0m\n",
-			(uint32_t)&memmgr->areamgr, memmgr->areamgr.global.areacnt);
+	fprintf(stderr, "\033[1;35m areamgr at $%.8x [%d areas, %u pages free]:\033[0m\n",
+			(uint32_t)&memmgr->areamgr, memmgr->areamgr.global.areacnt, memmgr->areamgr.freecnt);
 
 	area_t *area = (area_t *)&memmgr->areamgr.global;
 
 	bool error = FALSE;
 	uint32_t areacnt = 1;
+	uint32_t freepages = 0;
 
 	while (TRUE) {
 		area_valid(area);
 
-		if (!area->guard)
+		if (!area->guard) {
 			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %8d : %d\033[0m\n", area->used ? '1' : '2',
 					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size, area->manager);
-		else
+			if (!area->used)
+				freepages += SIZE_IN_PAGES(area->size);
+		} else {
 			fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s\033[0m\n", (uint32_t)area, "", "guard");
+		}
 
 		if (area->global.next->global_guard)
 			break;
@@ -208,6 +212,7 @@ void memmgr_print(memmgr_t *memmgr)/*{{{*/
 
 	assert(!error);
 	assert(areacnt == memmgr->areamgr.global.areacnt);
+	assert(freepages == memmgr->areamgr.freecnt);
 
 	arealst_unlock(&memmgr->areamgr.global);
 

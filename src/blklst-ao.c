@@ -938,7 +938,7 @@ mb_list_t *mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)
 	assert(mb_is_guard(first));
 	assert(mb_is_guard(second));
 
-	assert(((uint32_t)first + first->size) == ((uint32_t)second - space));
+	assert(((uint32_t)first + first->size + space) == ((uint32_t)second));
 	assert(space >= sizeof(mb_free_t));
 
 	/* last block in first memory blocks' list is not last in joined list */
