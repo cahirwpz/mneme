@@ -42,9 +42,9 @@ void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment)/*{{{*/
 
 	if (size == 0)
 		memory = NULL;
-	else if (size <= 32)
+	else if ((size <= 32) && (alignment <= 8))
 		memory = eqsbmgr_alloc(&memmgr->percpumgr[0].eqsbmgr, size, 0);
-	else if (size < 32767)
+	else if (size <= 32760)
 		memory = blkmgr_alloc(&memmgr->percpumgr[0].blkmgr, size, alignment);
 	else
 		memory = mmapmgr_alloc(&memmgr->percpumgr[0].mmapmgr, size, alignment);

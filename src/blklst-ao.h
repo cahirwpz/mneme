@@ -144,10 +144,10 @@ mb_free_t *mb_free(mb_list_t *list, void *memory);
 
 /* Procedures used in conjuction with operations on memory areas */
 uint32_t mb_list_can_shrink_at_beginning(mb_list_t *list, uint32_t space);
-uint32_t mb_list_can_shrink_at_end(mb_list_t *list);
+uint32_t mb_list_can_shrink_at_end(mb_list_t *list, uint32_t space);
 
 void mb_list_shrink_at_beginning(mb_list_t **list, uint32_t pages, uint32_t space);
-void mb_list_shrink_at_end(mb_list_t *list, uint32_t pages);
+void mb_list_shrink_at_end(mb_list_t *list, uint32_t pages, uint32_t space);
 
 uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, uint32_t space);
 mb_list_t *mb_list_split(mb_list_t *first, mb_free_t *to_split, uint32_t pages, uint32_t space);

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 #include <math.h>
 
@@ -204,7 +205,6 @@ static bool block_array_free(void **ptr, int32_t *size)
 	return result;
 }
 
-
 /**
  * Allocator tester.
  */
@@ -256,11 +256,8 @@ static void *memmgr_test(void *args)
 							opcnt++;
 						}
 
-						if (!block_array_alloc(ptr, size)) {
-							memmgr_print(mm);
-							DEBUG("realloc grow: cannot store block.\n");
-							abort();
-						}
+						if (!block_array_alloc(ptr, size))
+							PANIC("realloc grow: cannot store block [$%.8x, %u].", (uint32_t)ptr, size);
 					}
 				} else {
 					pbb -= test.grow_pbb;
@@ -312,17 +309,11 @@ static void *memmgr_test(void *args)
 							DEBUG("malloc(%d) = %p\n", size, ptr);
 						}
 						opcnt++;
-					} else {
-						memmgr_print(mm);
-						DEBUG("alloc: out of memory!\n");
-						abort();
-					}
+					} else
+						PANIC("alloc: out of memory!");
 
-					if (!block_array_alloc(ptr, size)) {
-						memmgr_print(mm);
-						DEBUG("alloc: cannot store block.\n");
-						abort();
-					}
+					if (!block_array_alloc(ptr, size))
+						PANIC("alloc: cannot store block [$%.8x, %u].", (uint32_t)ptr, size);
 				}
 			}
 			
@@ -345,17 +336,11 @@ static void *memmgr_test(void *args)
 
 							DEBUG("realloc(%p, %u)\n", ptr, size);
 							opcnt++;
-						} else {
-							memmgr_print(mm);
-							DEBUG("realloc shrink: could not shrink block!\n");
-							abort();
-						}
+						} else 
+							PANIC("realloc shrink: could not shrink block [$%.8x, %u]!", (uint32_t)ptr, size);
 
-						if (!block_array_alloc(ptr, size)) {
-							memmgr_print(mm);
-							DEBUG("realloc shrink: cannot store block.\n");
-							abort();
-						}
+						if (!block_array_alloc(ptr, size))
+							PANIC("realloc shrink: cannot store block [$%.8x, %u]!", (uint32_t)ptr, size);
 					}
 				} else {
 					DEBUG("Case for free.\n");
@@ -363,11 +348,8 @@ static void *memmgr_test(void *args)
 						if (memmgr_free(mm, ptr)) {
 							DEBUG("free(%p, %u)\n", ptr, size);
 							opcnt++;
-						} else {
-							memmgr_print(mm);
-							DEBUG("free: could not free block!\n");
-							abort();
-						}
+						} else
+							PANIC("free: could not free block [$%.8x, %u]!", (uint32_t)ptr, size);
 					}
 				}
 			}
@@ -397,6 +379,19 @@ bool strtodouble(char *str, double *numptr)
 	*numptr = strtod(str, &tmp);
 
 	return (*str != '\0' && *tmp == '\0');
+}
+
+/**
+ * Abort handler.
+ */
+
+void abort_handler(int signum)
+{
+	fflush(stderr);
+
+	memmgr_print(mm);
+
+	fprintf(stderr, "\033[1;4;37mProgram aborted!\033[0m\n");
 }
 
 /**
@@ -483,6 +478,13 @@ int main(int argc, char **argv)
 
 	if ((seed < 0) || (test.ops < 0))
 		usage(argv[0]);
+	
+	/* initialize catching abort() signal */
+	struct sigaction new_action;
+
+	new_action.sa_handler = abort_handler;
+	sigemptyset(&new_action.sa_mask);
+	sigaction(SIGABRT, &new_action, NULL);
 
 	/* initialize random numbers generator */
 	srand(seed);

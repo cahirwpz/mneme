@@ -544,7 +544,7 @@ static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
  *
  */
 
-sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)
+sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)/*{{{*/
 {
 	DEBUG("Will expand SB's manager at $%.8x by %u SBs from %s side.\n",
 		  (uint32_t)mgr, newsbs, (side == LEFT) ? "left" : "right");
@@ -587,7 +587,7 @@ sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)
 	}
 
 	return mgr;
-}
+}/*}}}*/
 
 /**
  * Initialize equally-sized blocks' manager.
@@ -701,9 +701,6 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 					/* if new area is to big then shrink it */
 					if (area->size > newsize)
 						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(newsize), side);
-
-					area->manager = AREA_MGR_EQSBMGR;
-					area_touch(area);
 
 					mgr = sb_mgr_expand(mgr, (newsize - oldsize) / SB_SIZE, side);
 				}

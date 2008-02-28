@@ -84,9 +84,6 @@ void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 				list = mb_list_merge(to_merge, list, sizeof(area_t));
 
-				area->manager = AREA_MGR_BLKMGR;
-				area_touch(area);
-
 				merged = TRUE;
 			} else if (areamgr_expand_area(self->areamgr, &area, SIZE_IN_PAGES(area_size), RIGHT)) {
 				mb_list_t *to_merge = (mb_list_t *)((uint32_t)area_end(area) - (area->size - oldsize));
@@ -95,12 +92,7 @@ void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 				list = mb_list_merge(list, to_merge, sizeof(area_t));
 
-				area->manager = AREA_MGR_BLKMGR;
-				area_touch(area);
-
 				merged = TRUE;
-			} else {
-				merged = FALSE;
 			}
 
 			if (merged) {
@@ -110,7 +102,6 @@ void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 					assert(area->local.next == area->global.next);
 
 					arealst_remove_area(&self->blklst, area->local.next, DONTLOCK);
-
 					arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);
 
 					list = mb_list_merge(list, to_merge, sizeof(area_t));
@@ -184,9 +175,8 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
 	/* define actions on area */
-	/* void     *cut_addr = NULL; */
+	void     *cut_addr = NULL;
 	uint32_t cut_pages = 0;
-
 	uint32_t shrink_left_pages  = 0;
 	uint32_t shrink_right_pages = 0;
 
@@ -199,7 +189,7 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 	if (area) {
 		mb_list_t *list = mb_list_from_area(area);
 
-		(void)mb_free(list, memory);
+		mb_free_t *free = mb_free(list, memory);
 
 		result = TRUE;
 
@@ -208,40 +198,38 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
 			arealst_remove_area(&blkmgr->blklst, (void *)area, DONTLOCK);
 			areamgr_free_area(blkmgr->areamgr, area);
 		} else {
-#if 0
 			/* can area be shrinked at the end ? */
-			shrink_right_pages = mb_list_can_shrink_at_end(list);
 
-			if (shrink_right_pages > 0)
-				mb_list_shrink_at_end(list, shrink_right_pages);
+			shrink_right_pages = mb_list_can_shrink_at_end(list, sizeof(area_t));
+
+			if (shrink_right_pages > 0) {
+				mb_list_shrink_at_end(list, shrink_right_pages, sizeof(area_t));
+				areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_right_pages, RIGHT);
+			}
 
 			/* can area be shrinked at the beginning ? */
 			shrink_left_pages = mb_list_can_shrink_at_beginning(list, sizeof(area_t));
 
-			if (shrink_left_pages > 0)
+			if (shrink_left_pages > 0) {
 				mb_list_shrink_at_beginning(&list, shrink_left_pages, sizeof(area_t));
-#endif
+				areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_left_pages, LEFT);
+			}
 
 			/* can area be splitted ? */
-#if 0
 			cut_pages = mb_list_find_split(list, &free, &cut_addr, sizeof(area_t));
 
-			if (cut_pages > 0)
-				mb_list_split(mb_list_from_area(area), free, pages, sizeof(area_t));
-#endif
+			if (cut_pages > 1) {
+				area_t *leftover = NULL;
+
+				mb_list_split(mb_list_from_area(area), free, cut_pages, sizeof(area_t));
+				arealst_split_area(&blkmgr->areamgr->global, &area, &leftover, SIZE_IN_PAGES(cut_addr - area_begining(area)), LOCK);
+				areamgr_shrink_area(blkmgr->areamgr, &leftover, SIZE_IN_PAGES(leftover->size) - cut_pages, LEFT);
+				arealst_insert_area_by_addr(&blkmgr->blklst, leftover, DONTLOCK);
+			}
 		}
 	}
 
 	arealst_unlock(&blkmgr->blklst);
-
-	if (shrink_right_pages)
-		areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_right_pages, RIGHT);
-
-	if (shrink_left_pages)
-		areamgr_shrink_area(blkmgr->areamgr, &area, SIZE_IN_PAGES(area->size) - shrink_left_pages, LEFT);
-
-	if (cut_pages) {
-	}
 
 	return result;
 }/*}}}*/

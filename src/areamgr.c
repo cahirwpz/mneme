@@ -1068,12 +1068,23 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 
 	area_t *expansion = areamgr_alloc_adjacent_area(areamgr, newarea, pages, side);
 
+	arealst_wrlock(&areamgr->global);
+
+	uint8_t manager = newarea->manager;
+	bool    ready   = newarea->ready;
+
 	if (expansion != NULL) {
 		if (side == RIGHT)
-			newarea = arealst_join_area(&areamgr->global, newarea, expansion, LOCK);
-		else 
-			newarea = arealst_join_area(&areamgr->global, expansion, newarea, LOCK);
+			newarea = arealst_join_area(&areamgr->global, newarea, expansion, DONTLOCK);
+		else
+			newarea = arealst_join_area(&areamgr->global, expansion, newarea, DONTLOCK);
 	}
+
+	newarea->manager = manager;
+	newarea->ready   = ready;
+	area_touch(newarea);
+
+	arealst_unlock(&areamgr->global);
 
 	DEBUG("Area at $%.8x expanded to [$%.8x; %u; $%.2x]\n",
 			(uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0);
@@ -1115,7 +1126,9 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 	if (side == RIGHT) {
 		arealst_split_area(&areamgr->global, &newarea, &leftover, pages, LOCK);
 	} else {
-		arealst_split_area(&areamgr->global, &leftover, &newarea, SIZE_IN_PAGES(newarea->size) - pages, LOCK);
+		arealst_wrlock(&areamgr->global);
+
+		arealst_split_area(&areamgr->global, &leftover, &newarea, SIZE_IN_PAGES(newarea->size) - pages, DONTLOCK);
 
 		if ((leftover->local.prev != NULL) && (leftover->local.next != NULL)) {
 			newarea->local.prev = leftover->local.prev;
@@ -1124,6 +1137,11 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 			newarea->local.prev->local.next = newarea;
 			newarea->local.next->local.prev = newarea;
 		}
+	
+		newarea->manager = leftover->manager;
+		newarea->ready   = leftover->ready;
+
+		arealst_unlock(&areamgr->global);
 	}
 
 	areamgr_free_area(areamgr, leftover);

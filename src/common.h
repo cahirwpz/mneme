@@ -23,6 +23,8 @@ extern bool verbose;
 #define DEBUG(format, args...)
 #endif
 
+#define PANIC(format, args...) { fprintf(stderr, "\033[1;37m%s:%d \033[0;4m" format "\033[0m\n", __func__, __LINE__, ##args); abort(); }
+
 #define offsetof(type, member)	__builtin_offsetof(type, member)
 
 /*
