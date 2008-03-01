@@ -254,8 +254,10 @@ static mb_free_t *mb_coalesce(mb_list_t *list, mb_free_t *blk)/*{{{*/
  * @param list
  */
 
-void mb_print(mb_list_t *list)/*{{{*/
+bool mb_verify(mb_list_t *list, bool verbose)/*{{{*/
 {
+	bool error = FALSE;
+
 	/* check if it is guard block */
 	mb_valid(list);
 	assert(mb_is_guard(list));
@@ -263,15 +265,16 @@ void mb_print(mb_list_t *list)/*{{{*/
 	/* find first block */
 	mb_t *blk = (mb_t *)((uint32_t)list + sizeof(mb_list_t));
 
-	fprintf(stderr, "  \033[1;36mblocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)list + list->size));
+	if (verbose)
+		fprintf(stderr, "  \033[1;36mblocks in range $%.8x - $%.8x:\033[0m\n", (uint32_t)blk, ((uint32_t)list + list->size));
 
 	uint32_t used = 0, free = 0, largest = 0, free_blocks = 0, used_blocks = 0;
-
-	bool error = FALSE;
 
 	mb_free_t *first_free = (mb_free_t *)list, *last_free = (mb_free_t *)list;
 
 	while ((uint32_t)blk < (uint32_t)list + list->size) {
+		uint8_t errortype = 0;
+
 		mb_valid(blk);
 
 		if (!mb_is_used(blk)) {
@@ -281,38 +284,23 @@ void mb_print(mb_list_t *list)/*{{{*/
 				last_free = (mb_free_t *)blk;
 		}
 
-		char c = mb_is_used(blk) ? '1' : '2';
-
-		if (blk->flags & MB_FLAG_PAD)
-			c = '7';
-
-		fprintf(stderr, "\033[1;3%cm   $%.8x - $%.8x : %c%c : %5d",
-				c, (uint32_t)blk, (uint32_t)blk + blk->size,
-				mb_is_first(blk) ? 'F' : '-', mb_is_last(blk) ? 'L' : '-', blk->size);
-
 		if (mb_is_first(blk) && ((uint32_t)blk != (uint32_t)list + sizeof(mb_list_t))) {
-			fprintf(stderr, " : (1)");
-			error = TRUE;
+			errortype = 1;
+			error |= TRUE;
 		}
 
 		if (mb_is_last(blk) && ((uint32_t)blk + blk->size != (uint32_t)list + list->size)) {
-			fprintf(stderr, " : (2)");
-			error = TRUE;
+			errortype = 2;
+			error |= TRUE;
 		}
 
-		if (!mb_is_used(blk)) {
-			mb_free_t *fblk = (mb_free_t *)blk;
-
-			fprintf(stderr, " : $%.8x $%8x", (uint32_t)fblk->prev, (uint32_t)fblk->next);
-		}
-		
 		if (mb_is_used(blk)) {
 			used += blk->size;
 			used_blocks++;
 
 			if ((blk->size < sizeof(mb_t) + MB_GRANULARITY) && !(blk->flags & MB_FLAG_PAD)) {
-				fprintf(stderr, " : (3)");
-				error = TRUE;
+				errortype = 3;
+				error |= TRUE;
 			}
 		} else {
 			free += blk->size - sizeof(mb_t);
@@ -325,28 +313,61 @@ void mb_print(mb_list_t *list)/*{{{*/
 		}
 
 		if (((uint32_t)blk + blk->size == (uint32_t)list + list->size) && !mb_is_last(blk)) {
-			fprintf(stderr, " : (4)");
-			error = TRUE;
+			errortype = 4;
+			error |= TRUE;
 		}
 
-		fprintf(stderr, "\033[0m\n");
+		char c;
+		
+		if (blk->flags & MB_FLAG_PAD)
+			c = '7';
+		else if (mb_is_used(blk))
+			c = '1';
+		else
+			c = '2';
+
+		if (verbose)
+			fprintf(stderr, "\033[1;3%cm   $%.8x - $%.8x : %c%c : %5d",
+					c, (uint32_t)blk, (uint32_t)blk + blk->size,
+					mb_is_first(blk) ? 'F' : '-', mb_is_last(blk) ? 'L' : '-', blk->size);
+
+		if (!mb_is_used(blk)) {
+			mb_free_t *fblk = (mb_free_t *)blk;
+
+			if (verbose)
+				fprintf(stderr, " : $%.8x $%8x", (uint32_t)fblk->prev, (uint32_t)fblk->next);
+		}
+
+		if (errortype > 0) {
+			if (verbose)
+				fprintf(stderr, " : ERR=%u", errortype);
+		}
+
+		if (verbose)
+			fprintf(stderr, "\033[0m\n");
 
 		blk = (mb_t *)((uint32_t)blk + blk->size);
 	}
 
 	float fragmentation = (free != 0) ? ((float)(largest - sizeof(mb_t)) / (float)free) * 100.0 : 0.0;
 
-	fprintf(stderr, "\033[1;36m   Size: %d, Used: %d, Free: %d\033[0m\n", list->size, used, list->fmemcnt);
-	fprintf(stderr, "\033[1;36m   Largest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, fragmentation);
-	fprintf(stderr, "\033[0;36m   Blocks: %u, free blocks: %u, used blocks: %u.\033[0m\n", list->blkcnt, list->blkcnt - list->ublkcnt, list->ublkcnt);
-	fprintf(stderr, "\033[0;36m   First free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
+	if (verbose) {
+		fprintf(stderr, "\033[1;36m   Size: %d, Used: %d, Free: %d\033[0m\n", list->size, used, list->fmemcnt);
+		fprintf(stderr, "\033[1;36m   Largest free block: %d, Fragmentation: %.2f%%\033[0m\n", largest, fragmentation);
+		fprintf(stderr, "\033[0;36m   Blocks: %u, free blocks: %u, used blocks: %u.\033[0m\n", list->blkcnt, list->blkcnt - list->ublkcnt, list->ublkcnt);
+		fprintf(stderr, "\033[0;36m   First free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
+	}
 
 	assert(list->blkcnt == used_blocks + free_blocks);
 	assert(list->ublkcnt == used_blocks);
 	assert(list->fmemcnt == free);
 	assert(first_free == list->next);
 	assert(last_free == list->prev);
-	assert(error == FALSE);
+
+	if (error && verbose)
+		fprintf(stderr, "\033[7m   Invalid!\033[0m\n");
+
+	return error;
 }/*}}}*/
 
 /**

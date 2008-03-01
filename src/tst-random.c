@@ -36,7 +36,7 @@ static struct {
 } test = { -1, 7, 0.5, 0.0, 0.0, 0.0 };
 
 bool verbose = FALSE;
-bool print_at_iter = FALSE;
+bool verify  = FALSE;
 
 /**
  * Generate two random numbers with normal distribution.
@@ -75,7 +75,7 @@ static void usage(char *progname)
 		   "  -G pbb     - pbb of malloc being replaced by realloc which will \033[4mgrow\033[0m block [default: 0.0, max: 0.5]\n"
 		   "  -S pbb     - pbb of free being replaced by realloc which will \033[4mshrink\033[0m block [default: 0.0, max: 0.5]\n"
 		   "  -A pbb     - pbb of malloc with \033[4malignment\033[0m contraint [default: 0.0, max: 0.5]\n"
-		   "  -p         - print structures of memory allocator at every iteration [default: no]\n"
+		   "  -i         - verify structures of memory allocator at each iteration [default: no]\n"
 		   "  -v         - be verbose [default: no]\n"
 		   "\n", progname);
 
@@ -109,6 +109,7 @@ struct block_class
 {
 	uint32_t min_size;
 	uint32_t max_size;
+	double   pbb;
 };
 
 typedef struct block_class block_class_t;
@@ -117,7 +118,7 @@ typedef struct block_class block_class_t;
  * Structures for allocator tester.
  */
 
-static block_class_t block_classes[MAX_BLOCK_CLASS] = { {1, 32}, {33, 32767}, {32768, 131072} };
+static block_class_t block_classes[MAX_BLOCK_CLASS] = { {1, 32, 0.6}, {33, 32767, 0.35}, {32768, 131072, 0.05} };
 static block_array_t blocks;
 static memmgr_t *mm;
 
@@ -231,8 +232,8 @@ static void *memmgr_test(void *args)
 			int32_t size, alignment;
 			void *ptr;
 
-			if (print_at_iter)
-				memmgr_print(mm);
+			if (verify)
+				memmgr_verify(mm, verbose);
 
 			pbb = drand48();
 
@@ -277,11 +278,27 @@ static void *memmgr_test(void *args)
 
 					pbb = drand48();
 
-					if (test.type == 0) {
-						double range = block_classes[2].max_size - block_classes[0].min_size;
+					uint32_t test_type = test.type;
 
-						size = (uint32_t)(range * pbb) + block_classes[0].min_size;
-					} else if (test.type == 2) {
+					if (test.type == 0) {
+						double min = 0.0, max = 0.0;
+						uint32_t i;
+
+						for (i = 0; i < MAX_BLOCK_CLASS; i++) {
+							max += block_classes[i].pbb;
+
+							if (pbb <= max)
+								break;
+
+							min = max;
+						}
+
+						pbb = (pbb - min) / block_classes[i].pbb;
+
+						test_type = i + 1;
+					}
+					
+					if (test_type == 2) {
 						double pbb2 = drand48();
 
 						gaussian(&pbb, &pbb2);
@@ -295,7 +312,7 @@ static void *memmgr_test(void *args)
 
 						size = (uint32_t)(range * fabs(pbb)) + block_classes[1].min_size;
 					} else {
-						uint32_t i = test.type - 1;
+						uint32_t i = test_type - 1;
 						double   range = block_classes[i].max_size - block_classes[i].min_size;
 
 						size = (uint32_t)(range * pbb) + block_classes[i].min_size;
@@ -329,7 +346,6 @@ static void *memmgr_test(void *args)
 
 						if (size <= delta)
 							delta = 0;
-
 
 						if (memmgr_realloc(mm, ptr, size - delta)) {
 							size -= delta;
@@ -385,11 +401,11 @@ bool strtodouble(char *str, double *numptr)
  * Abort handler.
  */
 
-void abort_handler(int signum)
+void error_handler(int signum)
 {
 	fflush(stderr);
 
-	memmgr_print(mm);
+	memmgr_verify(mm, TRUE);
 
 	fprintf(stderr, "\033[1;4;37mProgram aborted!\033[0m\n");
 }
@@ -406,7 +422,7 @@ int main(int argc, char **argv)
 
 	opterr = 0;
 
-	while ((c = getopt(argc, argv, "n:c:t:s:M:A:G:S:pv")) != -1) {
+	while ((c = getopt(argc, argv, "n:c:t:s:M:A:G:S:iv")) != -1) {
 		switch (c) {
 			case 's':
 				if (!strtoint(optarg, &seed))
@@ -466,8 +482,8 @@ int main(int argc, char **argv)
 				verbose = TRUE;
 				break;
 
-			case 'p':
-				print_at_iter = TRUE;
+			case 'i':
+				verify = TRUE;
 				break;
 
 			default:
@@ -482,7 +498,7 @@ int main(int argc, char **argv)
 	/* initialize catching abort() signal */
 	struct sigaction new_action;
 
-	new_action.sa_handler = abort_handler;
+	new_action.sa_handler = error_handler;
 	sigemptyset(&new_action.sa_mask);
 	sigaction(SIGABRT, &new_action, NULL);
 
@@ -516,7 +532,7 @@ int main(int argc, char **argv)
 		memmgr_test(NULL);
 	}
 
-	memmgr_print(mm);
+	memmgr_verify(mm, TRUE);
 
 	return 0;
 }

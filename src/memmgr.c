@@ -163,7 +163,44 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
 			break;
 	}
 
-	/* fprintf(stderr, "pagecnt = %u, freecnt = %u\n", self->areamgr.pagecnt, self->areamgr.freecnt); */
+	if (self->areamgr.freecnt > 64) {
+		int32_t n = AREAMGR_LIST_COUNT - 1;
+
+		while ((n >= 0) && (self->areamgr.freecnt > 64)) {
+			arealst_t *arealst = &self->areamgr.list[n];
+
+			while (arealst->areacnt > 0) {
+				arealst_rdlock(&self->areamgr.global);
+				arealst_wrlock(arealst);
+
+				area_t *area = arealst->local.next;
+
+				if (!area_is_guard(area)) {
+					arealst_remove_area(arealst, area, DONTLOCK);
+
+					area->used = TRUE;
+					area_touch(area);
+
+					self->areamgr.freecnt -= SIZE_IN_PAGES(area->size);
+				} else {
+					area = NULL;
+				}
+
+				arealst_unlock(arealst);
+				arealst_unlock(&self->areamgr.global);
+
+				if (area != NULL) {
+					areamgr_remove_area(&self->areamgr, area);
+
+					assert(area_delete(area)); 
+				} else
+					break;
+			}
+
+
+			n--;
+		}
+	}
 
 	return res;
 }/*}}}*/
@@ -172,52 +209,68 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
  * Print memory manager structures.
  */
 
-void memmgr_print(memmgr_t *memmgr)/*{{{*/
+void memmgr_verify(memmgr_t *memmgr, bool verbose)/*{{{*/
 {
+	bool error = FALSE;
+
 	arealst_rdlock(&memmgr->areamgr.global);
 
-	fprintf(stderr, "\033[1;37mPrinting memory manager structures:\033[0m\n");
+	if (verbose) {
+		fprintf(stderr, "\033[1;37mPrinting memory manager structures:\033[0m\n");
 
-	fprintf(stderr, "\033[1;35m areamgr at $%.8x [%d areas, %u pages free]:\033[0m\n",
-			(uint32_t)&memmgr->areamgr, memmgr->areamgr.global.areacnt, memmgr->areamgr.freecnt);
+		fprintf(stderr, "\033[1;35m areamgr at $%.8x [%d areas, %d / %d pages (%dkB / %dkB bytes) free]:\033[0m\n",
+				(uint32_t)&memmgr->areamgr, memmgr->areamgr.global.areacnt,
+				memmgr->areamgr.freecnt, memmgr->areamgr.pagecnt,
+				memmgr->areamgr.freecnt * PAGE_SIZE / 1024, memmgr->areamgr.pagecnt * PAGE_SIZE / 1024);
+	}
 
 	area_t *area = (area_t *)&memmgr->areamgr.global;
 
-	bool error = FALSE;
 	uint32_t areacnt = 1;
-	uint32_t freepages = 0;
+	uint32_t freecnt = 0;
+	uint32_t pagecnt = 0;
 
 	while (TRUE) {
 		area_valid(area);
 
 		if (!area->guard) {
-			fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %8d : %d\033[0m\n", area->used ? '1' : '2',
-					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size, area->manager);
+			if (verbose)
+				fprintf(stderr, "\033[1;3%cm  $%.8x - $%.8x : %8d : %d\033[0m\n", area->used ? '1' : '2',
+						(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size, area->manager);
+
 			if (!area->used)
-				freepages += SIZE_IN_PAGES(area->size);
+				freecnt += SIZE_IN_PAGES(area->size);
+
+			pagecnt += SIZE_IN_PAGES(area->size);
 		} else {
-			fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s\033[0m\n", (uint32_t)area, "", "guard");
+			if (verbose)
+				fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s\033[0m\n", (uint32_t)area, "", "guard");
 		}
 
 		if (area->global.next->global_guard)
 			break;
 
-		if (!area->global_guard && (area >= area->global.next))
-			error = TRUE;
+		error |= (!area->global_guard && (area >= area->global.next));
 
 		area = area->global.next;
 
 		areacnt++;
 	}
 
-	assert(!error);
-	assert(areacnt == memmgr->areamgr.global.areacnt);
-	assert(freepages == memmgr->areamgr.freecnt);
+	error |= (areacnt != memmgr->areamgr.global.areacnt);
+	error |= (freecnt != memmgr->areamgr.freecnt);
+	error |= (pagecnt != memmgr->areamgr.pagecnt);
 
 	arealst_unlock(&memmgr->areamgr.global);
 
-	mmapmgr_print(&memmgr->percpumgr[0].mmapmgr);
-	blkmgr_print(&memmgr->percpumgr[0].blkmgr);
-	eqsbmgr_print(&memmgr->percpumgr[0].eqsbmgr);
+	if (error && verbose)
+		fprintf(stderr, "\033[7m  Invalid!\033[0m\n");
+
+	error |= mmapmgr_verify(&memmgr->percpumgr[0].mmapmgr, verbose);
+	error |= blkmgr_verify(&memmgr->percpumgr[0].blkmgr, verbose);
+	error |= eqsbmgr_verify(&memmgr->percpumgr[0].eqsbmgr, verbose);
+
+	if (error)
+		PANIC("Verification failed!");
 }/*}}}*/
 

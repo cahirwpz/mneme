@@ -238,47 +238,53 @@ bool blkmgr_free(blkmgr_t *blkmgr, void *memory)/*{{{*/
  * Print memory areas contents in given memory manager.
  */
 
-void blkmgr_print(blkmgr_t *blkmgr)/*{{{*/
+bool blkmgr_verify(blkmgr_t *blkmgr, bool verbose)/*{{{*/
 {
+	bool error = FALSE;
+
 	arealst_rdlock(&blkmgr->blklst);
 
 	area_t *area = (area_t *)&blkmgr->blklst;
 
-	fprintf(stderr, "\033[1;36m blkmgr at $%.8x [%d areas]:\033[0m\n",
-			(uint32_t)blkmgr, blkmgr->blklst.areacnt);
+	if (verbose)
+		fprintf(stderr, "\033[1;36m blkmgr at $%.8x [%d areas]:\033[0m\n",
+				(uint32_t)blkmgr, blkmgr->blklst.areacnt);
 
-	bool error = FALSE;
 	uint32_t areacnt = 0;
 
 	while (TRUE) {
 		area_valid(area);
 
 		if (!area_is_guard(area)) {
-			fprintf(stderr, "\033[1;31m  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
-					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
-					(uint32_t)area->local.prev, (uint32_t)area->local.next);
+			if (verbose)
+				fprintf(stderr, "\033[1;31m  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
+						(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
+						(uint32_t)area->local.prev, (uint32_t)area->local.next);
 
-			mb_print(mb_list_from_area(area));
+			error |= mb_verify(mb_list_from_area(area), verbose);
+		} else {
+			if (verbose)
+				fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",
+						(uint32_t)area, "", "guard", (uint32_t)area->local.prev, (uint32_t)area->local.next);
 		}
-		else
-			fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",
-					(uint32_t)area, "", "guard", (uint32_t)area->local.prev, (uint32_t)area->local.next);
 
 		if (area_is_guard(area->local.next))
 			break;
 
-		if (!area_is_guard(area) && (area >= area->local.next))
-			error = TRUE;
+		error |= (!area_is_guard(area) && (area >= area->local.next));
 
 		area = area->local.next;
 
 		areacnt++;
 	}
 
-	assert(!error);
+	error |= (areacnt != blkmgr->blklst.areacnt);
 
-	assert(areacnt == blkmgr->blklst.areacnt);
+	if (error && verbose)
+		fprintf(stderr, "\033[7m  Invalid!\033[0m\n");
 
 	arealst_unlock(&blkmgr->blklst);
+
+	return error;
 }/*}}}*/
 

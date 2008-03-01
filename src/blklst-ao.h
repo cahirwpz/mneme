@@ -135,7 +135,7 @@ static inline void mb_valid_internal(mb_t *blk)
 }
 
 /* Function prototypes */
-void mb_print(mb_list_t *list);
+bool mb_verify(mb_list_t *list, bool verbose);
 void mb_init(mb_list_t *list, uint32_t size);
 void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last);
 void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment);

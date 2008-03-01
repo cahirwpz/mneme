@@ -32,6 +32,6 @@ memmgr_t *memmgr_init();
 void *memmgr_alloc(memmgr_t *memmgr, uint32_t size, uint32_t alignment);
 bool memmgr_realloc(memmgr_t *memmgr, void *memory, uint32_t new_size);
 bool memmgr_free(memmgr_t *memmgr, void *memory);
-void memmgr_print(memmgr_t *memmgr);
+void memmgr_verify(memmgr_t *memmgr, bool verbose);
 
 #endif

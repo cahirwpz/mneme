@@ -4,14 +4,24 @@ use strict;
 use warnings;
 
 my $i = 1;
-my $t = 10000;
+my $t = 100000;
+my $n = 0;
 
 while ($i <= 1000) { 
-	print "tst-random $i $t\n";
+	my $cmd = "tst-random -s $i -c $t";
 
-	system("./tst-random -s $i -c $t -n 5 -t 2 2>/dev/null");
+	system("./$cmd -n 1 -t 0 2>/dev/null >/dev/null");
 
-	die if ($? != 0);
+	print "$cmd ... ";
+
+	if ($? != 0) {
+		print "failed!\n";
+		$n++;
+	} else {
+		print "passed.\n";
+	}
+
+	die if ($n > 5);
 
 	$i += 1;
 }

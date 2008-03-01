@@ -174,45 +174,51 @@ bool mmapmgr_free(mmapmgr_t *mmapmgr, void *memory)/*{{{*/
  * @param mmapmgr
  */
 
-void mmapmgr_print(mmapmgr_t *mmapmgr)/*{{{*/
+bool mmapmgr_verify(mmapmgr_t *mmapmgr, bool verbose)/*{{{*/
 {
+	bool error = FALSE;
+
 	arealst_rdlock(&mmapmgr->blklst);
 
-	fprintf(stderr, "\033[1;36m mmapmgr at $%.8x [%d areas]:\033[0m\n",
-			(uint32_t)mmapmgr, mmapmgr->blklst.areacnt);
+	if (verbose)
+		fprintf(stderr, "\033[1;36m mmapmgr at $%.8x [%d areas]:\033[0m\n",
+				(uint32_t)mmapmgr, mmapmgr->blklst.areacnt);
 
 	area_t *blk = (area_t *)&mmapmgr->blklst;
 
-	bool error = FALSE;
 	uint32_t blkcnt = 0;
 
 	while (TRUE) {
 		area_valid(blk);
 
-		if (!area_is_guard(blk))
-			fprintf(stderr, "\033[1;3%dm  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
-					(blk->manager == AREA_MGR_MMAPMGR),
-					(uint32_t)area_begining(blk), (uint32_t)area_end(blk), blk->size,
-					(uint32_t)blk->local.prev, (uint32_t)blk->local.next);
-		else
-			fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",
-					(uint32_t)blk, "", "guard", (uint32_t)blk->local.prev, (uint32_t)blk->local.next);
+		if (verbose) {
+			if (!area_is_guard(blk))
+				fprintf(stderr, "\033[1;3%dm  $%.8x - $%.8x: %8d : $%.8x : $%.8x\033[0m\n",
+						(blk->manager == AREA_MGR_MMAPMGR),
+						(uint32_t)area_begining(blk), (uint32_t)area_end(blk), blk->size,
+						(uint32_t)blk->local.prev, (uint32_t)blk->local.next);
+			else
+				fprintf(stderr, "\033[1;33m  $%.8x %11s: %8s : $%.8x : $%.8x\033[0m\n",
+						(uint32_t)blk, "", "guard", (uint32_t)blk->local.prev, (uint32_t)blk->local.next);
+		}
 
 		if (area_is_guard(blk->local.next))
 			break;
 
-		if (!area_is_guard(blk) && (blk >= blk->local.next))
-			error = TRUE;
+		error |= (!area_is_guard(blk) && (blk >= blk->local.next));
 
 		blk = blk->local.next;
 
 		blkcnt++;
 	}
 
-	assert(!error);
+	error |= (blkcnt != mmapmgr->blklst.areacnt);
 
-	assert(blkcnt == mmapmgr->blklst.areacnt);
+	if (error && verbose)
+		fprintf(stderr, "\033[7m  Invalid!\033[0m\n");
 
 	arealst_unlock(&mmapmgr->blklst);
+
+	return error;
 }/*}}}*/
 

@@ -72,6 +72,7 @@ struct sb_mgr
 {
 	sb_list_t nonempty[4];		/* 0: 8B; 1: 16B; 2: 24B; 3: 32B */
 	sb_list_t groups[4];		/* 0: 1 SBs; 1: 2 SBs; 2: 3SBs; 3: 4SBs */
+	sb_list_t full;
 
 	uint16_t free;
 	uint16_t all;
@@ -79,7 +80,7 @@ struct sb_mgr
 
 typedef struct sb_mgr sb_mgr_t;
 
-static void sb_mgr_print(sb_mgr_t *self);
+static bool sb_mgr_verify(sb_mgr_t *self, bool verbose);
 
 /* Declaration of superblocks' list */
 
@@ -334,6 +335,8 @@ static void sb_mgr_init(sb_mgr_t *self)/*{{{*/
 		sb_list_init(&self->groups[i]);
 	}
 
+	sb_list_init(&self->full);
+
 	self->free = 0;
 	self->all  = 0;
 }/*}}}*/
@@ -491,53 +494,82 @@ static void sb_mgr_add(sb_mgr_t *self, void *memory, uint16_t superblocks)/*{{{*
  * Print all superblocks in this SBs' manager.
  */
 
-static void sb_mgr_print(sb_mgr_t *self)/*{{{*/
+static bool sb_mgr_verify(sb_mgr_t *self, bool verbose)/*{{{*/
 {
-	fprintf(stderr, "\033[1;34m   sbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
-			(uint32_t)self, self->all, self->free);
+	uint32_t i;
+	bool error = FALSE;
 
-	sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (uint32_t)(self->all - 1) * SB_SIZE);
+	if (verbose) {
+		fprintf(stderr, "\033[1;34m   sbmgr at $%.8x [all: %u; free: %u]\033[0m\n",
+				(uint32_t)self, self->all, self->free);
 
-	uint32_t i, j;
+		sb_t *base = (sb_t *)((uint32_t)sb_get_from_address(self) - (uint32_t)(self->all - 1) * SB_SIZE);
 
-	for (i = 0; i < self->all; i++) {
-		sb_t *sb = (sb_t *)((uint32_t)base + SB_SIZE * i);
+		for (i = 0; i < self->all; i++) {
+			sb_t *sb = (sb_t *)((uint32_t)base + SB_SIZE * i);
 
-		if (sb->fblkcnt == 127) {
-			fprintf(stderr, "\033[1;32m   $%.8x: %4d\033[0m\n",
-					(uint32_t)sb, (sb->size + 1) << 3);
-		} else {
-			fprintf(stderr, "\033[1;31m   $%.8x: %4d : %4d : %4d : ",
-					(uint32_t)sb, (sb->size + 1) << 3, (sb->blksize + 1) << 3, sb->fblkcnt);
+			if (sb->fblkcnt == 127) {
+				fprintf(stderr, "\033[1;32m   $%.8x: %4d\033[0m\n",
+						(uint32_t)sb, (sb->size + 1) << 3);
+			} else {
+				fprintf(stderr, "\033[1;31m   $%.8x: %4d : %4d : %4d : ",
+						(uint32_t)sb, (sb->size + 1) << 3, (sb->blksize + 1) << 3, sb->fblkcnt);
 
-			uint32_t *data = (uint32_t *)sb->bitmap;
+				uint32_t *data = (uint32_t *)sb->bitmap;
+				uint32_t j;
 
-			for (j = 0; j < sb_get_blocks(sb); j += 32)
-				fprintf(stderr, "%.8x ", data[j >> 5]);
+				for (j = 0; j < sb_get_blocks(sb); j += 32)
+					fprintf(stderr, "%.8x ", data[j >> 5]);
 
-			fprintf(stderr, "\033[0m\n");
+				fprintf(stderr, "\033[0m\n");
+			}
 		}
 	}
+
+	/* check amount of used blocks */
+	uint32_t usedcnt = self->full.sbcnt;
 	
-	{
+	if (verbose)
 		fprintf(stderr, "\033[0;35m   nonempty : ");
 
-		for (i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++) { 
+		if (verbose)
 			fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->nonempty[i].first,
 					(uint32_t)self->nonempty[i].last, self->nonempty[i].sbcnt);
 
-		fprintf(stderr, "\033[0m\n");
+		usedcnt += self->nonempty[i].sbcnt;
 	}
 
-	{
+	if (verbose)
+		fprintf(stderr, "\033[0m\n");
+
+	/* check amount of free blocks */
+	uint32_t freecnt = 0;
+
+	if (verbose)
 		fprintf(stderr, "\033[0;35m   groups   : ");
 
-		for (i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++) {
+		if (verbose)
 			fprintf(stderr, "($%.8x:$%.8x:%u)", (uint32_t)self->groups[i].first,
 					(uint32_t)self->groups[i].last, self->groups[i].sbcnt);
 
-		fprintf(stderr, "\033[0m\n");
+		freecnt += self->groups[i].sbcnt * (i + 1);
 	}
+
+	if (verbose) {
+		fprintf(stderr, "\033[0m\n");
+
+		fprintf(stderr, "\033[0;35m   full     : ($%.8x:$%.8x:%u)\033[0m\n", (uint32_t)self->full.first,
+				(uint32_t)self->full.last, self->full.sbcnt);
+
+		fprintf(stderr, "\033[0;35m   free: %d, used: %d, all: %d\033[0m\n", freecnt, usedcnt, freecnt + usedcnt);
+	}
+
+	error |= (freecnt != self->free);
+	error |= (usedcnt != self->all - self->free);
+
+	return error;
 }/*}}}*/
 
 /**
@@ -582,9 +614,13 @@ sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)/*{{{*/
 		while (blocks > old_blocks)
 			sb_free(oldsb, --blocks);
 
-		if (freeblocks == 0)
+		if (freeblocks == 0) {
+			sb_list_remove(&mgr->full, oldsb);
 			sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb);
+		}
 	}
+
+	DEBUG("Expanded.\n");
 
 	return mgr;
 }/*}}}*/
@@ -706,18 +742,17 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 				}
 
 				if (area_end(area) == area_begining(area->local.next)) {
-					DEBUG("Area %.8x should be merged with area %.8x\n", (uint32_t)area, (uint32_t)area->local.next);
+					DEBUG("Area %.8x should be merged with area %.8x\n",
+						  (uint32_t)area_begining(area), (uint32_t)area_begining(area->local.next));
 
 					sb_mgr_t *oldmgr = mgr;
-					sb_mgr_t *newmgr = NULL;
-
-					arealst_remove_area(&self->arealst, area->local.next, DONTLOCK);
-					area = arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);
-
-					newmgr = sb_mgr_from_area(area);
+					sb_mgr_t *newmgr = sb_mgr_from_area(area->local.next);
 
 					newmgr->free += oldmgr->free;
 					newmgr->all  += oldmgr->all;
+
+					arealst_remove_area(&self->arealst, area, DONTLOCK);
+					area = arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);
 
 					uint32_t i;
 
@@ -726,26 +761,13 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 						sb_list_join(&newmgr->nonempty[i], &oldmgr->nonempty[i]);
 					}
 
+					sb_list_join(&newmgr->full, &oldmgr->full);
+
 					sb_t *oldsb  = sb_get_from_address(mgr);
-
-					mgr = newmgr;
-
-					/* free some unused blocks */
-					uint32_t old_blocks = sb_get_blocks(oldsb);
 
 					oldsb->size = (SB_SIZE >> 3) - 1;
 
-					uint32_t blocks = sb_get_blocks(oldsb);
-
-					DEBUG("Freeing %u unused blocks in SB at $%.8x\n", blocks - old_blocks, (uint32_t)oldsb);
-
-					uint32_t freeblocks = oldsb->fblkcnt;
-
-					while (blocks > old_blocks)
-						sb_free(oldsb, --blocks);
-
-					if (freeblocks == 0)
-						sb_list_push(&mgr->nonempty[oldsb->blksize], oldsb);
+					mgr = newmgr;
 				}
 
 				sb = sb_mgr_alloc(mgr, blksize);
@@ -787,9 +809,10 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 		if (index >= 0)
 			memory = (void *)((uint32_t)sb_get_data(sb) + index * ((blksize + 1) << 3));
 
-		if (sb->fblkcnt == 0)
+		if (sb->fblkcnt == 0) {
 			sb_list_remove(&mgr->nonempty[sb->blksize], sb);
-
+			sb_list_push(&mgr->full, sb);
+		}
 	}
 
 	arealst_unlock(&self->arealst);
@@ -807,6 +830,8 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 {
+	bool print_at_exit = FALSE;
+
 	DEBUG("\033[37;1mRequested to free block at $%.8x.\033[0m\n", (uint32_t)memory);
 
 	sb_mgr_t *mgr = NULL;
@@ -840,56 +865,156 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 			sb_mgr_free(mgr, sb);
 		}
 
-		if (sb->fblkcnt == 1)
+		if (sb->fblkcnt == 1) { 
+			sb_list_remove(&mgr->full, sb);
 			sb_list_push(&mgr->nonempty[sb->blksize], sb);
+		}
 
-		/* Check if there are no pages to free */
-		if (mgr->groups[3].first) {
-			DEBUG("freecnt = %d, pages free = %d\n", mgr->free, mgr->groups[3].sbcnt);
+		if (mgr->all == mgr->free) {
+			arealst_remove_area(&self->arealst, area, DONTLOCK);
+			areamgr_free_area(self->areamgr, area);
+		} else {
+			/* Check if there are no pages to free */
+			if (mgr->groups[3].first) {
+				if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
+					sb_t *to_free = (sb_t *)area_begining(area);
 
-			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
-				sb_t *tmp = (sb_t *)area_begining(area);
+					DEBUG("Try to remove from the begining of area. Check starting from superblock at $%.8x.\n", (uint32_t)to_free);
 
-				DEBUG("Try to remove from the begining of area. Check superblock at $%.8x.\n", (uint32_t)tmp);
+					uint32_t pages = 0;
 
-				if ((tmp->fblkcnt == 127) && (tmp->blksize == 3)) {
-					sb_list_remove(&mgr->groups[3], tmp);
-
-					areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, LEFT);
-
-					mgr->free -= 4;
-					mgr->all  -= 4;
-
-					if (verbose) sb_mgr_print(mgr);
-				}
-			}
-
-			if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
-				sb_t *to_free = (sb_t *)((uint32_t)area_end(area) - PAGE_SIZE);
-
-				DEBUG("Try to remove from the end of area. Check superblock at $%.8x.\n", (uint32_t)to_free);
-
-				if ((to_free->fblkcnt == 127) && (to_free->blksize == 3)) {
-					sb_mgr_t *new_mgr    = (sb_mgr_t *)((uint32_t)to_free - (sizeof(area_t) + sizeof(sb_mgr_t)));
-					sb_t     *new_lastsb = sb_get_from_address(new_mgr);
-					sb_t     *lastsb	 = sb_get_from_address(mgr);
-
-					if (new_lastsb->fblkcnt == 127) {
-						/* check if there is space fo area structure and SBs' manager structure */
+					while ((to_free->fblkcnt == 127) && (to_free->blksize == 3)) {
 						sb_list_remove(&mgr->groups[3], to_free);
+						pages++;
+
+						to_free = (sb_t *)((uint32_t)to_free + PAGE_SIZE);
+					}
+
+					if (pages > 0) {
+						DEBUG("Will remove %u superblocks from the begining.\n", pages * 4);
+
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - pages, LEFT);
+
+						mgr->free -= 4 * pages;
+						mgr->all  -= 4 * pages;
+					}
+				}
+
+				if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
+					sb_t *to_free = (sb_t *)((uint32_t)area_end(area) - PAGE_SIZE);
+
+					DEBUG("Try to remove from the end of area. Check starting from superblock at $%.8x.\n", (uint32_t)to_free);
+
+					uint32_t pages = 0;
+
+					while ((to_free->fblkcnt == 127) && (to_free->blksize == 3)) {
+						sb_t *prev = (sb_t *)((uint32_t)to_free - SB_SIZE);
+
+						if (prev->fblkcnt != 127)
+							break;
+
+						sb_list_remove(&mgr->groups[3], to_free);
+						pages++;
+
+						to_free = (sb_t *)((uint32_t)to_free - PAGE_SIZE);
+					}
+
+					if (pages > 0) {
+						DEBUG("Will remove %u superblocks from the end.\n", pages * 4);
+
+						sb_mgr_t *new_mgr    = (sb_mgr_t *)((uint32_t)to_free + PAGE_SIZE - (sizeof(area_t) + sizeof(sb_mgr_t)));
+						sb_t     *new_lastsb = sb_get_from_address(new_mgr);
+						sb_t     *lastsb	 = sb_get_from_address(mgr);
 
 						memcpy(new_mgr, mgr, sizeof(sb_mgr_t));
 
 						mgr = new_mgr;
 
-						mgr->free -= 4;
-						mgr->all  -= 4;
+						mgr->free -= 4 * pages;
+						mgr->all  -= 4 * pages;
 
 						new_lastsb->size = lastsb->size;
 
-						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - 1, RIGHT);
+						areamgr_shrink_area(self->areamgr, &area, SIZE_IN_PAGES(area->size) - pages, RIGHT);
+					}
+				}
 
-						if (verbose) sb_mgr_print(mgr);
+				if ((mgr->free > 4) && (mgr->groups[3].sbcnt > 0)) {
+					sb_t *to_split = sb_list_pop(&mgr->groups[3]);
+
+					if (to_split != NULL) {
+						sb_t *prev = (sb_t *)((uint32_t)to_split - SB_SIZE);
+
+						if (prev->fblkcnt == 127) {
+							area_t   *newarea = NULL;
+							sb_mgr_t *newmgr  = NULL;
+
+							fprintf(stderr, "prev: $%.8x to_split: $%.8x\n", (uint32_t)prev, (uint32_t)to_split);
+
+							arealst_split_area(&self->areamgr->global, &area, &newarea, SIZE_IN_PAGES((uint32_t)to_split - (uint32_t)area_begining(area)), LOCK);
+							areamgr_shrink_area(self->areamgr, &newarea, SIZE_IN_PAGES(newarea->size) - 1, LEFT);
+							arealst_insert_area_by_addr(&self->arealst, newarea, DONTLOCK);
+
+							mgr    = sb_mgr_from_area(area);
+							newmgr = sb_mgr_from_area(newarea);
+
+							sb_mgr_init(mgr);
+
+							mgr->all = area->size / SB_SIZE;
+							newmgr->all  = newarea->size / SB_SIZE;
+							newmgr->free -= 4;
+
+							prev->size = ((SB_SIZE - sizeof(area_t) - sizeof(sb_mgr_t)) >> 3) - 1;
+
+							sb_t *sb, *tmp;
+
+							for (i = 0; i < 4; i++) {
+								sb = newmgr->nonempty[i].first;
+
+								while (sb != NULL) {
+									tmp = sb;
+
+									sb = sb_get_next(sb);
+
+									if (tmp <= sb_get_from_address(mgr)) {
+										sb_list_remove(&newmgr->nonempty[i], tmp);
+										sb_list_push(&mgr->nonempty[i], tmp);
+									}
+								}
+
+								sb = newmgr->groups[i].first;
+
+								while (sb != NULL) {
+									tmp = sb;
+
+									sb = sb_get_next(sb);
+
+									if (tmp <= sb_get_from_address(mgr)) {
+										sb_list_remove(&newmgr->groups[i], tmp);
+										sb_list_push(&mgr->groups[i], tmp);
+										newmgr->free -= i + 1;
+										mgr->free    += i + 1;
+									}
+								}
+							}
+
+							sb = newmgr->full.first;
+
+							while (sb != NULL) {
+								tmp = sb;
+
+								sb = sb_get_next(sb);
+
+								if (tmp <= sb_get_from_address(mgr)) {
+									sb_list_remove(&newmgr->full, tmp);
+									sb_list_push(&mgr->full, tmp);
+								}
+							}
+
+							print_at_exit = TRUE;
+						} else {
+							sb_list_push(&mgr->groups[3], to_split);
+						}
 					}
 				}
 			}
@@ -897,6 +1022,9 @@ bool eqsbmgr_free(eqsbmgr_t *self, void *memory)/*{{{*/
 	}
 
 	arealst_unlock(&self->arealst);
+
+	if (print_at_exit)
+		eqsbmgr_verify(self, TRUE);
 
 	return (mgr != NULL);
 }/*}}}*/
@@ -952,14 +1080,15 @@ bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
  * @param self		equally-sized bloks' manager structure
  */
 
-void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
+bool eqsbmgr_verify(eqsbmgr_t *self, bool verbose)/*{{{*/
 {
 	arealst_rdlock(&self->arealst);
 
 	area_t *area = (area_t *)&self->arealst;
 
-	fprintf(stderr, "\033[1;36m eqsbmgr at $%.8x [%d areas]:\033[0m\n",
-			(uint32_t)self, self->arealst.areacnt);
+	if (verbose)
+		fprintf(stderr, "\033[1;36m eqsbmgr at $%.8x [%d areas]:\033[0m\n",
+				(uint32_t)self, self->arealst.areacnt);
 
 	bool error = FALSE;
 	uint32_t areacnt = 0;
@@ -968,19 +1097,21 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 		area_valid(area);
 
 		if (!area_is_guard(area)) {
-			fprintf(stderr, "\033[1;31m  $%.8x - $%.8x : %8d : $%.8x : $%.8x\033[0m\n",
-					(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
-					(uint32_t)area->local.prev, (uint32_t)area->local.next);
+			if (verbose)
+				fprintf(stderr, "\033[1;31m  $%.8x - $%.8x : %8d : $%.8x : $%.8x\033[0m\n",
+						(uint32_t)area_begining(area), (uint32_t)area_end(area), area->size,
+						(uint32_t)area->local.prev, (uint32_t)area->local.next);
 
 			sb_mgr_t *mgr = sb_mgr_from_area(area);
 
-			sb_mgr_print(mgr);
+			error |= sb_mgr_verify(mgr, verbose);
 
 			assert(area->manager == AREA_MGR_EQSBMGR);
+		} else {
+			if (verbose)
+				fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s : $%.8x : $%.8x\033[0m\n",
+						(uint32_t)area, "", "guard", (uint32_t)area->local.prev, (uint32_t)area->local.next);
 		}
-		else
-			fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s : $%.8x : $%.8x\033[0m\n",
-					(uint32_t)area, "", "guard", (uint32_t)area->local.prev, (uint32_t)area->local.next);
 
 		if (area_is_guard(area->local.next))
 			break;
@@ -993,10 +1124,13 @@ void eqsbmgr_print(eqsbmgr_t *self)/*{{{*/
 		areacnt++;
 	}
 
-	assert(!error);
+	error |= (areacnt != self->arealst.areacnt);
 
-	assert(areacnt == self->arealst.areacnt);
+	if (error && verbose)
+		fprintf(stderr, "\033[7m  Invalid!\033[0m\n");
 
 	arealst_unlock(&self->arealst);
+
+	return error;
 }/*}}}*/
 

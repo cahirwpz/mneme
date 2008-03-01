@@ -695,7 +695,7 @@ areamgr_t *areamgr_init(area_t *area)/*{{{*/
 	areamgr->global.areacnt = 1;
 	area_touch((area_t *)&areamgr->global);
 
-	areamgr->pagecnt = SIZE_IN_PAGES(area->size);
+	areamgr->pagecnt = 0; /* SIZE_IN_PAGES(area->size); */
 
 	DEBUG("Created area manager at $%.8x\n", (uint32_t)areamgr);
 
@@ -880,8 +880,10 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 	} else {
 		DEBUG("Area not found - will create one!\n");
 
-		if ((area = area_new(PM_MMAP, pages)))
+		if ((area = area_new(PM_MMAP, pages))) {
 			arealst_global_add_area(&areamgr->global, area, LOCK);
+			areamgr->pagecnt += SIZE_IN_PAGES(area->size);
+		}
 	}
 
 	return area;
@@ -904,6 +906,7 @@ bool areamgr_prealloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 			arealst_global_add_area(&areamgr->global, newarea, DONTLOCK);
 
 		areamgr->freecnt += SIZE_IN_PAGES(newarea->size);
+		areamgr->pagecnt += SIZE_IN_PAGES(newarea->size);
 		newarea->used = FALSE;
 		area_touch(newarea);
 	}
