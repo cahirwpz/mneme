@@ -47,8 +47,8 @@ clean:
 	@rm -vf cscope.out tags
 
 lines:
-	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*(list0|splay0).*/d' | xargs cat | wc
-	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*(list0|splay0).*/d' | xargs cat | sed '/^$$/d' | wc
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*list0.*/d' | xargs cat | wc
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(c|h)|Makefile)" | sed -r '/.*list0.*/d' | xargs cat | sed '/^$$/d' | wc
 
 cscope.out: $(wildcard *.c *.h)
 	cscope -b $^
