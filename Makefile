@@ -6,7 +6,7 @@ all:		mgr.pdf
 %.pdf: %.eps
 	epstopdf $<
 
-PDFS	=	stronicowanie.pdf linux-layout.pdf heapblkman.pdf mmapman-ao.pdf blkman.pdf pageman.pdf frag-zew.pdf
+PDFS	=	stronicowanie.pdf linux-layout.pdf heapblkman.pdf mmapman-ao.pdf blkman.pdf pageman.pdf frag-zew.pdf schemat.pdf
 
 all:	mgr.pdf
 
