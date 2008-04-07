@@ -31,13 +31,13 @@ area_t *area_new(pm_type_t type, uint32_t pages)/*{{{*/
 
 	switch (type) {
 		case PM_SBRK:
-	 		begining = pm_sbrk_alloc(pages);
+	 		begining = pm_sbrk_alloc(NULL, pages);
 			break;
 		case PM_MMAP:
-	 		begining = pm_mmap_alloc(pages);
+	 		begining = pm_mmap_alloc(NULL, pages);
 			break;
 		case PM_SHM:
-			begining = pm_shm_alloc(pages);
+			begining = pm_shm_alloc(NULL, pages);
 			break;
 	}
 

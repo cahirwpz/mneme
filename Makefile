@@ -18,7 +18,7 @@ mgr.pdf: $(PDFS) mgr.tex
 mgr.toc: mgr.aux
 	pdflatex mgr.tex
 
-mgr.bbl: mgr.tex mgr.bib
+mgr.bbl: mgr.bib mgr.tex
 	bibtex mgr
 	pdflatex mgr.tex
 
@@ -48,7 +48,7 @@ comments:
 
 clean:
 	rm -f mgr.{aux,bbl,blg,log,ps,eps,dvi,pdf,toc,out}
-	rm -f {linux-layout,stronicowanie,heapblkman,blkman,mmapman-ao,pageman,frag-zew}.{pdf,eps}
+	rm -f {linux-layout,stronicowanie,heapblkman,blkman,mmapman-ao,pageman,frag-zew,schemat}.{pdf,eps}
 	rm -f *~ *.tmp
 
 .PHONY: cite

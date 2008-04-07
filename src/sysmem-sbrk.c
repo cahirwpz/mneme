@@ -18,7 +18,7 @@ void pm_sbrk_init()
 	DEBUG("segment end: $%.8x\n", (uint32_t)sbrk(0));
 }
 
-void *pm_sbrk_alloc(uint32_t n)
+void *pm_sbrk_alloc(void *hint, uint32_t n)
 {
 	DEBUG("segment end: $%.8x\n", (uint32_t)sbrk(0));
 

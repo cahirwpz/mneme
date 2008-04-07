@@ -1695,7 +1695,7 @@ trudności, których przyczyny opisano poniżej.
 
 Ponieważ kod powinien być portowalny, a jednocześnie dawać dużą
 kontrolę nad maszyną, implementacja autora jest napisana w języku \verb+C+.
-Niestety jest to język powszechnie uważany za niebezpieczny i wymagający
+Niestety jest to język powszechnie uważany za mało bezpieczny i wymagający
 bardzo defensywnej strategii pisania kodu. Dlatego w źródłach zostało
 zaszyte mnóstwo mechanizmów sprawdzających temporalne stany struktur
 menedżera pamięci.
@@ -2066,48 +2066,216 @@ wywoływać tylko, jeśli \texttt{mcheck} został prawidłowo zainicjowany.
 
 \newpage
 
-\subsection{Menedżer stron --- \texttt{AREAMGR}}
+\subsection{Menedżer stron --- \texttt{SYSMEM}}
 
-Menedżer stron udostępnia zarządcom niższego poziomu abstrakcję nad pobieraniem
-i zwalnianiem stron pamięci. Utrzymuje globalną listę obszarów.
+Zarządca stron jest interfejsem najbliższym systemowi operacyjnemu. Służy do
+przydzielania stron na użytek menedżera obszarów i zwalniania niepotrzebnych
+zasobów. Moduł ten bezpośrednio korzysta z wywołań systemu operacyjnego.
+Implementacja autora składa się z trzech części. Każda z nich wykorzystuje inny
+mechanizm komunikacji z jądrem systemu. 
 
-Oczywiście, nie można w nieskończoność kumulować nieużyków --- musi istnieć
-jakieś zdarzenie generujące ich oddawanie do systemu. Takim wyzwalaczem może
-być przekroczenie pewnej sumarycznej objętości nieużywanych stron np.: $2$
-\verb+MiB+, albo próba rezerwacji dużego spójnego obszaru pamięci np.: powyżej
-$64$ stron. Warto nadmienić, że zarządzanie stronami w systemie operacyjnym ma
-istotną przewagę nad analogicznym zadaniem w przestrzeni użytkownika. W
-szczególności, jądro systemu może z wielu nieprzylegających do siebie stron
-utworzyć jeden spójny obszar --- o ile proces ma wystarczająco
-niepofragmentowaną przestrzeń adresową.
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototypy funkcji menedżera stron ($X \in \{sbrk, mmap, shm\}$).}]
+void pm_X_init();
+void *pm_X_alloc(void *hint, uint32_t n);
+bool pm_X_free(void *area, uint32_t n);
+\end{lstlisting}
 
-By zmniejszyć rywalizację o dostęp do struktury zasobu można zastosować
-dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych na
-potrzeby allokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
-odśmiecania. Lista globalna może je zmieniać w zależności od ilości
-działających wątków. Kiedy jeden z wątków będzie wymagał przydzielenia nowej
-strony najpierw odpytuje się wyznaczonej listy lokalnej, potem globalnej
+Moduł \texttt{sysmem-sbrk} wykorzystuje wywołanie systemowe \texttt{sbrk}. Z
+powodu ograniczeń stawianych przez wykorzystywaną procedurę systemową
+\texttt{pm\_shm\_alloc} nie wykorzystuje parametru \texttt{hint}. Zwracany
+adres jest zawsze równy adresowi końca sterty sprzed wywołania. Zwalniany
+obszar musi przylegać do końca sterty. Jeśli programista nie zadba o to,
+funkcja \texttt{pm\_shm\_free} zwróci błąd.
 
-Można się spodziewać, że w większości przypadków wątek budujący jakieś
-dynamiczne struktury danych będzie sam na nich operował, co najwyżej
-prezentując wyniki innym wątkom. Innymi słowy większość operacji \verb+free+
-wątek będzie wykonywał na blokach, które sam zarezerwował. Oczywiście nie może
-być to założeniem, ale praktyka pokazuje, że zachowanie sprzeczne z opisanym
-wyżej przyczynia się do wielu błędów i programiści pisząc programy unikają
-takich zachowań.
+Moduł \texttt{sysmem-shm} wykorzystuje ustalonej wielkości blok pamięci
+dzielonej, o długości \texttt{PM\_PAGES}, zarezerwowanej wywołaniem
+\texttt{mmap}. Na procedury \texttt{pm\_shm\_alloc} i \texttt{pm\_shm\_free} są
+nałożone podobne ograniczenia jak w przypadku modułu \texttt{sysmem-sbrk}, przy
+czym zwolnione strony de facto nie wracają do systemu operacyjnego.
 
-Kiedy wątek kończy swoje działanie powinien zadbać o to, by pamięć, którą
-zarządza korzystając z prywatnych struktur, oddać na użytek globalnej listy
-nieużytków lub menedżera osieroconych bloków --- takich, które nie posiadają
-właściciela.
+Moduł \texttt{sysmem-mmap} używa procedury \texttt{mmap}. Właściwości tego
+wywołania pozwalają na aktywne używanie w \texttt{pm\_mmap\_alloc} parametru
+\texttt{hint}, który jest preferowanym adresem początku nowego obszaru --- tj.
+procedura ta powinna, ale nie musi, zarezerwować strony poczynając od adresu
+\texttt{hint}. W przeciwieńswie do wcześniejszych modułów na funkcję
+\texttt{pm\_mmap\_free} nie są nałożone ograniczenia, więc zawsze powinna
+zwrócić podane strony do systemu. Jest to najuniwersalniejszy moduł i pozwala
+najefektywniej korzystać z pamięci przydzielonej przez system.
 
-Jako strukturę danych do implementacji menedżera stron użyto tablicy list wraz
-z obiektami służącymi do synchronizacji wątków.
+\newpage
+
+\subsection{Menedżer obszarów --- \texttt{AREAMGR}}
+
+Menedżer stron udostępnia nadrzędnym zarządcom abstrakcję nad mechanizmem
+pobierania i zwalniania stron pamięci. Zasadniczym jego zadaniem jest
+utrzymywanie i operowanie na globalnej liście obszarów. 
+
+\paragraph{Rekord obszaru} jest zdefinowany przez strukturę \verb+area_t+ i
+oprócz długości oraz początkowego adresu ma kilka innych właściwości:
+\begin{itemize}
+\item flagi, określające czy dany obszar jest używany lub zainicjalizowany do
+użycia,
+\item numer alokatora, który zarządza pamięcią w obrębie obszaru,
+\item typ obszaru, określający który menedżer zarezerwował strony
+składające się na ten obszar,
+\item wskaźniki struktury danych utrzymującej globalną listę wszystkich obszarów,
+\item wskaźniki struktury danych utrzymymywanej na potrzeby alokatorów,
+\item sumę kontrolną, umożliwiającą weryfikację pól zawartych w rekordzie.
+\end{itemize}
+
+Rekord określający właściwości obszaru zawiera się w nim i przylega do jego
+końca. Odpowiednie procedury służą do obliczania jego początku i końca na
+podstawie pól zawartych w rekordzie. Istnieje także funkcja wyliczająca adres
+rekordu obszaru z adresu jego początku i jego długości. Należy skomentować po
+pierwsze czemu rekord leży wewnątrz obszaru, a po drugie czemu na jego końcu, a
+nie początku.
+
+Gdyby rekord nie był przechowywany wewnątrz obszaru, wymagałoby to
+implementacji dodatkowego wyspecjalizowanego alokatora działającego wyłącznie
+na potrzeby \texttt{areamgr}. Tworzy to paradoks kury i jajka --- obszary mają
+służyć do organizacji pierwszego alokatora, tymczasem \texttt{areamgr}
+wymagałby już istniejącego zarządcy bloków. Na szczęście implementacja
+specjalistycznego menedżera rekordów obszarów jest możliwa i wydaje się, że
+niesie ze sobą pewne zalety --- zostanie to dokładniej opisane w podpunkcie
+dotyczącym optymalizacji. 
+
+Motywacją tkwiąca za umieszczeniem rekordu na końcu obszaru jest uproszczona
+implementacja procedury \texttt{memalign}. Adres początku obszaru jest zawsze
+podzielny przez długość strony. 
+
+\paragraph{Rekord listy} jest zdefiniowany strukturą \verb+arealst_t+, która
+posiada blokadę, służącą do izolacji wątków, oraz licznik składowanych
+elementów. Wszystkie obszary są trzymane na dokładnie dwóch listach. Pierwsza z
+nich to globalna lista obszarów. Druga może pomagać w wyszukiwaniu wolnych
+obszarów danego rozmiaru albo służyć menedżerowi bloków do pamiętania używanych
+obszarów. Oprócz oczywistych operacji dodawania, usuwania i wyszukiwania
+względem adresu lub rozmiaru, można również dokonywać podziału i scalania
+obszarów. Podział rozbija obszar na dwa mniejsze, scalanie zlewa dwa przyległe
+obszary w jeden spójny.
+
+\paragraph{Rekord menedżera obszarów} zawiera globalną listę wszystkich
+obszarów, licznik używanych i wolnych stron pamięci oraz kubełki do
+przechowywania wolnych obszarów ustalonej długości --- dalej zwanych
+nieużytkami.
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.60\textwidth]{pageman}
-\caption{Graficzna reprezentacja struktury danych \texttt{pageman}.}
+\caption{Graficzna reprezentacja struktury danych \texttt{areamgr\_t}.}
+\end{figure}
+
+\subsubsection{Opis operacji}
+
+Zarządca obszarów udostępnia innym modułom niżej wymienione operacje:
+
+\textit{Dodanie nieużywanego obszaru do menedżera stron} polega na dodaniu go do
+globalnej listy obszarów i wrzuceniu go do kubełka dla obszarów odpowiedniej
+długości. Istnieje ograniczona ilość kubełków --- dokładnie 64. Ostatni z nich
+przechowuje wszystkie obszary większe niż 64 strony.
+
+\textit{Usunięcie obszaru z menedżera stron} wymaga wcześniejszego oznaczenia
+go jako używanego, co można osiągnąć alokując go.  Usuwanie polega na wyjęciu
+obszaru z globalnej listy.
+
+\textit{Przydzielenie obszaru} przeszukuje kubełek wolnych obszarów o podanej
+wielkości. Jeśli w kubełku nie zostanie znaleziony żaden odpowiedni obszar
+wtedy następuje wyszukiwanie w kubełkach dla obszarów o większych rozmiarach.
+Jeśli nie zostanie znaleziony żaden odpowiedni obszar wtedy menedżer stron żąda
+od systemu operacyjnego przydzielenia nowych stron.  Jeśli przydzielony obszar
+jest za długi to zostanie skrócony do żądanego obszaru, a powstały nieużytek
+zostanie wrzucony do odpowiedniego kubełka.
+
+\textit{Zwolnienie obszaru} na użytek menedżera pamięci polega na oznaczeniu go
+wolnym i wrzuceniu go do odpowiedniego kubełka. Jednak zanim zostanie to zrobione,
+algorytm sprawdza czy nie da się połączyć obszaru z innym do niego przyległym.
+
+\textit{Prealokacja obszaru} gwarantuje, że po jej wywołaniu istnieje wolny
+obszar o podanej długości. Innymi słowy --- sprawdza czy odpowiednie kubełki są
+niepuste, a jeśli są puste to tworzy nowy obszar.
+
+\textit{Poszerzanie obszaru} może być użyte, gdy menedżerowi bloków brakuje
+przestrzeni do spełnienia żądania. Może on wtedy zarządać by pewną liczbę stron
+przyłączyć z lewej lub prawej strony do danego obszaru. Procedura poszerzająca
+może dołączyć większą liczbę stron. Zarządca bloków może skrócić obszar jeśli
+stwierdzi, że dołączono za dużo stron. Funkcja poszerzania sprawdza czy
+przyległy obszar jest wolne i jeśli tak, to go rezerwuje i następnie przy pomocy
+procedur dla struktury \verb+arealst_t+ łączy z podanym obszarem.
+
+\textit{Zmniejszanie obszaru} dzieli go na dwa mniejsze, z których jeden będący
+odpowiednio po lewej lub prawej stronie ma zadaną liczbę stron. Powstały
+nieużytek jest wrzucany do odpowiedniego kubełka.
+
+\subsubsection{Optymalizacje}
+
+Ciekawym pomysłem wartym implementacji jest prosta i niewielka pamięć podręczna
+przechowująca adresy ostatnio wyszukiwanych obszarów z globalnej listy.
+Ponieważ każda operacja zwolnienia bloku wymaga podania, do którego obszaru on
+należy, mogłoby to istotnie rzutować na wydajność alokatora.
+
+Kolejną poruszoną wcześniej ideą jest zbudowanie alokatora na wewnętrzne
+potrzeby zarządcy obszarów. Realizacja tego pomysłu mogłaby uprościć
+implementację menadżerów korzystających z \texttt{areamgr}, tj. nie trzeba
+uwzględniać obcych elementów (w tym przypadku rekordu \texttt{area\_t}) w
+obsługiwanych obszarach. Wyeleminowałoby to zbędne powiązania między modułami.
+Wewnętrzny alokator przyczyniłby się również do poprawy wykorzystania pamięci
+podręcznych. W chwili obecnej przeszukiwanie globalnej listy obszarów jest
+nieefektywne. Zauważmy, że każde przyczytanie rekordu \texttt{area\_t} jest
+związane z dostępem do strony pamięci, która go przechowuje. Powoduje to duże
+zaśmiecanie \textit{TLB cache} i ujemnie odbija się również na programie
+korzystającym z alokatora. Oczywistym jest, że wartoby zebrać rekordy obszarów
+i umieścić blisko siebie. Takie scalenie miejsca przechowywania miałoby też
+pozytywny skutek na wykorzystanie pamięci podręcznej procesora. W jednej linii
+możnaby zmieścić kilka rekordów obszaru.
+
+Niewątpliwie menadżer obszarów mógłby skorzystać na wymianie struktury danych
+służącej do przechowywania i wyszukiwania rekordów. W chwili obecnej listę
+dwukierunkową możnaby było zastąpić strukturą \textit{Splay Tree}.
+Zredukowałoby to złożoność operacji do oczekiwanego czasu $O(log n)$. Z
+praktycznego punktu widzenia drzewa te mają dodatkową zaletę --- często używane
+elementy znajdują się blisko korzenia drzewa. W przypadku osobnej implementacji
+alokatora rekordów obszarów możnaby było się pokusić o implementację
+zmodyfikowanego B-drzewa.  Ponieważ jeden wierzchołek B-drzewa mógłby
+przechowywać wiele rekordów pozytywnie odbiłoby się to także na wykorzystaniu
+pamięci podręcznej.
+
+\newpage
+
+\subsection{Zarządca małych bloków --- \texttt{EQSBMGR}}
+
+Przede wszystkim należy się spodziewać, że program będzie masowo przydzielał
+małe obszary pamięci --- z reguły robi to intensywnie operując na dynamicznych
+strukturach danych. Wyobraźmy sobie program wczytujący dane do zbalansowanego
+drzewa binarnego: w trakcie konstrukcji dość rzadko będzie zwalniał rekordy
+będące węzłami drzewa (o ile w ogóle będzie to robił), następnie zostaną
+przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a wynik
+działania przekazany do następnej fazy obliczeń.
+
+Ponieważ spodziewamy się dużej ilości bloków małego rozmiaru, narzut pamięci na
+składowanie struktur potrzebnych dla zarządcy powinien być znikomy. Dobrze by
+było, gdyby zarezerwowane bloki nie przechowywały żadnych informacji poza
+danymi użytkownika. Można też z dużym prawdopodobieństwem stwierdzić, że
+zwalniany blok pamięci znajduje się już w jakiejś linii pamięci podręcznej.
+Pożądaną sytuacją byłoby, gdyby zaallokowany rekord bezpośrednio po oddaniu go
+na użytek programu był dostępny w pamięci podręcznej.
+
+Rezerwowane struktury są najprawdopodobniej wielkości podzielnej przez
+\texttt{sizeof(long int)} lub \texttt{sizeof(long long int)}, czyli odpowiednio
+$4$ lub $8$ bajtów. Jest to domyślna granica stosowana przez kompilatory.
+
+Pozostaje jeszcze zdefiniowanie wielkości małego bloku. W bieżącej implementacji
+występują cztery rodzaje wielkości małych bloków: $8$, $16$, $24$ i $32$. Bloki o
+długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$ bajtów, $n \in [9,16]$ do
+$16$ bajtów, $n \in [17,24]$ do $24$ bajtów i $n \in [25,32]$ do $32$ bajtów.
+
+Struktura danych odpowiedzialna za przechowywanie niewielkich bloków pamięci
+jest to hybrydą stosu, listy dwukierunkowej i jednokierunkowej (która może być
+zastąpiona zrównoważonym drzewem binarnym).
+
+\begin{figure}[h]
+\centering
+%\includegraphics[width=0.80\textwidth]{eqsbmgr}
+\caption{Graficzna reprezentacja struktury danych \texttt{eqsbmgr}}
 \end{figure}
 
 \subsubsection{Opis operacji}
@@ -2117,18 +2285,29 @@ z obiektami służącymi do synchronizacji wątków.
 Ciekawą i jednocześnie efektywną metodą na zwiększenie wydajności korzystania z
 globalnej listy nieużytków byłaby implementacja współdzielonej listy bez
 blokad. Implementacje takie bazują na operacji procesora \verb+CAS+ (ang.
-\textit{compare-and-swap} --- porównaj i zamień). Dzięki temu można byłoby
+\textit{compare-and-swap} --- porównaj i zamień). Dzięki temu możnaby było
 wyeliminować kosztowną operację blokady semafora binarnego zabezpieczającego
 dostęp do struktury i umożliwić wątkom jednoczesne operowanie na listach
-wolnych obszarów.
-
-A może uprządkowana lista obszarów względem roznących adresów?
-
-Istotnym zagadnieniem jest też dobór progów odśmiecania list nieużytków.
-Należałoby przeprowadzić empiryczne badania programów i spróbować wyłowić
-często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
+obszarów.
 
 \newpage
+
+\subsection{Zarządca bloków średniego rozmiaru --- \texttt{BLKMGR}}
+
+Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.90\textwidth]{blkman}
+\caption{Graficzna reprezentacja struktury danych \texttt{blkman}}
+\end{figure}
+
+\subsubsection{Opis operacji}
+
+\subsubsection{Możliwe optymalizacje}
+
+\newpage
+
 
 \subsection{Zarządca dużych bloków --- \texttt{MMAPMGR}}
 
@@ -2162,8 +2341,8 @@ również na efektywności wykorzystania pamięci.
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.75\textwidth]{mmapman-ao}
-\caption{Graficzna reprezentacja struktury danych \texttt{mmapman-ao}.}
+\includegraphics[width=0.75\textwidth]{mmapmgr}
+\caption{Graficzna reprezentacja struktury danych \texttt{mmapmgr}.}
 \end{figure}
 
 Struktura danych dla zarządcy jest zwykłą listą dwukierunkową przechowującą w
@@ -2181,9 +2360,9 @@ Nagłówek (czy raczej stopka) obszaru zawiera następujące informacje:
 \hline
 \verb+size+	 & Ilość bajtów zajmowanych przez blok wewnątrz obszaru. \\
 \hline
-\verb+prev+	 & Poprzedni nagłówek na liście zarządcy \texttt{mmapman-ao}. \\
+\verb+prev+	 & Poprzedni nagłówek na liście zarządcy \texttt{mmapmgr}. \\
 \hline
-\verb+next+	 & Następny nagłówek na liście zarządcy \texttt{mmapman-ao}. \\
+\verb+next+	 & Następny nagłówek na liście zarządcy \texttt{mmapmgr}. \\
 \hline
 \end{tabular}
 \end{center}
@@ -2234,185 +2413,41 @@ wielkości, w mniejszym stopniu obciążając pamięć podręczną.
 
 \newpage
 
-\subsection{Zarządca małych bloków --- \texttt{HEAPBLKMAN}}
-
-Zarządzanie małymi blokami wymaga określenia osobnej strategii. Uwarunkowane
-jest to obserwacjami przeprowadzonymi na rzeczywistych programach.
-
-Przede wszystkim należy się spodziewać, że program będzie masowo przydzielał
-małe obszary pamięci --- z reguły robi to intensywnie operując na dynamicznych
-strukturach danych. Wyobraźmy sobie program wczytujący dane do zbalansowanego
-drzewa binarnego: w trakcie konstrukcji dość rzadko będzie zwalniał rekordy
-będące węzłami drzewa (o ile w ogóle będzie to robił), następnie zostaną
-przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a wynik
-działania przekazany do następnej fazy obliczeń.
-
-Ponieważ spodziewamy się dużej ilości bloków małego rozmiaru, narzut pamięci na
-składowanie struktur potrzebnych dla zarządcy powinien być znikomy. Dobrze by
-było, gdyby zarezerwowane bloki nie przechowywały żadnych informacji poza
-danymi użytkownika. Można też z dużym prawdopodobieństwem stwierdzić, że
-zwalniany blok pamięci znajduje się już w jakiejś linii pamięci podręcznej.
-Pożądaną sytuacją byłoby, gdyby zaallokowany rekord bezpośrednio po oddaniu go
-na użytek programu był dostępny w pamięci podręcznej.
-
-Rezerwowane struktury są najprawdopodobniej wielkości podzielnej przez
-\texttt{sizeof(long int)} lub \texttt{sizeof(long long int)}, czyli odpowiednio
-$4$ lub $8$ bajtów. Jest to domyślna granica stosowana przez kompilatory.
-
-Pozostaje jeszcze zdefiniowanie wielkości małego bloku. W mojej implementacji
-występują trzy rodzaje wielkości małych bloków: $8$, $16$ i $24$. Bloki o
-długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$ bajtów, $n \in [9,16]$ do
-$16$ bajtów i $n \in [17,24]$ do $24$ bajtów.
-
-Struktura danych odpowiedzialna za przechowywanie niewielkich bloków pamięci
-jest to hybrydą stosu, listy dwukierunkowej i jednokierunkowej (która może być
-zastąpiona zrównoważonym drzewem binarnym).
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.80\textwidth]{heapblkman}
-\caption{Graficzna reprezentacja struktury danych \texttt{heapblkman}}
-\end{figure}
-
-Wartownik obszaru jest polem o długości jednego bloku, ale co najmniej długości
-$16$ bajtów. Przechowuje następujące informacje:
-\begin{center}
-\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
-\hline
-\textsc{pole} & \textsc{znaczenie} \\
-\hline
-\hline
-\verb+flags+		& Zawiera flagi określające jakiego rozmiaru są bloki w tym
-obszarze pamięci (tj. \verb+FLAG_L8+, \verb+FLAG_L16+ i \verb+FLAG_L24+) oraz
-flagę wskazującą źródło allokacji następnych bloków (tj. \verb+FLAG_LRU+,
-\verb+FLAG_STACK+). \\
-\hline
-\verb+blkcnt+		& Ilość wszystkich bloków. \\
-\hline
-\verb+stack+		& Numer bloku, w którym znajduje się wierzchołek stosu. \\
-\hline
-\verb+lru_first+	& Numer bloku przechowującego początek listy ostatnio
-zwolnionych bloków pamięci. \\
-\hline
-\verb+lru_blkcnt+	& Ilość wszystkich bloków na liście ostatnio zwolnionych. \\
-\hline
-\verb+free+			& Numer bloku, w którym zaczyna się lista wolnych bloków,
-posortowanych malejąco pod względem adresu. \\
-\hline
-\end{tabular}
-\end{center}
-
-Wolne bloki mają odpowiednią długość dla danego obszaru i zawierają następujące pola:
-
-\begin{center}
-\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
-\hline
-\textsc{pole} & \textsc{znaczenie} \\
-\hline
-\hline
-\verb+younger+	& Indeks bloku, który został zwolniony wcześniej, na liście ostatnio zwolnionych bloków. \\
-\hline
-\verb+older+	& Indeks bloku, który został zwolniony później, na liście ostatnio zwolnionych bloków. \\
-\hline
-\verb+prev+		& Indeks bloku o młodszym adresie na liście wolnych bloków. \\
-\hline
-\verb+next+		& Indeks bloku o starszym adresie na liście wolnych bloków. \\
-\hline
-\end{tabular}
-\end{center}
-
-Ponieważ w implementacji tej struktury danych użyto indeksów typu
-\verb+uint16_t+, maksymalna ilość bloków w danym obszarze może wynieść $2^{16}
-- 1 = 65535$. Limituje to maksymalną ilość pamięci zarządzanej w obrębie
-jednego obszaru do odpowiednio dla bloków długości $8$ bajtów --- $512$
-\verb+KiB+, dla $16$ bajtów --- $1$ \verb+MiB+ i dla $24$ bajtów --- $1.5$
-\verb+MiB+. Indeksowanie bloków zaczyna się od liczby większej od zera, zaś
-zero jako indeks oznacza koniec listy.
-
-Powyżej wierzchołka stosu wszystkie wolne bloki są wolne, niezainicjalizowane i
-ich zawartość jest nieustalona. Poniżej wierzchołka stosu wszystkie bloki muszą
-być na obu listach i pole \verb+prev+ zawsze musi mieć mniejszą wartość niż
-indeks bloku, w którym się znajduje.
-
-\subsubsection{Opis operacji}
-
-Zarezerwowanie (\verb+alloc+) bloku jest operacją działającą w czasie stałym i
-może przebiegać dwoma torami:
-\begin{itemize}
-\item Jeśli bit \verb+FLAG_STACK+ jest zapalony oznacza to, że na stosie jest
-co najmniej jeden wolny blok. Zwiększany jest indeks wierzchołka stosu i
-zwracany odpowiedni adres. Jeśli stos został zapełniony bit \verb+FLAG_STACK+
-zostaje zgaszony.
-\item Jeśli bit \verb+FLAG_LRU+ jest zapalony, to na liście LRU znajduje się
-co najmniej jeden wolny blok. Zostaje on usunięty z obu list i zostaje zwrócony
-jego adres. Jeśli lista została opróżniona, bit \verb+FLAG_LRU+ zostaje
-zgaszony.
-\end{itemize}
-
-Zwalnianie (\verb+free+) bloku również może przebiegać dwutorowo:
-\begin{itemize}
-\item Jeśli zwalniany blok ma indeks o jeden mniejszy niż wierzchołek stosu,
-wtedy stos przesuwany jest na zwolniony blok i bit \verb+FLAG_STACK+ zostaje
-zapalony. Następnie sprawdza się czy blok bezpośrednio leżący pod wierzchołkiem
-stosu jest początkiem listy wolnych bloków. Jeśli tak to usuwany jest on z obu
-list, wierzchołek stosu zostaje przesunięty o jeden blok w dół i operacja
-zostaje powtórzona.
-\item Jeśli zwalniany blok ma indeks co najmniej o dwa mniejszy niż wierzchołek
-stosu, to blok jest dodawany na początek listy LRU i wstawiany na listę bloków
-posortowanych pod względem malejących adresów. Bit \verb+FLAG_LRU+ jest
-zapalany.
-\end{itemize}
-
-Pesymistyczna złożoność czasowa zwalniania bloku to $O(n)$, gdzie $n$ to
-długość listy wolnych bloków.
-
-W przypadku kiedy obie flagi \verb+FLAG_STACK+ i \verb+FLAG_LRU+ są zgaszone
-miejsce w danym obszarze się wyczerpało i należy ten obszar powiększyć, o ile
-istnieje taka możliwość (pole \verb+blkcnt+ nie przekroczy wartości $65535$).
-
-Obszar można rozszerzyć przyłączając do jego końca nowe strony pamięci przy
-użyciu procedury rozszerzania (\verb+expand_at_end+), która zwiększa ilość
-dostępnych bloków poprzez wydłużenie obszar za wierzchołkiem stosu. Menedżer
-pamięci korzystający z zarządcy małych bloków może również na zapas dodawać
-strony do danego obszaru.
-
-Kiedy obszar pamięci jest relatywnie długi i od końca wierzchołka stosu do
-końca obszaru jest jedna lub więcej niewykorzystywanych stron pamięci istnieje
-możliwość skurczenia obszaru (\verb+shrink_at_end+). Dzięki temu strony mogą
-być użyte do innych celów lub zwrócone do systemu operacyjnego.
-
-\subsubsection{Możliwe optymalizacje}
-
-Z opisu tej struktury danych dość jasno widać, że działa ona najszybciej w
-ciągu operacji \verb+alloc+, \verb+free+ o strukturze stosu. Zbyt
-optymistycznym jest by zakładać, że zdecydowana większość programów tak się
-zachowuje.
-
-Jednym z pomysłów na zwiększenie wydajności zarządcy małych bloków jest
-implementacja multibloków. Multiblok to zbiór przylegających do siebie wolnych
-bloków. Taki obiekt zachowywał by się na liście LRU i liście wolnych bloków
-posortowanych malejąco jak jeden wolny blok. Taka modyfikacja przyśpieszyłaby
-operację zwalniania obszaru w pierwszym przypadku.
-
-\newpage
-
-\subsection{Zarządca pozostałych bloków --- \texttt{BLKMAN-AO}}
-
-Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.90\textwidth]{blkman}
-\caption{Graficzna reprezentacja struktury danych \texttt{blkman}}
-\end{figure}
-
-\subsubsection{Opis operacji}
-
-\subsubsection{Możliwe optymalizacje}
-
-\newpage
-
 \subsection{Menedżer pamięci}
+
+Oczywiście, nie można w nieskończoność kumulować nieużyków --- musi istnieć
+jakieś zdarzenie generujące ich oddawanie do systemu. Takim wyzwalaczem może
+być przekroczenie pewnej sumarycznej objętości nieużywanych stron np.: $2$
+\verb+MiB+, albo próba rezerwacji dużego spójnego obszaru pamięci np.: powyżej
+$64$ stron. Warto nadmienić, że zarządzanie stronami w systemie operacyjnym ma
+istotną przewagę nad analogicznym zadaniem w przestrzeni użytkownika. W
+szczególności, jądro systemu może z wielu nieprzylegających do siebie stron
+utworzyć jeden spójny obszar --- o ile proces ma wystarczająco
+niepofragmentowaną przestrzeń adresową.
+
+By zmniejszyć rywalizację o dostęp do struktury zasobu można zastosować
+dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych na
+potrzeby allokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
+odśmiecania. Lista globalna może je zmieniać w zależności od ilości
+działających wątków. Kiedy jeden z wątków będzie wymagał przydzielenia nowej
+strony najpierw odpytuje się wyznaczonej listy lokalnej, potem globalnej
+
+Można się spodziewać, że w większości przypadków wątek budujący jakieś
+dynamiczne struktury danych będzie sam na nich operował, co najwyżej
+prezentując wyniki innym wątkom. Innymi słowy większość operacji \verb+free+
+wątek będzie wykonywał na blokach, które sam zarezerwował. Oczywiście nie może
+być to założeniem, ale praktyka pokazuje, że zachowanie sprzeczne z opisanym
+wyżej przyczynia się do wielu błędów i programiści pisząc programy unikają
+takich zachowań.
+
+Kiedy wątek kończy swoje działanie powinien zadbać o to, by pamięć, którą
+zarządza korzystając z prywatnych struktur, oddać na użytek globalnej listy
+nieużytków lub menedżera osieroconych bloków --- takich, które nie posiadają
+właściciela.
+
+Istotnym zagadnieniem jest też dobór progów odśmiecania list nieużytków.
+Należałoby przeprowadzić empiryczne badania programów i spróbować wyłowić
+często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
 
 \newpage
 

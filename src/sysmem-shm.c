@@ -32,7 +32,7 @@ void pm_shm_init()
 	assert(pages.start != NULL);
 }
 
-void *pm_shm_alloc(uint32_t n)
+void *pm_shm_alloc(void *hint, uint32_t n)
 {
 	void *area = pages.brk;
 
