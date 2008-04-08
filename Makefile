@@ -6,7 +6,7 @@ all:		mgr.pdf
 %.pdf: %.eps
 	epstopdf $<
 
-PDFS	=	paging.pdf linux-layout.pdf eqsbmgr.pdf mmapmgr.pdf blkmgr.pdf pageman.pdf frag-ext.pdf schemat.pdf
+PDFS	=	paging.pdf linux-layout.pdf eqsbmgr.pdf eqsbmgr-sb.pdf mmapmgr.pdf blkmgr.pdf areamgr.pdf frag-ext.pdf schemat.pdf
 
 all:	mgr.pdf
 
@@ -48,7 +48,8 @@ comments:
 
 clean:
 	rm -f mgr.{aux,bbl,blg,log,ps,eps,dvi,pdf,toc,out}
-	rm -f {linux-layout,paging,eqsbmgr,blkmgr,mmapmgr,pageman,frag-ext,schemat}.{pdf,eps}
+	rm -f $(PDFS)
+	rm -f $(patsubst %.pdf,%.eps,$(PDFS))
 	rm -f *~ *.tmp
 
 .PHONY: cite

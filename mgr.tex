@@ -350,7 +350,7 @@ skutek wykonania pewnego ciągu operacji, które skutkują powstaniem wolnych
 bloków o rozmiarach nie pozwalających na ich użycie przy obsłudze kolejnych
 żądań.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.75\textwidth]{frag-ext}
 \caption{Powstawanie fragmentacji zewnętrznej.}
@@ -515,7 +515,7 @@ często określany także mechanizmem stronicowania. Do translacji adresów
 procesor wykorzystuje opis pamięci logicznej składający się na wielopoziomowe
 tablice deskryptorów stron.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.75\textwidth]{paging}
 \caption{Schemat translacji adresu dla architektury \textit{Intel x86}.}
@@ -636,7 +636,7 @@ komórki pamięci. To rozróżnienie jest istotne, gdyż mechanizm stronicowania
 jest bardzo elastyczny i umożliwia odwzorowanie przestrzeni adresowej na pamięć
 zewnętrzną, pliki, pamięć urządzeń wejścia-wyjścia, itd.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[height=0.5\textwidth]{linux-layout}
 \caption{Obłożenie przestrzeni adresowej procesu w systemie Linux}
@@ -1837,7 +1837,7 @@ Zaimplementowany alokator pamięci jest algorytmem hybrydowym o hierarchicznej
 strukturze. Pozwala to na jego łatwą modyfikację i dostosowywanie do potrzeb
 programisty.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.60\textwidth]{schemat}
 \caption{Schemat zależności między modułami alokatora.}
@@ -2159,13 +2159,11 @@ obszarów, licznik używanych i wolnych stron pamięci oraz kubełki do
 przechowywania wolnych obszarów ustalonej długości --- dalej zwanych
 nieużytkami.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.60\textwidth]{pageman}
+\includegraphics[width=0.70\textwidth]{areamgr}
 \caption{Graficzna reprezentacja struktury danych \texttt{areamgr\_t}.}
 \end{figure}
-
-\subsubsection{Opis operacji}
 
 Zarządca obszarów udostępnia innym modułom niżej wymienione operacje:
 
@@ -2206,7 +2204,7 @@ procedur dla struktury \verb+arealst_t+ łączy z podanym obszarem.
 odpowiednio po lewej lub prawej stronie ma zadaną liczbę stron. Powstały
 nieużytek jest wrzucany do odpowiedniego kubełka.
 
-\subsubsection{Optymalizacje}
+\subsubsection{Możliwe optymalizacje}
 
 Ciekawym pomysłem wartym implementacji jest prosta i niewielka pamięć podręczna
 przechowująca adresy ostatnio wyszukiwanych obszarów z globalnej listy.
@@ -2243,42 +2241,143 @@ pamięci podręcznej.
 
 \subsection{Zarządca małych bloków --- \texttt{EQSBMGR}}
 
-Przede wszystkim należy się spodziewać, że program będzie masowo przydzielał
-małe obszary pamięci --- z reguły robi to intensywnie operując na dynamicznych
-strukturach danych. Wyobraźmy sobie program wczytujący dane do zbalansowanego
-drzewa binarnego: w trakcie konstrukcji dość rzadko będzie zwalniał rekordy
-będące węzłami drzewa (o ile w ogóle będzie to robił), następnie zostaną
-przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a wynik
-działania przekazany do następnej fazy obliczeń.
+Manadżer małych bloków odpowiada za utrzymywanie niewielkich bloków o równej
+długości. W bieżącej implementacji występują cztery długości: $8$, $16$, $24$ i
+$32$ bajtów. Bloki o długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$
+bajtów, $n \in [9,16]$ do $16$ bajtów, $n \in [17,24]$ do $24$ bajtów i $n \in
+[25,32]$ do $32$ bajtów. Bloki o różnych długościach nie sąsiadują ze sobą, a
+są trzymane w grupach zwanych superblokami. Stąd też wynika nazwa manadżera ---
+\texttt{eqsbmgr} (ang. \textit{equally sized blocks manager}).
 
-Ponieważ spodziewamy się dużej ilości bloków małego rozmiaru, narzut pamięci na
-składowanie struktur potrzebnych dla zarządcy powinien być znikomy. Dobrze by
-było, gdyby zarezerwowane bloki nie przechowywały żadnych informacji poza
-danymi użytkownika. Można też z dużym prawdopodobieństwem stwierdzić, że
-zwalniany blok pamięci znajduje się już w jakiejś linii pamięci podręcznej.
-Pożądaną sytuacją byłoby, gdyby zaallokowany rekord bezpośrednio po oddaniu go
-na użytek programu był dostępny w pamięci podręcznej.
+Z przeprowadzonych wcześniej obserwacji spodziewamy się, że program
+wykorzytujący nasz alokator będzie masowo przydzielał małe bloki pamięci ---
+może to na przykład robić intensywnie operując na dynamicznych strukturach danych.
+Wyobraźmy sobie aplikację wczytującą dane do zbalansowanego drzewa binarnego.
+Zauważmy że, w trakcie konstrukcji dość rzadko będzie ona zwalniała rekordy
+będące węzłami drzewa, o ile w ogóle będzie to robiła. Po wczytaniu rekordów
+zostaną przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a
+wynik działania przekazany do następnej fazy obliczeń. To czego możemy
+oczekiwać to długie ciągi operacji \texttt{alloc} i \texttt{free}, być może
+przeplatających się, operujące na blokach o tym samym rozmiarze.
 
-Rezerwowane struktury są najprawdopodobniej wielkości podzielnej przez
-\texttt{sizeof(long int)} lub \texttt{sizeof(long long int)}, czyli odpowiednio
-$4$ lub $8$ bajtów. Jest to domyślna granica stosowana przez kompilatory.
+Ze względu na rozmiar bloków chcemy by, narzut pamięci na składowanie struktur
+potrzebnych dla alokatora był znikomy. Dobrze by było, gdyby rezerwowane bloki
+nie przechowywały żadnych informacji poza danymi użytkownika.
 
-Pozostaje jeszcze zdefiniowanie wielkości małego bloku. W bieżącej implementacji
-występują cztery rodzaje wielkości małych bloków: $8$, $16$, $24$ i $32$. Bloki o
-długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$ bajtów, $n \in [9,16]$ do
-$16$ bajtów, $n \in [17,24]$ do $24$ bajtów i $n \in [25,32]$ do $32$ bajtów.
+Rezerwowane bloki są najprawdopodobniej wielkości podzielnej przez $4$ lub $8$
+bajtów. Jest to domyślna granica wyrównania adresów stosowana przez
+kompilatory. W bieżącej implementacji przyjęto rozmiar wielkości $8$ bajtów.
 
-Struktura danych odpowiedzialna za przechowywanie niewielkich bloków pamięci
-jest to hybrydą stosu, listy dwukierunkowej i jednokierunkowej (która może być
-zastąpiona zrównoważonym drzewem binarnym).
+Wszystkie bloki przydzielane na użytek aplikacji korzystającej z alokatora są
+zarządzane przez jednostki zwane superblokami. Superblok jest to ciągły
+fragment pamięci zaczynający się w adresie podzielnym przez 1024. Jego długość
+może się zmieniać, natomiast nie może ona przekraczać 1024 bajtów.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-\includegraphics[width=0.80\textwidth]{eqsbmgr}
-\caption{Graficzna reprezentacja struktury danych \texttt{eqsbmgr}}
+\includegraphics[width=0.9\textwidth]{eqsbmgr-sb}
+\caption{Graficzna reprezentacja superbloku}
 \end{figure}
 
-\subsubsection{Opis operacji}
+W nagłówku superbloku znajdują się 16--bitowe wskaźniki listy, których
+wykorzystanie zostanie omówione w ramach opisu manadżera superbloków. Oprócz
+tego składowane są tam następujące informacje:
+\begin{itemize}
+\item \texttt{fblkcnt} -- liczba wolnych bloków (7 bitów),
+\item \texttt{blksize} -- rozmiar bloków (2 bity),
+\item \texttt{size} -- rozmiar superbloku (7 bitów).
+\end{itemize}
+
+Bitmapa superbloku może mieć różną długość w zależności od wartości pól
+\texttt{blksize} i \texttt{size}. Nigdy nie przekroczy jednak długości $(size +
+1) / (blksize + 1)$ bitów, czyli 16 bajtów. Przechowuje ona informacje o
+zajętości bloków zawartych w superbloku. Przydzielenie bloku polega na
+ustawieniu odpowiedniego bitu w bitmapie, a zwolnienie odpowiednio zgaszenie
+tego bitu. Warto zauważyć, że wyszukiwanie bloków w obrębie danego superbloku
+nie wymaga przeczytania całej jego zawartości, a jedynie sprowadzenia linii
+pamięci podręcznej pokrywającej nagłówek i bitmapę. Stanowi to podstawę dla
+szybkości alokatora korzystającego z superbloków.
+
+Warto wspomnieć, że faktyczny rozmiar superbloku jest równy $(size + 1) * 8$
+bajtów, rozmiar przechowywanych bloków $(blksize + 1) * 8$ bajtów. Dodatkowo
+jeśli fblkcnt ma wartość $127$ to superblok uznaje się za wolny niezależnie od
+wielkości przechowywanych bloków. Powyższe ograniczenia wynikąją ze schematu
+kodowania rekordu superbloku w możliwie najmniejszej przestrzeni pamięci.
+
+Najważniejsze procedury operujące na superblokach to:
+\begin{itemize}
+\item \verb+sb_prepare+ -- inicjalizuje pola nagłówka oraz bitmapę
+przygotowując superblok do dalszych działań,
+\item \verb+sb_alloc+ -- sprawdza czy licznik wolnych bloków jest niezerowy i
+jeśli tak do dekrementuje go; wyszukuje w bitmapie bitu oznaczającego wolny
+blok, ustawia go, po czym na jego podstawie oblicza i zwraca adres bloku,
+\item \verb+sb_free+ -- oblicza numer bitu w bitmapie na podstawie adresu
+bloku; zeruje obliczony bit; inkrementuje licznik wolnych bloków,
+\end{itemize}
+
+Kolejną ważną jednostką zarządzania jest grupa superbloków, która składa się
+zawsze z czterech superbloków składowanych na jednej stronie pamięci. Na
+następnym rysunku grupy są otoczone grubą czarną ramką. O superblokach mówimy,
+że są przyległe wtedy i tylko wtedy, gdy przylegają do siebie w obrębie jednej
+grupy. Superblok zajęty różni się od używanego tym, iż nie posiada wolnych
+bloków.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.9\textwidth]{eqsbmgr}
+\caption{Graficzna reprezentacja obszaru zarządzanego przez manadżer superbloków}
+\end{figure}
+
+Manadżer superbloków wraz z rekordem \texttt{area\_t} przylega do końca
+zarządzanego obszaru, zmniejszając rozmiar ostatniego superbloku. Manadżer
+superbloków posiada następujące pola w swoim rekordzie\footnote{Pierwsze dwie
+pozycje widać na rysunku, reszta została ukryta dla zachowania czytelności.}:
+\begin{itemize}
+\item \verb+nonempty[0..3]+ -- listy używanych superbloków, które przechowują
+bloki o poszczególnych rozmiarach tj. $8$, $16$, $24$ i $32$ bajtów --- są
+używane w trakcie alokacji bloków i służą do szybkiego wyszukiwania
+odpowiedniego superbloku,
+\item \verb+groups[0..3]+ -- listy przechowujące pierwszy superblok z grup
+przylegających superbloków o odpowiedniej liczności --- są wykorzystywane gdy
+brakuje niepełnych superbloków przechowujących bloki o zadanym rozmiarze,
+\item \verb+full+ -- lista zajętych superbloków --- przydatna w trakcie
+podziału menadżera superbloków na dwa mniejsze,
+\item \verb+freecnt+ -- licznik wolnych superbloków,
+\item \verb+allcnt+ -- licznik wszystkich superbloków.
+\end{itemize}
+
+Następujący zestaw procedur umożliwia operowanie na manadżerze superbloków:
+\begin{itemize}
+\item \verb+sb_mgr_init+ --
+\item \verb+sb_mgr_alloc+ --
+\item \verb+sb_mgr_free+ --
+\item \verb+sb_mgr_add+ --
+\item \verb+sb_mgr_expand+ --
+\end{itemize}
+
+Wyżej wymienione mechanizmy są elementami wykorzystywanymi do zbudowania
+alokatora \texttt{eqsbmgr}, którego rekord jest statyczny i jest przypisany
+narzędnemu zarządcy \texttt{memmgr}. Przechowuje on listę zarządzanych
+obszarów.
+\begin{itemize}
+\item \verb+sb_mgr_init+ --
+\item \verb+sb_mgr_alloc+ --
+\item \verb+sb_mgr_free+ --
+\item \verb+sb_mgr_add+ --
+\item \verb+sb_mgr_expand+ --
+\end{itemize}
+
+\begin{itemize}
+\item \verb+eqsbmgr_alloc+ --
+\item \verb+eqsbmgr_realloc+ --
+\item \verb+eqsbmgr_free+ --
+\end{itemize}
+
+Można też z dużym prawdopodobieństwem stwierdzić, że zwalniany blok pamięci
+znajduje się już w jakiejś linii pamięci podręcznej.  Pożądaną sytuacją byłoby,
+gdyby zaallokowany rekord bezpośrednio po oddaniu go na użytek programu był
+dostępny w pamięci podręcznej.
+
 
 \subsubsection{Możliwe optymalizacje}
 
@@ -2294,15 +2393,13 @@ obszarów.
 
 \subsection{Zarządca bloków średniego rozmiaru --- \texttt{BLKMGR}}
 
-Obszary o rozmiarze $\ge 24B$ i $< 32KiB$.
+Obszary o rozmiarze $> 32B$ i $\le 32KiB$.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.90\textwidth]{blkmgr}
-\caption{Graficzna reprezentacja struktury danych \texttt{blkmgr}}
+\caption{Graficzna reprezentacja obszaru zarządzanego przez \texttt{blkmgr}}
 \end{figure}
-
-\subsubsection{Opis operacji}
 
 \subsubsection{Możliwe optymalizacje}
 
@@ -2339,7 +2436,7 @@ Jeśli obszarami o rozmiarze $<$ $32$ \verb+KiB+ zajmuje się osobny zarządca, 
 wielkość pól będzie mógł składować w danej typu \verb+int16_t+. Zyskujemy więc
 również na efektywności wykorzystania pamięci.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
 \includegraphics[width=0.75\textwidth]{mmapmgr}
 \caption{Graficzna reprezentacja struktury danych \texttt{mmapmgr}.}
