@@ -46,6 +46,10 @@ nocite:
 comments:
 	@sed -r '/COMMENT/,/^}/!d' mgr.bib
 
+lines:
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(tex|bib)|Makefile)" | xargs cat | wc
+	@find -maxdepth 1 -regextype posix-extended -regex "(.*\.(tex|bib)|Makefile)" | xargs cat | sed '/^$$/d' | wc
+
 clean:
 	rm -f mgr.{aux,bbl,blg,log,ps,eps,dvi,pdf,toc,out}
 	rm -f $(PDFS)

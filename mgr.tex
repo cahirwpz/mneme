@@ -2258,20 +2258,20 @@ będące węzłami drzewa, o ile w ogóle będzie to robiła. Po wczytaniu rekor
 zostaną przeprowadzone obliczenia, po czym całe drzewo zostanie zwolnione, a
 wynik działania przekazany do następnej fazy obliczeń. To czego możemy
 oczekiwać to długie ciągi operacji \texttt{alloc} i \texttt{free}, być może
-przeplatających się, operujące na blokach o tym samym rozmiarze.
+przeplatających się, operujące na rekordach o tym samym rozmiarze.
 
-Ze względu na rozmiar bloków chcemy by, narzut pamięci na składowanie struktur
+Ze względu na rozmiar bloków chcemy, by narzut pamięci na składowanie struktur
 potrzebnych dla alokatora był znikomy. Dobrze by było, gdyby rezerwowane bloki
 nie przechowywały żadnych informacji poza danymi użytkownika.
 
 Rezerwowane bloki są najprawdopodobniej wielkości podzielnej przez $4$ lub $8$
 bajtów. Jest to domyślna granica wyrównania adresów stosowana przez
-kompilatory. W bieżącej implementacji przyjęto rozmiar wielkości $8$ bajtów.
+kompilatory. W bieżącej implementacji przyjęto $8$--bajtową granicę.
 
 Wszystkie bloki przydzielane na użytek aplikacji korzystającej z alokatora są
 zarządzane przez jednostki zwane superblokami. Superblok jest to ciągły
 fragment pamięci zaczynający się w adresie podzielnym przez 1024. Jego długość
-może się zmieniać, natomiast nie może ona przekraczać 1024 bajtów.
+może być zmienna, natomiast nie może ona przekraczać 1024 bajtów.
 
 \begin{figure}[ht]
 \centering
@@ -2279,9 +2279,9 @@ może się zmieniać, natomiast nie może ona przekraczać 1024 bajtów.
 \caption{Graficzna reprezentacja superbloku}
 \end{figure}
 
-W nagłówku superbloku znajdują się 16--bitowe wskaźniki listy, których
-wykorzystanie zostanie omówione w ramach opisu manadżera superbloków. Oprócz
-tego składowane są tam następujące informacje:
+W nagłówku superbloku znajdują się lista z 16--bitowymi wskaźnikami, których
+znaczenie zostanie omówione w ramach opisu manadżera superbloków. Oprócz tego
+składowane są tam następujące informacje:
 \begin{itemize}
 \item \texttt{fblkcnt} -- liczba wolnych bloków (7 bitów),
 \item \texttt{blksize} -- rozmiar bloków (2 bity),
@@ -2295,8 +2295,8 @@ zajętości bloków zawartych w superbloku. Przydzielenie bloku polega na
 ustawieniu odpowiedniego bitu w bitmapie, a zwolnienie odpowiednio zgaszenie
 tego bitu. Warto zauważyć, że wyszukiwanie bloków w obrębie danego superbloku
 nie wymaga przeczytania całej jego zawartości, a jedynie sprowadzenia linii
-pamięci podręcznej pokrywającej nagłówek i bitmapę. Stanowi to podstawę dla
-szybkości alokatora korzystającego z superbloków.
+pamięci podręcznej pokrywającej nagłówek i bitmapę. Stanowi to podstawę
+szybkości działania alokatora korzystającego z superbloków.
 
 Warto wspomnieć, że faktyczny rozmiar superbloku jest równy $(size + 1) * 8$
 bajtów, rozmiar przechowywanych bloków $(blksize + 1) * 8$ bajtów. Dodatkowo
@@ -2316,11 +2316,10 @@ bloku; zeruje obliczony bit; inkrementuje licznik wolnych bloków,
 \end{itemize}
 
 Kolejną ważną jednostką zarządzania jest grupa superbloków, która składa się
-zawsze z czterech superbloków składowanych na jednej stronie pamięci. Na
-następnym rysunku grupy są otoczone grubą czarną ramką. O superblokach mówimy,
-że są przyległe wtedy i tylko wtedy, gdy przylegają do siebie w obrębie jednej
-grupy. Superblok zajęty różni się od używanego tym, iż nie posiada wolnych
-bloków.
+zawsze z czterech superbloków zawartych na jednej stronie pamięci. Na następnym
+rysunku grupy są otoczone grubą czarną ramką. O superblokach mówimy, że są
+przyległe wtedy i tylko wtedy, gdy przylegają do siebie w obrębie jednej grupy.
+Pełny superblok różni się od używanego tym, iż nie posiada żadnego wolnego bloku.
 
 \begin{figure}[ht]
 \centering
@@ -2329,9 +2328,9 @@ bloków.
 \end{figure}
 
 Manadżer superbloków wraz z rekordem \texttt{area\_t} przylega do końca
-zarządzanego obszaru, zmniejszając rozmiar ostatniego superbloku. Manadżer
-superbloków posiada następujące pola w swoim rekordzie\footnote{Pierwsze dwie
-pozycje widać na rysunku, reszta została ukryta dla zachowania czytelności.}:
+zarządzanego obszaru, zmniejszając rozmiar ostatniego superbloku, i posiada
+następujące pola w swoim rekordzie\footnote{Pierwsze dwie pozycje widać na
+rysunku, reszta została ukryta dla zachowania czytelności.}:
 \begin{itemize}
 \item \verb+nonempty[0..3]+ -- listy używanych superbloków, które przechowują
 bloki o poszczególnych rozmiarach tj. $8$, $16$, $24$ i $32$ bajtów --- są
@@ -2346,38 +2345,59 @@ podziału menadżera superbloków na dwa mniejsze,
 \item \verb+allcnt+ -- licznik wszystkich superbloków.
 \end{itemize}
 
+Należy zwrócić uwagę na to, że w przypadku list superbloków zaimplementowane
+wskaźniki nie są prawdziwymi adresami. Ze względu na oszczędność miejsca adresy
+zostały zakodowane w 16--bitowych liczbach ze znakiem będących w rzeczywistości
+relatywnymi indeksami. Dokładniej indeks $n$ znajdujący się w superbloku o
+adresie $sb$ koduje adres o następującej wartości: $sb + n * 1024$. Narzuca to
+ograniczenie na wielkość pojedyńczego obszaru zarządzanego przez manadżer
+superbloków --- nie może on być większy niż $(2^{15} - 1) * 1024$ bajtów, czyli
+dokładnie 8191 stron pamięci.
+
 Następujący zestaw procedur umożliwia operowanie na manadżerze superbloków:
 \begin{itemize}
-\item \verb+sb_mgr_init+ --
-\item \verb+sb_mgr_alloc+ --
-\item \verb+sb_mgr_free+ --
-\item \verb+sb_mgr_add+ --
-\item \verb+sb_mgr_expand+ --
+\item \verb+sb_mgr_init+ -- przygotowuje nowy obszar umieszczając w nim rekord
+manadżera superbloków i inicjując resztę miejsca wolnymi superblokami,
+\item \verb+sb_mgr_alloc+ -- przegląda listy przyległych superbloków, od
+znalezionej grupy odcina wolny superblok i przygotowuje go do użycia na
+potrzeby przydziału bloków o zadanym rozmiarze, a dokładniej wywołuje procedurę
+\verb+sb_prepare+,
+\item \verb+sb_mgr_free+ -- oznacza dany superblok jako wolny i próbuje
+dołączyć go do istniejących grup, jeśli mu się to uda powiększona grupa zostaje
+przeniesiona na odpowiednią listę przyległych superbloków,
+\item \verb+sb_mgr_expand+ -- jest wywoływana w przypadku powiększania
+zarządzanego obszaru o dodatkowe strony, które zostają zainicjalizowane pustymi
+superblokami i dodane do manadżera superbloków.
 \end{itemize}
 
 Wyżej wymienione mechanizmy są elementami wykorzystywanymi do zbudowania
 alokatora \texttt{eqsbmgr}, którego rekord jest statyczny i jest przypisany
 narzędnemu zarządcy \texttt{memmgr}. Przechowuje on listę zarządzanych
-obszarów.
-\begin{itemize}
-\item \verb+sb_mgr_init+ --
-\item \verb+sb_mgr_alloc+ --
-\item \verb+sb_mgr_free+ --
-\item \verb+sb_mgr_add+ --
-\item \verb+sb_mgr_expand+ --
-\end{itemize}
+obszarów i implementuje następujące operacje:
 
 \begin{itemize}
-\item \verb+eqsbmgr_alloc+ --
-\item \verb+eqsbmgr_realloc+ --
-\item \verb+eqsbmgr_free+ --
+\item \verb+eqsbmgr_alloc+ -- wyszukuje obszar, w którym manadżer superbloków
+posiada używany superblok przechowujący bloki odpowiedniego rozmiaru, jeśli
+takiego nie znajdzie szuka pierwszego obszaru z wolnymi superblokami, w
+ostateczności prosi manadżer \texttt{areamgr} o poszerzenie zarządzanych
+obszarów lub przygotowanie nowego; po znalezieniu lub utworzeniu nowego
+superbloku wywołuje procedurę \verb+sb_mgr_alloc+,
+\item \verb+eqsbmgr_realloc+ -- wyszukuje manadżer superbloków, do którego
+należy podany adres i sprawdza czy po zmianie wielkości, blok wymaga
+przeniesienia w nowe miejsce,
+\item \verb+eqsbmgr_free+ -- wyszukuje superblok, do którego należy
+podany adres, wywołuje procedurę \verb+sb_free+, następnie sprawdza czy dany
+superblok da się zwolnić i czy przypadkiem nie można zmniejszyć lub podzielić
+obszaru zarządzanego przez manadżer superbloków na dwa mniejsze.
 \end{itemize}
 
-Można też z dużym prawdopodobieństwem stwierdzić, że zwalniany blok pamięci
-znajduje się już w jakiejś linii pamięci podręcznej.  Pożądaną sytuacją byłoby,
-gdyby zaallokowany rekord bezpośrednio po oddaniu go na użytek programu był
-dostępny w pamięci podręcznej.
+Procedura \verb+eqsbmgr_alloc+ niestety nie umożliwia alokacji bloków
+wyrównanych do adresu podzielnego przez więcej niż 8. Implementacja tej funkcji
+wymagałaby gruntownego przebudowania manadżera superbloków.
 
+Pewne fragmenty procedury \verb+eqsbmgr_free+ należałoby w wyniku
+refaktoryzacji kodu wydzielić i umieścić w dodatkowych procedurach
+\verb+sb_mgr_split+ i \verb+sb_mgr_shrink+.
 
 \subsubsection{Możliwe optymalizacje}
 
@@ -2393,7 +2413,37 @@ obszarów.
 
 \subsection{Zarządca bloków średniego rozmiaru --- \texttt{BLKMGR}}
 
-Obszary o rozmiarze $> 32B$ i $\le 32KiB$.
+Manadżer bloków średniego obszaru jest alokatorem ogólnego przeznaczenia. W
+swojej budowie przypomina bardzo mocno algorytm \textit{boundary tags} Knutha. 
+Obszary zarządzane przez \texttt{blkmgr} przechowują bloki o rozmiarach od 8
+bajtów do 32 kilobajtów.
+
+Elementarną jednostką wykorzystywaną przez \texttt{blkmgr} jest blok. Każdy
+rodzaj bloku posiada $8$--bajtowy nagłówek w postaci rekordu struktury
+\texttt{mb\_t}. W zależności od użycia przestrzeni pamięci za nagłówkiem można
+wyróżnić trzy rodzaje bloków:
+\begin{itemize}
+\item \textit{zajęty} -- pozostała przestrzeń jest używana przez aplikację
+korzystającą z alokatora,
+\item \textit{wolny} -- obszar za nagłówkiem ma co najmniej $8$--bajtów i
+składowany jest tam rekord struktury służącej do wyszukiwania wolnych bloków
+--- w bieżącej implementacji wolny blok jest zdefinowany strukturą
+\verb+mb_free_t+,
+\item \textit{sztuczny} -- blok jest wolny, ale zbyt krótki by mógł
+przechowywać strukturę przechowującą wolne bloki; przy najbliższej okazji
+zostanie wchłonięty przez przyległe bloki.
+\end{itemize}
+
+W rekordzie nagłówka przechowywany jest rozmiar bloku, flagi i suma kontrolna.
+Każda zmiana pola struktury \verb+mb_t+ wymaga odświeżenia sumy kontrolnej przy
+pomocy procedury \verb+mb_touch+, która jest sprawdzana funkcją \verb+mb_valid+
+przed każdą operacją na bloku. Mechanizm ten został wprowadzony celem ochrony
+przed błędami wynikającymi z nadpisania nagłówka przez nieprawidłowe zachowanie
+aplikacji.
+
+Rozszerzony nagłówek dla wolnego bloku dodatkowo przechowuje dwa adresy, które
+wskazują kolejno na element poprzedni i następny w liście wolnych bloków
+posortowanych względem adresu.
 
 \begin{figure}[ht]
 \centering
@@ -2401,10 +2451,13 @@ Obszary o rozmiarze $> 32B$ i $\le 32KiB$.
 \caption{Graficzna reprezentacja obszaru zarządzanego przez \texttt{blkmgr}}
 \end{figure}
 
+Do początku zarządzanego obszaru przylega rekord \verb+mb_list_t+. Przechowuje
+on strażnik listy wolnych bloków oraz pola zliczające liczbę używanych i
+wolnych bloków, oraz liczbę bajtów wolnej pamięci.
+
 \subsubsection{Możliwe optymalizacje}
 
 \newpage
-
 
 \subsection{Zarządca dużych bloków --- \texttt{MMAPMGR}}
 
