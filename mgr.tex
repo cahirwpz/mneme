@@ -2393,57 +2393,93 @@ obszaru zarządzanego przez manadżer superbloków na dwa mniejsze.
 
 Procedura \verb+eqsbmgr_alloc+ niestety nie umożliwia alokacji bloków
 wyrównanych do adresu podzielnego przez więcej niż 8. Implementacja tej funkcji
-wymagałaby gruntownego przebudowania manadżera superbloków.
+wymagałaby gruntownego przebudowania manadżera superbloków co wydaje się być
+nieopłacalne.
+
+\subsubsection{Możliwe optymalizacje}
 
 Pewne fragmenty procedury \verb+eqsbmgr_free+ należałoby w wyniku
 refaktoryzacji kodu wydzielić i umieścić w dodatkowych procedurach
 \verb+sb_mgr_split+ i \verb+sb_mgr_shrink+.
 
-\subsubsection{Możliwe optymalizacje}
+Podobnie jak w \texttt{areamgr}, można by stworzyć dodatkowy manadżer dla
+rekordów \verb+sb_mgr_t+. Dałoby to możliwość stworzenia blokad na poziomie
+list, co w bieżącej implementacji jest niemożliwe. Wynika to ze zmian
+położenia rekordu manadżera superbloków w trakcie działania alokatora.
+Przenoszenie rekordu \verb+sb_mgr_t+ w obrębie obszaru wymaga blokady listy
+utzymywanych obszarów, co kłóci się z wielowątkowością wewnątrz
+\texttt{eqsbmgr}. Kolejnym problemem są tu własności blokad standardu
+\texttt{POSIX}, które nie zachowują spójności w trakcie przenoszenia do innej
+lokalizacji w pamięci. Podsumowując --- zabieg taki przyczyniłby się do
+zmniejszenia ziarnistości blokad i w rezultacie zwiększenia skalowalności.
 
-Ciekawą i jednocześnie efektywną metodą na zwiększenie wydajności korzystania z
-globalnej listy nieużytków byłaby implementacja współdzielonej listy bez
-blokad. Implementacje takie bazują na operacji procesora \verb+CAS+ (ang.
-\textit{compare-and-swap} --- porównaj i zamień). Dzięki temu możnaby było
-wyeliminować kosztowną operację blokady semafora binarnego zabezpieczającego
-dostęp do struktury i umożliwić wątkom jednoczesne operowanie na listach
-obszarów.
+Ciekawą i jednocześnie efektywną metodą na zwiększenie skalowalności
+\texttt{eqsbmgr} byłobo umożliwienie wielu wątkom równoległego korzystania z
+superbloków.  Zadanie to można wykonać przy użyciu instrukcji procesora
+\verb+CAS+ (ang. \textit{compare-and-swap} --- porównaj i zamień).  W trakcie
+alokacji bloku możnaby wtedy atomowo dekrementować licznik wolnych bloków, a
+następnie wyszukać i atomowo ustawić bit zajętości w bitmapie. Oczywiście nie
+jest to wystarczające. Trzebaby również zadbać o wielowątkowość na poziomie
+manadżera superbloków --- tworząc blokady do odpowiednich zasobów.
 
-\newpage
+Być może warto byłoby uczynić długość superbloku nieco elastyczniejszą.
+Dawałoby to możliwość lepszego przystosowania manadżera \texttt{eqsbmgr} do
+zmian wynikających z architektury docelowego sprzętu.
+
+Zmiana struktury danych przechowującej przyległe i używane superbloki z list na
+\textit{Splay Tree} zwiększyłoby wydajność operacji podziału manadżera
+superbloków. W chwili obecnej listy są nieposortowane, co wymaga liniowego
+czasu na przejrzenie całej listy i podzielenia jej na dwie części względem
+adresu superbloków. Identyczna operacja na \textit{Splay Tree} wykonuje się w
+oczekiwanym czasie $O(log n)$.
+
+Jeśli pozostać przy listach, należałoby przemyśleć strategie utrzymywania
+używanych i wolnych superbloków. Nowe powinny powstawać w grupach z najmniejszą
+licznością wolnych superbloków --- chcielibyśmy, żeby wykorzystanie pamięci w
+obrębie stron było możliwie jak największe. Oprócz korzyści wynikających z
+oszczędności zajmowanej przestrzeni, dodatkowo gwarantujemy mniejsze obciążenie
+\textit{TLB cache}. Warto zauważyć, że nowe bloki powinno się przydzielać w
+superblokach, do których niedawno się odwoływano --- niezależnie od tego czy
+w ich obrębie zwalniano czy przydzielano bloki.
+
+Można by również rozważyć dodanie niewielkiej pamięci podręcznej biorącą udział
+w procesie odroczonego zwalniania bloków. Takie leniwe zachowanie mogłoby pomóc
+algorytmom, które obliczają dużo tymczasowych wyników wymagających niewielkich
+kawałków pamięci.
 
 \subsection{Zarządca bloków średniego rozmiaru --- \texttt{BLKMGR}}
 
-Manadżer bloków średniego obszaru jest alokatorem ogólnego przeznaczenia. W
-swojej budowie przypomina bardzo mocno algorytm \textit{boundary tags} Knutha. 
-Obszary zarządzane przez \texttt{blkmgr} przechowują bloki o rozmiarach od 8
-bajtów do 32 kilobajtów.
+Manadżer bloków średniego obszaru jest alokatorem ogólnego przeznaczenia. Jego
+implementacja bazuje w dużym stopniu na algorytmie \textit{boundary tags}
+Knutha. Obszary zarządzane przez \texttt{blkmgr} przechowują bloki o
+rozmiarach od 8 bajtów do 32 kilobajtów. Strategia przechowywania bloków na
+liście to \textit{First Fit Address Ordered}.
 
 Elementarną jednostką wykorzystywaną przez \texttt{blkmgr} jest blok. Każdy
 rodzaj bloku posiada $8$--bajtowy nagłówek w postaci rekordu struktury
-\texttt{mb\_t}. W zależności od użycia przestrzeni pamięci za nagłówkiem można
-wyróżnić trzy rodzaje bloków:
+\texttt{mb\_t}. W rekordzie nagłówka przechowywany jest rozmiar bloku, flagi i
+suma kontrolna. Każda zmiana pola struktury \verb+mb_t+ wymaga odświeżenia sumy
+kontrolnej przy pomocy procedury \verb+mb_touch+. Przed każdą operacją na bloku
+suma jest sprawdzana funkcją \verb+mb_valid+, która w razie błędu przerywa
+działanie aplikacji. Mechanizm ten został wprowadzony celem ochrony przed
+błędami wynikającymi z nadpisania nagłówka przez nieprawidłowe zachowanie
+aplikacji.
+
+W zależności od użycia przestrzeni pamięci za nagłówkiem można wyróżnić trzy
+rodzaje bloków:
 \begin{itemize}
 \item \textit{zajęty} -- pozostała przestrzeń jest używana przez aplikację
-korzystającą z alokatora,
+korzystającą z alokatora; jest oznaczony ustawioną flagą \verb+MB_FLAG_USED+,
 \item \textit{wolny} -- obszar za nagłówkiem ma co najmniej $8$--bajtów i
 składowany jest tam rekord struktury służącej do wyszukiwania wolnych bloków
 --- w bieżącej implementacji wolny blok jest zdefinowany strukturą
-\verb+mb_free_t+,
+\verb+mb_free_t+; posiada wyzerowaną flagę \verb+MB_FLAG_USED+,
 \item \textit{sztuczny} -- blok jest wolny, ale zbyt krótki by mógł
 przechowywać strukturę przechowującą wolne bloki; przy najbliższej okazji
-zostanie wchłonięty przez przyległe bloki.
+zostanie wchłonięty przez przyległe bloki; ma ustawioną flagę
+\verb+MB_FLAG_PAD+.
 \end{itemize}
 
-W rekordzie nagłówka przechowywany jest rozmiar bloku, flagi i suma kontrolna.
-Każda zmiana pola struktury \verb+mb_t+ wymaga odświeżenia sumy kontrolnej przy
-pomocy procedury \verb+mb_touch+, która jest sprawdzana funkcją \verb+mb_valid+
-przed każdą operacją na bloku. Mechanizm ten został wprowadzony celem ochrony
-przed błędami wynikającymi z nadpisania nagłówka przez nieprawidłowe zachowanie
-aplikacji.
-
-Rozszerzony nagłówek dla wolnego bloku dodatkowo przechowuje dwa adresy, które
-wskazują kolejno na element poprzedni i następny w liście wolnych bloków
-posortowanych względem adresu.
 
 \begin{figure}[ht]
 \centering
@@ -2451,30 +2487,149 @@ posortowanych względem adresu.
 \caption{Graficzna reprezentacja obszaru zarządzanego przez \texttt{blkmgr}}
 \end{figure}
 
+Rozszerzony nagłówek dla wolnego bloku dodatkowo przechowuje dwa adresy, które
+wskazują kolejno na element poprzedni i następny w liście wolnych bloków
+posortowanych względem adresu.
+
 Do początku zarządzanego obszaru przylega rekord \verb+mb_list_t+. Przechowuje
-on strażnik listy wolnych bloków oraz pola zliczające liczbę używanych i
-wolnych bloków, oraz liczbę bajtów wolnej pamięci.
+on wartownik listy wolnych bloków oraz pola zliczające liczbę używanych i
+wolnych bloków, oraz liczbę bajtów wolnej pamięci. W samym obszarze musi być
+dokładnie jeden pierwszy i ostatni blok -- są one oznaczone odpowiednią flagą
+\verb+MB_FLAG_FIRST+ i \verb+MB_FLAG_LAST+.
+
+Poniższy zestaw procedur służy do operowania na pojedyńczych blokach wewnątrz
+listy i jest podstawą całego alokatora, a w szczególności funkcji
+przydzielających i zwalniąjących kawałki pamięci.
+\begin{itemize}
+\item \verb+mb_insert+ -- wstawia dany blok na listę posortowaną względem
+wartości adresów,
+\item \verb+mb_pullout+ -- wyjmuje dany blok z listy,
+\item \verb+mb_split+ -- dzieli podany blok na dwa mniejsze i w zależności od
+żądania zwraca pierwszy lub drugi z nch; szczególnym przypadkiem jest blok
+oznaczony specjalną flagą \verb+MB_FLAG_FIRST+ lub \verb+MB_FLAG_LAST+, wtedy
+procedura odpowiednio zmienia flagi w wynikowych blokach,
+\item \verb+mb_coalesce+ -- iteracyjnie sprawdza czy przylegające bloki są
+wolne lub są blokami sztucznymi, a następnie wchłania je tworząc jeden większy
+blok; jeśli wchłonięty blok jest oznaczony specjalnymi flagami wtedy dołącza je
+do własnych flag.
+\end{itemize}
+
+Poniższe operacje służą do implementacji procedur alokacji i zwalniania bloków
+w ramach pojedyńczego obszaru:
+\begin{itemize}
+\item \verb+mb_alloc+ -- znajduje na liście blok większy lub równy pożądanemu
+rozmiarowi; jeśli znaleziony blok jest zbyt duży wtedy zostaje podzielony przy
+pomocy \verb+mb_split+; gotowy blok zostaje oznaczony jako zajęty,
+\item \verb+mb_alloc_aligned+ -- wyszukiwane są bloki zawierające adresy
+podzielne przez podaną liczbę \textit{alignment} i dodatkowo posiadające
+wystarczająco dużo miejsca poczynając od wyrównanego adresu; jeśli odpowiedni
+blok zostanie znaleziony, wtedy dzieli się go przy pomocy \verb+mb_split+ by
+jeden z nowoutworzonych bloków miał początek równo w adresie podzielnym przez
+\textit{alignment} minus rozmiar \verb+mb_t+; reszta procedury jest analogiczna
+do działania \verb+mb_alloc+ po znalezieniu bloku,
+\item \verb+mb_resize+ -- składa się z dwóch przypadków; w pierwszym nowy
+rozmiar bloku jest zmniejszany --- wywołuje się \verb+mb_split+ celem odcięcia
+nieużywanej części bloku, po czym nieużytek wstawia się na listę wolnych
+bloków; drugi przypadek polega na zwiększaniu rozmiaru bloku --- jeśli za
+podanym blokiem istnieje wolna przestrzeń o wystarczającej długości to odcina
+się jej początek i włącza do powiększanego bloku, w przeciwnym wypadku
+procedura zwraca informację o porażce,
+\item \verb+mb_free+ -- dany blok jest oznaczany jako wolny i wstawiany na
+listę przy pomocy procedury \verb+mb_insert+.
+\end{itemize}
+
+Niżej opisane procedury są funkcjami pomocniczymi przy zmianie rozmiaru,
+podziale i scalaniu obszarów, w których umieszczono listy bloków:
+\begin{itemize}
+\item \verb+mb_list_can_shrink_at_begining+ -- na podstawie informacji o
+pierwszym bloku zwraca ilość stron, które można odciąć od początku listy;
+procedura może zwrócić niezerową wartość tylko, jeśli pierwszy blok jest wolny;
+liczba odłączonych stron z obszaru nie może być większa niż rozmiar pierwszego
+bloku,
+\item \verb+mb_list_can_shrink_at_end+ -- analogicznie jak poprzednia
+procedura, ale dotyczy ostatniego blok z danej listy,
+\item \verb+mb_list_shrink_at_begining+ -- po uprzednim sprawdzeniu czy
+operacja jest możliwa, na pierwszym bloku w obszarze wywołuje się procedurę
+\verb+mb_split+ --- nowo utworzony drugi blok musi zaczynać się w adresie
+podzielnym przez rozmiar strony plus wielkość \verb+mb_list_t+; następnie pola
+listy wolnych bloków przenosi się w nowe miejsce i uaktualnia statystyki, po
+czym odświeża się odpowiednie wskaźniki;
+\item \verb+mb_list_shrink_at_end+ -- funkcja ta jest symetryczna w stosunku do
+poprzedniej, oczywiście z wyjątkiem przenoszenia rekordu listy;
+\item \verb+mb_list_find_split+ -- wyszukuje na liście pierwszy blok o adresie
+podzielnym przez wielkość strony; podążającą ten adres wolna przestrzeń musi
+mieć długość co najmniej jednej strony pamięci; jeśli na liście istnieje blok
+spełniający takie warunki, to procedura zwraca obliczony adres i liczbę wolnych
+stron pamięci, które za nim występują,
+\item \verb+mb_list_split+ -- dokonuje podziału listy bloków na dwie mniejsze i
+tym samym przygotowuje obszar do podziału; punktem przecięcia listy jest podany
+adres podzielny przez długość strony --- ostatni blok przed tym adresem staje
+się ostatnim blokiem pierwszej listy, pierwszy za nim staje się pierwszym
+blokiem nowej listy; dodatkowo druga lista zostanie skrócona o liczbę podanych
+stron pamięci,
+\item \verb+mb_recalculate_statistics+ -- powtórnie oblicza pola listy:
+\verb+blkcnt+, \verb+ublkcnt+ i \verb+fmemcnt+; musi zostać wywołana
+na listach powstałych w wyniku działania funkcji \verb+mb_list_split+,
+\item \verb+mb_list_merge+ -- łączy listy bloków z dwóch przyległych obszarów w
+jedną większą listę; początek listy o starszym adresie zostaje dołączony do
+końca pierwszej listy, a statystyki odpowiednio zescalone;
+\end{itemize}
 
 \subsubsection{Możliwe optymalizacje}
+
+Manadżer \texttt{blkmgr} daje największe pole do popisu jeśli chodzi o
+optymalizacje. Idea alokatora typu \textit{boundary tags} znacznie wyewoluowała
+od pierwszego momentu opisania. Właściwie żaden liczący się ogólny manadżer
+pamięci nie posiada tak prostej implementacji. Naturalną ścieżką rozwoju
+\texttt{blkmgr} jest próba dogonienia osiągnięć manadżerów takich jak
+\textit{Doug Lua's malloc}. Przy czym implementacja ta powinna za wszelką cenę
+utrzymać uniwersalność i czytelność, tak by nie zamykać drogi do tego by w
+pewnym momencie rozwój mógł się swobodnie odłączyć od pierwowzorów. Poniżej
+zostanie wymienionych kilka optymalizacji, które zdaniem autora są kluczem do
+poprawienia wydajności i stawienia podwalin pod dalszy rozwój.
+
+Jednym z najprostszych pomysłów, który zmniejszyłby czas wykonania niektórych
+operacji, byłoby umieszczenie w rekordzie \verb+mb_t+ długości poprzedniego
+bloku. W szczególności mogłoby to skrócić czas poszukiwania ostatniego bloku
+jeśli ten jest zajęty, bądź generalnie poszukiwania poprzedniego bloku
+poczynając od zajętego.
+
+Rozszerzeniem algorytmu \textit{boundary tags} często występującym pośród
+współczesnych alokatorów są osobne kubełki do przechowywania wolnych bloków z
+danych przedziałów wielkości. Dodatkowo kubełki takie mogłyby zamiast struktury
+listy wykorzystywać zbalansowane drzewa binarne --- być może \textit{Splay
+Tree} ze względu na dobre właściwości dotyczące lokalności referencji.
+Oczywiście w takim przypadku należałoby zmienić porządek w strukturach
+przetrzymujących wolne bloki --- z uporządkowania względem adresów na
+uporządkowanie po wielkościach bloków.
+
+Kolejnym pomysłem zaczerpiętym z bardziej dojrzałych projektów są listy
+odroczonego scalania. 
 
 \newpage
 
 \subsection{Zarządca dużych bloków --- \texttt{MMAPMGR}}
 
-Duże bloki, które z reguły wymagają przestrzeni o rozmiarze kilkunastu stron
-pamięci i więcej, najefektywnie jest zarządzać niezależnie od mniejszych
-bloków. Jest ku temu kilka istotnych powodów.
+Na podstawie obserwacji wiemy, że fragmenty pamięci o dużych rozmiarach
+aplikacje często wykorzystują przez długi okres czasu. Dodatkowo takich
+obiektów będzie stosunkowo niewiele w porównaniu z liczbą bloków o małym
+rozmiarze. Gdyby w takim przypadku potraktować obszary typu \verb+area_t+ jako
+bloki, narzut procentowy związany z generowanymi nieużytkami w wyniku
+fragmentacji wewnętrznej można uznać za zaniedbywalnie mały. W przypadku bloków
+o rozmiarach kilkuset kilkobajtów przestrzeń rzędu wielkości strony pamięci
+jest stosunkowo mała. Stąd wniosek, że duże bloki, które z reguły wymagają
+przestrzeni o rozmiarze co najmniej kilkudziesięciu stron pamięci, korzystnie
+jest zarządzać nie absorbując zbędnej ilości środków, takich które widzieliśmy
+w poprzednich alokatorach. Dlatego też \verb+mmapmgr+ jest najprostszym
+alokatorem, wykorzystującym bezpośrednio obszary do przechowywania pojedyńczych
+bloków.
 
-Z dużym prawdopodobieństwem bloki o dużych wielkościach będą wykorzystywane
-przez program przez długi okres czasu. Takich obiektów będzie niewielka ilość w
-porównaniu do bloków o mały rozmiarze. Narzut związany z generowanymi
-nieużytkami jest dość mały. Nie istnieją zatem istotne argumenty za tym, żeby
-przechowywać takie obiekty z blokami innych rozmiarów.
-
-Do organizowania obszarów dla większych obiektów można wykorzystywać sprzętowe
-strony większej wielkości np. $4$ \verb+MiB+. Dzięki temu intensywne
-wykorzystywanie dużego obszaru może generować mniej \texttt{TLB miss},
-przyczyniając się do poprawy wydajności programu.
+Jest jeszcze jedna korzyść wynikająca z zarządzania dużych bloków niezależnie
+od małych. Jeśli przypisujemy jakiemuś blokowi obszar możemy zarządać od
+systemu operacyjnego stron innego rozmiaru niż standardowy --- np. architektura
+\verb+x86+ udostępnia strony pamięci rozmiaru $2$ \verb+MiB+. Gdyby użyć takich
+stron do zbudowania obszaru, zmniejszyło by się obciążenie \textit{TLB cache},
+przyczyniając się do poprawy wydajności aplikacji.
 
 Czasem zdarza się, że program żąda bloku pamięci o adresie podzielnym przez
 określoną potegę dwójki przy pomocy funkcji \verb+memalign+. Implementacja tej
@@ -2563,7 +2718,7 @@ wielkości, w mniejszym stopniu obciążając pamięć podręczną.
 
 \newpage
 
-\subsection{Menedżer pamięci}
+\subsection{Manadżer pamięci}
 
 Oczywiście, nie można w nieskończoność kumulować nieużyków --- musi istnieć
 jakieś zdarzenie generujące ich oddawanie do systemu. Takim wyzwalaczem może
@@ -2606,12 +2761,7 @@ często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
 \section{Podsumowanie i kierunek dalszych badań}
 \hypertarget{Podsumowanie}{}
 
-Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić:
-\begin{itemize}
-\item istotne dla wydajności dostępów do pamięci jest umieszczanie danych w
-adresach o naturalnych wartościach tj. $32$-bitowe słowo powinno być pod
-adresem podzielnym przez $4$,
-\end{itemize}
+Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić.
 
 \newpage
 
