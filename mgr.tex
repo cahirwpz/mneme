@@ -2372,7 +2372,7 @@ superblokami i dodane do manadżera superbloków.
 
 Wyżej wymienione mechanizmy są elementami wykorzystywanymi do zbudowania
 alokatora \texttt{eqsbmgr}, którego rekord jest statyczny i jest przypisany
-narzędnemu zarządcy \texttt{memmgr}. Przechowuje on listę zarządzanych
+nadrzędnemu zarządcy \texttt{memmgr}. Przechowuje on listę zarządzanych
 obszarów i implementuje następujące operacje:
 
 \begin{itemize}
@@ -2480,7 +2480,6 @@ zostanie wchłonięty przez przyległe bloki; ma ustawioną flagę
 \verb+MB_FLAG_PAD+.
 \end{itemize}
 
-
 \begin{figure}[ht]
 \centering
 \includegraphics[width=0.90\textwidth]{blkmgr}
@@ -2575,38 +2574,91 @@ jedną większą listę; początek listy o starszym adresie zostaje dołączony 
 końca pierwszej listy, a statystyki odpowiednio zescalone;
 \end{itemize}
 
+Podobnie jak w przypadku \verb+eqsbmgr+ manadżer bloków średniej wielkości
+posiada własną statyczną strukturę podległą \verb+memmgr+. W rekordzie
+\verb+blkmgr_t+ przechowuję listę zarządzanych obszarów. Publiczny interfejs
+alokatora \verb+blkmgr+ składa się z następujących procedur:
+\begin{itemize}
+\item \verb+blkmgr_alloc+ -- przegląda kolejne zarządzane listy wolnych bloków
+i wywołuje na nich w zależności od wartości parametru \textit{alignment}
+odpowiednie funkcje przydziału pamięci; jeśli nie udało się zarezerwować bloku
+w żadnym z zarządzanych obszarów, wtedy próbuje się je powiększać dołączając
+przylegające; powiększanie zarządzanego obszaru składa się z dwóch czynności
+--- w dołączonej przestrzeni tworzy się nową listę bloków, a następnie scala ze
+starą; może się zdarzyć, że nowo dołączony obszar będzie przylegał do początku
+innego zarządzanego obszaru, wtedy łączy się wszytkie trzy; jeśli nie udało się
+powiększyć żadnego obszaru, ostatecznie pobierany jest nowy.
+\item \verb+blkmgr_realloc+ -- przegląda zarządzane obszary i znajduje ten, w
+którym leży zadany blok; następnie wywołuje na bloku procedurę
+\verb+mb_resize+,
+\item \verb+blkmgr_free+ -- podobnie jak poprzednia funkcja, znajduje
+odpowiedni obszar i wywołuje na bloku procedurę \verb+mb_free+; ponieważ
+zwolnienie bloku mogło za sobą pociągnąć utworzenie wolnego fragmentu pamięci
+pokrywającego jedną lub więcej stron pamięci, należy rozważyć zmniejszenie
+zarządzanego obszaru i oddanie nieużywanych jego części do \verb+areamgr+;
+obszar zostaje w całości zwrócony do zarządcy \verb+areamgr+ tylko wtedy, gdy
+nie jest ostatni i zawiera dokładnie jeden blok, który jest wolny; jeśli obszar
+jest niepusty, to sprawdza się czy nie da się odczepić stron z początku lub
+końca obszaru; ostatecznie sprawdza się czy wewnątrz obszaru nie ma fragmentu,
+który mógłby posłużyć do podziału obszaru na dwa mniejsze.
+\end{itemize}
+
 \subsubsection{Możliwe optymalizacje}
 
 Manadżer \texttt{blkmgr} daje największe pole do popisu jeśli chodzi o
 optymalizacje. Idea alokatora typu \textit{boundary tags} znacznie wyewoluowała
-od pierwszego momentu opisania. Właściwie żaden liczący się ogólny manadżer
-pamięci nie posiada tak prostej implementacji. Naturalną ścieżką rozwoju
-\texttt{blkmgr} jest próba dogonienia osiągnięć manadżerów takich jak
-\textit{Doug Lua's malloc}. Przy czym implementacja ta powinna za wszelką cenę
-utrzymać uniwersalność i czytelność, tak by nie zamykać drogi do tego by w
-pewnym momencie rozwój mógł się swobodnie odłączyć od pierwowzorów. Poniżej
-zostanie wymienionych kilka optymalizacji, które zdaniem autora są kluczem do
-poprawienia wydajności i stawienia podwalin pod dalszy rozwój.
+od pierwszego momentu jej opisania. Właściwie żaden współczesny liczący się
+manadżer pamięci ogólnego przeznaczenia nie posiada tak prostej implementacji.
+Naturalną ścieżką rozwoju \texttt{blkmgr} jest próba dogonienia osiągnięć
+alokatorów takich jak \textit{Doug Lua's malloc}. Przy czym implementacja ta
+powinna za wszelką cenę utrzymać uniwersalność i czytelność. Należy się
+przygotować na to, by w pewnym momencie jej rozwój mógł się swobodnie odłączyć
+od idei pierwowzorów. Poniżej zostanie wymienionych kilka optymalizacji, które
+zdaniem autora są kluczem do poprawienia wydajności i stawienia podwalin pod
+dalszy rozwój.
 
 Jednym z najprostszych pomysłów, który zmniejszyłby czas wykonania niektórych
 operacji, byłoby umieszczenie w rekordzie \verb+mb_t+ długości poprzedniego
-bloku. W szczególności mogłoby to skrócić czas poszukiwania ostatniego bloku
-jeśli ten jest zajęty, bądź generalnie poszukiwania poprzedniego bloku
-poczynając od zajętego.
+bloku. W szczególności mogłoby to skrócić czas wyszukiwania w danym obszarze
+ostatniego bloku jeśli ten jest zajęty, bądź generalnie poszukiwania
+poprzedniego bloku poczynając od zajętego.
 
 Rozszerzeniem algorytmu \textit{boundary tags} często występującym pośród
 współczesnych alokatorów są osobne kubełki do przechowywania wolnych bloków z
-danych przedziałów wielkości. Dodatkowo kubełki takie mogłyby zamiast struktury
+danych przedziałów wielkości. Dodatkowo takie kubełki mogłyby zamiast struktury
 listy wykorzystywać zbalansowane drzewa binarne --- być może \textit{Splay
 Tree} ze względu na dobre właściwości dotyczące lokalności referencji.
 Oczywiście w takim przypadku należałoby zmienić porządek w strukturach
 przetrzymujących wolne bloki --- z uporządkowania względem adresów na
-uporządkowanie po wielkościach bloków.
+porządek względem wielkości bloków.
 
 Kolejnym pomysłem zaczerpiętym z bardziej dojrzałych projektów są listy
-odroczonego scalania. 
+odroczonego scalania. Gorliwe łączenie bloków --- tj. bezpośrednio po
+zwolnieniu, o ile przylegają do wolnych --- może być nieporządaną cechą
+manadżera pamięci. Zauważmy, że aplikacja korzystająca z alokatora może mieć w
+zwyczaju częstą rezerwację i zwalnianie bloku tego samego rozmiaru. W takich
+przypadkach opłaca się opóźnić scalanie w nadziei, że świeżo zwolniony blok
+zostanie w najbliższym czasie ponownie zarezerwowany.
 
-\newpage
+Inną techniką wspomagającą alokację bloków jest gorliwy podział. Zauważmy, że
+bardzo prawdopodobnym zachowaniem aplikacji w trakcie konstrukcji jakiejś
+struktury danych będzie generowanie ciągów operacji \verb+alloc+ o rozmiarze
+rekordu. W takim przypadku można się pokusić o przygotowywanie bloków na wyrost
+--- dla żądań rozmiaru $n$ wyszukać wolnego bloku o rozmiarze co najmniej
+$2*n$, wydzielić z niego dwa bloki o rozmiarze $n$, drugi z bloków przenieść do
+listy odroczonego scalania.
+
+Istnieje również kilka prostych idei, które mogą się przyczynić do lepszego
+wykorzystania pamięci podręcznej. Zwróćmy uwagę na to, że specjalnego
+traktowania wymagają bloki o wielkości mniejszej niż linia cache-u. Powinno się
+dążyć do sytuacji, w której zaalokowany fragment pamięci w całości zawiera się
+w pojedyńczej linii.  Zauważmy również, że w obecnej implementacji rekord do
+utrzymywania list wolnych bloków jest dość mały w porównaniu z długością linii.
+Oznacza to, że w trakcie przeglądania listy do pamięci podręcznej sprowadza się
+nadmiarowe dane, które nie są używane w trakcie obliczeń. Możnaby jednak zmusić
+wolne bloki do tego by przechowywały informacje nie tylko o sobie, ale też o
+swoich sąsiadach. Zabieg taki z pewnością zmniejszyłby ilość danych
+przepływających między procesorem, a pamięcią operacyjną.
 
 \subsection{Zarządca dużych bloków --- \texttt{MMAPMGR}}
 
@@ -2631,18 +2683,14 @@ systemu operacyjnego stron innego rozmiaru niż standardowy --- np. architektura
 stron do zbudowania obszaru, zmniejszyło by się obciążenie \textit{TLB cache},
 przyczyniając się do poprawy wydajności aplikacji.
 
-Czasem zdarza się, że program żąda bloku pamięci o adresie podzielnym przez
-określoną potegę dwójki przy pomocy funkcji \verb+memalign+. Implementacja tej
-procedury przy pomocy zarządcy \texttt{mmapmgr} jest bardzo efektywna.
-Wszystkie nowo zarezerwowane obszary mają początek w adresie podzielnym przez
-rozmiar wielokrotności strony --- więc część funkcjonalności wywołania
-\verb+memalign+ dostajemy za darmo. Resztę można osiągnąć rezerwując
-odpowiednio większą ilość stron i odmapowując od początku obszaru te strony,
-których początki nie dzielą się przez zadaną liczbę.
-
-Jeśli obszarami o rozmiarze $<$ $32$ \verb+KiB+ zajmuje się osobny zarządca, to
-wielkość pól będzie mógł składować w danej typu \verb+int16_t+. Zyskujemy więc
-również na efektywności wykorzystania pamięci.
+Szczególnym przypadkiem alokacji jest realizacja żądania \verb+memalign+, czyli
+przydziału bloku o początku w adresie podzielnym przez potęgę dwójki.
+Implementacja tej funkcji wewnątrz alokatora \texttt{mmapmgr} jest bardzo
+prosta. Zauważmy, że wszystkie nowo zarezerwowane obszary mają początek w
+adresie podzielnym przez rozmiar wielokrotności strony --- więc część
+funkcjonalności wywołania \verb+memalign+ dostajemy za darmo. Resztę można
+osiągnąć rezerwując odpowiednio większy obszar i odłączając od jego początku te
+strony, których początki nie dzielą się przez zadaną potęgę dwójki.
 
 \begin{figure}[ht]
 \centering
@@ -2650,71 +2698,54 @@ również na efektywności wykorzystania pamięci.
 \caption{Graficzna reprezentacja struktury danych \texttt{mmapmgr}.}
 \end{figure}
 
-Struktura danych dla zarządcy jest zwykłą listą dwukierunkową przechowującą w
-każdym rekordzie dodatkowe dane --- między innymi adres początku okupowanego
-obszaru. Lista ta jest posortowana pod względem rosnących adresów.
+%%% Ładna tabelka - może się przydać %%%
+%Nagłówek (czy raczej stopka) obszaru zawiera następujące informacje:
+%\begin{center}
+%\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
+%\hline
+%\textsc{pole} & \textsc{znaczenie} \\
+%\hline
+%\hline
+%\verb+pages+ & Ilość stron zajmowanych przez obszar. \\
+%\hline
+%\verb+size+	 & Ilość bajtów zajmowanych przez blok wewnątrz obszaru. \\
+%\hline
+%\verb+prev+	 & Poprzedni nagłówek na liście zarządcy \texttt{mmapmgr}. \\
+%\hline
+%\verb+next+	 & Następny nagłówek na liście zarządcy \texttt{mmapmgr}. \\
+%\hline
+%\end{tabular}
+%\end{center}
 
-Nagłówek (czy raczej stopka) obszaru zawiera następujące informacje:
-\begin{center}
-\begin{tabular}{|m{0.15\linewidth}|p{0.75\linewidth}|}
-\hline
-\textsc{pole} & \textsc{znaczenie} \\
-\hline
-\hline
-\verb+pages+ & Ilość stron zajmowanych przez obszar. \\
-\hline
-\verb+size+	 & Ilość bajtów zajmowanych przez blok wewnątrz obszaru. \\
-\hline
-\verb+prev+	 & Poprzedni nagłówek na liście zarządcy \texttt{mmapmgr}. \\
-\hline
-\verb+next+	 & Następny nagłówek na liście zarządcy \texttt{mmapmgr}. \\
-\hline
-\end{tabular}
-\end{center}
+Struktura danych dla zarządcy wywodzi się wprost z listy obszarów
+\verb+arealst_t+, która jest posortowana pod względem rosnących adresów. Na
+strukturze tej zdefiniowane są następujące operacje:
+\begin{itemize}
+\item \verb+mmapmgr_alloc+ -- rezerwacja bloku o rozmiarze $size$ polega na
+pobraniu obszaru o odpowiedniej długości od \verb+areamgr+ i wstawieniu go na
+listę lokalnych obszarów. Rozmiar rezerwowanego obszaru jest wyrównywany do
+wielkości podzielnej przez długość strony pamięci. Kiedy argument
+\textit{alignment} jest większy niż wielkość strony, trzeba zaangażować
+dodatkowe środki. Pobiera się wtedy obszar o rozmiarze $\lceil (size +
+alignment + sizeof(area\_t)) / PAGESIZE\rceil$ stron, gdyż nie mamy wpływu na to
+w jakim dokładnie adresie zostanie zaczepiony nowy obszar. Wyżej podana długość
+gwarantuje, że wewnątrz obszaru znajdziemy odpowiednią ilość miejsca pod
+adresem podzielnym przez granicę wyrównania. Następnie należy zwolnić
+niepotrzebne strony z początku i ewentualnie z końca obszaru.
+\item \verb+mmapmgr_realloc+ -- składa się z trzech przypadków; w pierwszym
+zakłada się, że zmiana rozmiaru zwiększa lub zmniejsza nieużytek w obrębie
+ostatniej strony obszaru --- wtedy nie trzeba nic robić; w drugim przypadku
+zwiększa się liczba stron wymaganych do przechowywania bloku --- wywołuje się
+wtedy procedurę \verb+areamgr_expand_area+ z nadzieją, że uda się znaleźć
+przyległy wolny obszar; w ostatnim przypadku zmniejsza się liczbę stron
+przypisanych obszarowi wywołując procedure \verb+areamgr_shrink_area+,
+\item \verb+mmapmgr_free+ -- natychmiastowo oddaje cały obszar na użytek
+\verb+areamgr+.
+\end{itemize}
 
-\subsubsection{Opis operacji}
-
-Rezerwacja bloku (\verb+alloc+) o rozmiarze $Size$ polega na pobraniu obszaru od
-menedżera stron, zainicjalizowaniu nagłówka i wstawieniu go na listę. Rozmiar
-rezerwowanego obszaru jest wyrównywany do wielkości podzielnej przez długość
-strony pamięci. Trzeba zadbać też o to, by na końcu obszaru znalazło się
-wystarczająco dużo przestrzeni by przechować nagłówek. Łączna ilość pamięci
-zajmowanej przez ten obszar to:
-$\left\lceil\frac{Size + HeaderSize}{PageSize}\right\rceil$ stron.
-
-Rezerwacja bloku o początku w adresie podzielnym przez potęgę dwójki
-(\verb+alloc_aligned+) nie różni się od \verb+alloc+ dla granicy wyrównania
-mniejszej, bądź równej wielkości strony. Dla większej wartości pobiera się 
-$\left\lceil\frac{Size + Alignment + HeaderSize}{PageSize}\right\rceil$
-stron, gdyż nie mamy wpływu na to w jakim dokładnie adresie zostanie zaczepiony
-nowy obszar. Wyżej podana ilość gwarantuje, że wewnątrz obszaru znajdziemy
-odpowiednią ilość miejsca pod adresem podzielnym przez granicę wyrównania.
-Następnie należy zwolnić niepotrzebne strony z początku oraz z końca obszaru,
-zinicjalizować nagłówek i wstawić obszar na listę.
-
-Operacja \verb+realloc+ może powiększyć zarezerwowany obszar o nieużytek
-występujący między końcem bloku, a początkiem nagłówka. Jeśli menedżer stron
-umożliwia określanie początku adresu pobieranego obszaru, to można
-zaimplementować procedurę \verb+expand_at_end+. Próbuje ona znaleźć określoną
-ilość wolnych stron zaczynających się bezpośrednio za naszym obszarem. Jeśli
-tak, to nowe strony są doczepiane do obszaru, zawartość nagłówka jest
-aktualizowana i przenoszona w nowe miejsce. Należy zaktualizować wskaźniki w
-sąsiadach nagłówka by odzwierciedlały jego nową pozycję. Kiedy \verb+realloc+
-pomniejsza dany blok, sprawdzane jest czy w obszarze jest nieużytek o rozmiarze
-co najmniej jednej strony. Jeśli tak, to wykorzystuje się procedurę
-\verb+shrink_at_end+. Przenosi ona nagłówek na koniec pierwszej strony,
-należącej do nieużytku, która jest go w stanie pomieścić. Następnie aktualizuje
-dane w nagłówku, zwalnia zbędne strony i aktualizuje wskaźniki w sąsiadach
-nagłówka.
-
-\subsubsection{Możliwe optymalizacje}
-
-Zdaje się, że jedyna możliwa ścieżka zwiększenia wydajności to zastąpienie
-listy nagłówków przy pomocy zbalansowanego drzewa. Ze względu na to, że ilość
-dużych bloków jest stosunkowo niewielka, taka optymalizacja jest nieopłacalna
-pod względem złożoności czasowej. Natomiast ciekawe jest to, że w przypadku
-operacji \verb+alloc+ zmniejszy się ilość dostępów do pamięci do logarytmicznej
-wielkości, w mniejszym stopniu obciążając pamięć podręczną.
+Ze względu na to, że \verb+mmapmgr+ wywodzi się bezpośrednio z \verb+areamgr+,
+optymalizacje zarządcy obszarów dotyczą również wydajności alokatora dużych
+bloków.
 
 \newpage
 
@@ -2731,8 +2762,8 @@ utworzyć jeden spójny obszar --- o ile proces ma wystarczająco
 niepofragmentowaną przestrzeń adresową.
 
 By zmniejszyć rywalizację o dostęp do struktury zasobu można zastosować
-dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych na
-potrzeby allokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
+dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych
+na potrzeby alokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
 odśmiecania. Lista globalna może je zmieniać w zależności od ilości
 działających wątków. Kiedy jeden z wątków będzie wymagał przydzielenia nowej
 strony najpierw odpytuje się wyznaczonej listy lokalnej, potem globalnej
