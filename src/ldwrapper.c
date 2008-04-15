@@ -22,22 +22,24 @@ void *(*__memalign_hook)(size_t SIZE, size_t ALIGNMENT, const void *CALLER) = NU
 
 static bool ma_initialized = FALSE;
 static struct memmgr *mm;
-static sem_t ma_sem;
+/* static sem_t ma_sem; */
+
+bool verbose = FALSE;
 
 static void ldwrapper_exit()
 {
-	sem_destroy(&ma_sem);
+	/* sem_destroy(&ma_sem); */
 }
 
 static void ldwrapper_init() {
 	if (__sync_bool_compare_and_swap(&ma_initialized, FALSE, TRUE)) {
 		DEBUG("initialize subsystem\n");
 
-		sem_init(&ma_sem, 0, 1);
+		/* sem_init(&ma_sem, 0, 1); */
 
 		atexit(&ldwrapper_exit);
 
-		memmgr_init(mm);
+		mm = memmgr_init();
 	}
 
 	while (__sync_and_and_fetch(&ma_initialized, TRUE) == FALSE) {
@@ -49,11 +51,11 @@ void *malloc(size_t size)
 {
 	ldwrapper_init();
 
-	sem_wait(&ma_sem);
+	/* sem_wait(&ma_sem); */
 
 	void *area = memmgr_alloc(mm, size, 0);
 
-	sem_post(&ma_sem);
+	/* sem_post(&ma_sem); */
 
 	fprintf(stderr, "alloc(%u) = %p\n", size, area);
 
@@ -76,11 +78,11 @@ void free(void *ptr)
 	assert(ma_initialized == TRUE);
 
 	if (ptr != NULL) {
-		sem_wait(&ma_sem);
+		/* sem_wait(&ma_sem); */
 
 		memmgr_free(mm, ptr);
 
-		sem_post(&ma_sem);
+		/* sem_post(&ma_sem); */
 	}
 
 	fprintf(stderr, "free(%p)\n", ptr);
@@ -104,11 +106,11 @@ void *realloc(void *ptr, size_t size)
 		return NULL;
 	}
 
-	sem_wait(&ma_sem);
+	/* sem_wait(&ma_sem); */
 
 	bool res = memmgr_realloc(mm, ptr, size);
 
-	sem_post(&ma_sem);
+	/* sem_post(&ma_sem); */
 
 	void *newptr = ptr;
 
@@ -129,11 +131,11 @@ void *memalign(size_t boundary, size_t size)
 {
 	ldwrapper_init();
 
-	sem_wait(&ma_sem);
+	/* sem_wait(&ma_sem); */
 
 	void *area = memmgr_alloc(mm, size, boundary);
 
-	sem_post(&ma_sem);
+	/* sem_post(&ma_sem); */
 
 	fprintf(stderr, "memalign(%u, %u) = %p\n", boundary, size, area);
 

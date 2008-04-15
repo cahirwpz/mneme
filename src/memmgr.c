@@ -88,7 +88,8 @@ bool memmgr_realloc(memmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 	switch (mgrtype)
 	{
 		case AREA_MGR_EQSBMGR:
-			res = eqsbmgr_realloc(&self->percpumgr[0].eqsbmgr, memory, new_size);
+			if (new_size <= 32)
+				res = eqsbmgr_realloc(&self->percpumgr[0].eqsbmgr, memory, new_size);
 			break;
 
 		case AREA_MGR_BLKMGR:

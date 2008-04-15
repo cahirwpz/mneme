@@ -1,9 +1,9 @@
 CC		=	libtool --mode=compile gcc -ggdb -static -fms-extensions 
 INCLUDE	=	-I./tests -I./tests/sysdeps/pthread -I./tests/sysdeps/generic 
 DEFS	=	-D__USE_GNU -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBOSE=1
-CFLAGS	=	-march=i686 -O0 -Wall $(DEFS) $(INCLUDE)
+CFLAGS	=	-march=i686 -O2 -Wall $(DEFS) $(INCLUDE)
 
-LD		=	libtool --mode=link gcc -g -static 
+LD		=	libtool --mode=link gcc -g 
 LDFLAGS	=	-rpath /usr/local/lib -lrt -lm
 
 OBJS	=	memmgr.lo eqsbmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
@@ -11,16 +11,19 @@ OBJS	=	memmgr.lo eqsbmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-
 all:	cscope.out tags libmymalloc.la tst-random tests/t-test1 tests/t-test2
 
 libmymalloc.la:	$(OBJS)
+	$(LD) $(LDFLAGS) -static -o $@ $(patsubst %.o,%.lo,$^)
+
+libmymalloc_posix.la: $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^)
 
 tst-random:	libmymalloc.la tst-random.lo 
-	$(LD) $(LDFLAGS) -o $@ $^
+	$(LD) $(LDFLAGS) -static -o $@ $^
 
-tests/t-test1:		tests/t-test1.lo ldwrapper.lo libmymalloc.la
-	$(LD) $(LDFLAGS) -o $@ $^
+tests/t-test1:		tests/t-test1.lo libmymalloc.la
+	$(LD) $(LDFLAGS) -static -o $@ $^
 
-tests/t-test2:		tests/t-test2.lo ldwrapper.lo libmymalloc.la
-	$(LD) $(LDFLAGS) -o $@ $^
+tests/t-test2:		tests/t-test2.lo libmymalloc.la
+	$(LD) $(LDFLAGS) -static -o $@ $^
 
 %.lo: %.o
 	@
