@@ -18,7 +18,8 @@
 %\usepackage{subfigure}
 \usepackage{graphicx}
 \pagestyle{fancy}
-\lstset{language=[ANSI]C,frame=single,captionpos=b,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
+\lstset{language=[ANSI]C,frame=single,captionpos=b,flexiblecolumns=true,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
+\lstset{morekeywords={bool,size\_t,uint32\_t,uint16\_t,uint8\_t,memmgr\_t,areamgr\_t,eqsbmgr\_t,blkmgr\_t}}
 
 \pdfcompresslevel9
 
@@ -133,6 +134,30 @@ samym rzucić światło na podstawy nowo konstruowanego menedżera. Kilka
 podstawowych strategi przydziału bloków zostało zaprezentowanych w rozdziale
 \hyperlink{Klasyka}{\textbf{Klasyczne menedżery pamięci}}.
 
+\subsection{Pamięć dzielona}
+
+Pamięć dzielona jest to spójny obszar pamięci umiejscowiony w przestrzeni
+adresowej kilku ścieżek wykonania instrukcji nazywanych procesami lub wątkami.
+Istotne jest zrozumienie różnic między tymi dwoma klasami obiektów.
+
+Wątki działają wewnątrz jednego procesu. Dzielą między siebie przestrzeń
+adresową procesu w ramach którego powstały. Wątki angażują zdecydowanie mniej
+zasobów niż procesy. Ich wadą jest to, że potencjalnie są bardzo niebezpieczne.
+Potencjalny błąd w jednym wątku może zniszczyć dane innych wątków. Czasem, ze
+wzgędów bezpieczeństwa i poufności danych, nie można dzielić całej przestrzeni
+adresowej.
+
+Procesy, w odróżnieniu od wątków, posiadają własne niezależne przestrzenie
+adresowe. Separują własne zasoby od innych procesów. Ograniczanie dostępu do
+pewnych zasobów zlecają systemowi operacyjnemu --- zapewniając duży stopień
+poufności danych. Czasem jednak muszą się ze sobą komunikować. Wydaje się, że
+najwydajnieszym sposobem na szybką wymianę danych między procesami jest
+dzielenie pewnego obszaru pamięci. Stworzenie pamięci dzielonej między
+procesami wymaga specjalnych mechanizmów systemu operacyjnego.
+
+
+\subsection{Mój wkład}
+
 Autor pracy w trakcie swojej kariery programistycznej natknął się na problem
 efektywnego współdzielenia prostej struktury danych (tablicy haszującej) między
 procesami serwera \textit{Apache} w systemie \texttt{Linux}.  Należy się tu
@@ -176,6 +201,8 @@ zachowanie poszczególnych operacji. Opisane zostały poszczególne składowe
 algorytmu, ogólna strategia zarządzania oraz ewentualne modyfikacje i
 rozszerzenia mające na celu zwiększenie wydajności.
 
+\subsection{Analiza}
+
 Większość analiz teoretycznych przeprowadzonych na menedżerach pamięci
 określała zachowania algorytmów dla losowych ciągów danych. Dane w znaczeniu
 tej klasy problemów to wielkość bloku i długość czasu jego życia --- czyli ilość
@@ -204,26 +231,6 @@ aplikację. Ciekawą i mało zbadaną dziedziną badań jest generowanie i anali
 O testowaniu, technikach generowania śladów i doborze miarodajnych aplikacji do
 testów traktuje rozdział \hyperlink{Testowanie}{\textbf{Metody testowania
 wydajności}}.
-
-Pamięć dzielona jest to spójny obszar pamięci umiejscowiony w przestrzeni
-adresowej kilku ścieżek wykonania instrukcji nazywanych procesami lub wątkami.
-Istotne jest zrozumienie różnic między tymi dwoma klasami obiektów.
-
-Wątki działają wewnątrz jednego procesu. Dzielą między siebie przestrzeń
-adresową procesu w ramach którego powstały. Wątki angażują zdecydowanie mniej
-zasobów niż procesy. Ich wadą jest to, że potencjalnie są bardzo niebezpieczne.
-Potencjalny błąd w jednym wątku może zniszczyć dane innych wątków. Czasem, ze
-wzgędów bezpieczeństwa i poufności danych, nie można dzielić całej przestrzeni
-adresowej.
-
-Procesy, w odróżnieniu od wątków, posiadają własne niezależne przestrzenie
-adresowe. Separują własne zasoby od innych procesów. Ograniczanie dostępu do
-pewnych zasobów zlecają systemowi operacyjnemu --- zapewniając duży stopień
-poufności danych. Czasem jednak muszą się ze sobą komunikować. Wydaje się, że
-najwydajnieszym sposobem na szybką wymianę danych między procesami jest
-dzielenie pewnego obszaru pamięci. Stworzenie pamięci dzielonej między
-procesami wymaga specjalnych mechanizmów systemu operacyjnego.
-
 
 W rozdziale \hyperlink{Podsumowanie}{\textbf{Podsumowanie i kierunek dalszych
 badań}} zostały przedstawione potencjalne zastosowania wielowątkowego menedżera
@@ -385,13 +392,7 @@ oszacowania górnej granicy ilości zużytej pamięci dla metody \textit{First-F
 działającej w środowisku wielowątkowym ukazała się pracy \cite{luby94tight} i
 jej wynik jest taki sama jak dla przypadku jednowątkowego.
 
-\subsection{Wersje problemu zarządzania pamięcią}
-
-Z problemem zarządzania pamięcią analogicznym to zdefinowanego w poprzednim
-paragrafie można się spotkać na wielu szczeblach działania systemu
-operacyjnego. W jądrze Linuksa są co najmniej dwa menedżery pamięci o rożnych
-zastosowaniach i właściwościach. Istnieje cała gama alokatorów działających w
-przestrzeni użytkownika.
+\subsection{Istniejące implementacje zarządzania pamięcią}
 
 \paragraph{Standardowa biblioteka POSIX.}
 
@@ -429,6 +430,14 @@ Zaprezenowano tam efektywniejszą organizację wolnych obszarów pamięci
 minimalizującą ilość odwołań do systemu operacyjnego.  Obecnie
 \textit{tcmalloc} wydaje się być najwydajniejszym publicznie dostępnym
 alokatorem pamięci ogólnego przeznaczenia.
+
+\subsubsection{Problemy powiązane}
+
+Z problemem zarządzania pamięcią analogicznym to zdefinowanego w poprzednim
+paragrafie można się spotkać na wielu szczeblach działania systemu
+operacyjnego. W jądrze Linuksa są co najmniej dwa menedżery pamięci o rożnych
+zastosowaniach i właściwościach. Istnieje cała gama alokatorów działających w
+przestrzeni użytkownika.
 
 \paragraph{Zarządzenie stronami pamięci.}
 
@@ -1919,7 +1928,7 @@ Funkcja \texttt{malloc} zwraca wskaźnik do bloku pamięci o rozmiarze
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototyp procedury \texttt{malloc}.}]
-void * malloc (size_t size);
+void *malloc(size_t size);
 \end{lstlisting}
 
 Zwrócony wskaźnik w systemach $32$-bitowych musi być podzielny przez $8$, a w
@@ -1938,7 +1947,7 @@ w stanie pomieścić tablicę \texttt{count} elementów o rozmiarze
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototyp procedury \texttt{calloc}.}]
-void * calloc (size_t count, size_t eltsize);
+void *calloc(size_t count, size_t eltsize);
 \end{lstlisting}
 
 Procedura ta zachowuję się podobnie jak \texttt{malloc}, poza gwarancją
@@ -1956,7 +1965,7 @@ rozmiarze \texttt{newsize}, kopiuje do niego zawartość bloku wskazywanego prze
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototyp procedury \texttt{realloc}.}]
-void * realloc (void *ptr, size_t newsize);
+void *realloc(void *ptr, size_t newsize);
 \end{lstlisting}
 
 Jeśli \texttt{realloc} zwróci wskaźnik równy \texttt{NULL}, wtedy stary obszar
@@ -1980,8 +1989,8 @@ ma wystarczającej ilości pamięci.
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototyp procedury \texttt{posix\_memalign}, \texttt{memalign} i \texttt{valloc}.},xleftmargin=0cm,xrightmargin=0cm]
 int posix_memalign (void **memptr, size_t alignment, size_t size);
-void * memalign (size_t boundary, size_t size);
-void * valloc (size_t size);
+void *memalign(size_t boundary, size_t size);
+void *valloc(size_t size);
 \end{lstlisting}
 
 Funkcja \texttt{memalign} działa analogicznie do \texttt{posix\_memalign} --
@@ -2004,8 +2013,8 @@ wykorzystywaną zdatną do ponownego użycia.
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototyp procedury \texttt{free} i \texttt{cfree}.}]
-void free (void *ptr);
-void cfree (void *ptr);
+void free(void *ptr);
+void cfree(void *ptr);
 \end{lstlisting}
 
 Funkcja \texttt{cfree} jest synonimem \texttt{free} i istnieje wyłącznie ze
@@ -2031,9 +2040,9 @@ Procedura \texttt{free} nie wykonuje żadnej operacji, jeśli wskaźnik
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototypy pozostałych procedur i zmiennych.}]
-int mallopt (int param, int value);
-struct mallinfo mallinfo (void);
-int mcheck (void (*ABORTFN)(int STATUS));
+int mallopt(int param, int value);
+struct mallinfo mallinfo(void);
+int mcheck(void (*ABORTFN)(int STATUS));
 int mprobe(void *POINTER);
 \end{lstlisting}
 
@@ -2584,10 +2593,11 @@ i wywołuje na nich w zależności od wartości parametru \textit{alignment}
 odpowiednie funkcje przydziału pamięci; jeśli nie udało się zarezerwować bloku
 w żadnym z zarządzanych obszarów, wtedy próbuje się je powiększać dołączając
 przylegające; powiększanie zarządzanego obszaru składa się z dwóch czynności
---- w dołączonej przestrzeni tworzy się nową listę bloków, a następnie scala ze
-starą; może się zdarzyć, że nowo dołączony obszar będzie przylegał do początku
-innego zarządzanego obszaru, wtedy łączy się wszytkie trzy; jeśli nie udało się
-powiększyć żadnego obszaru, ostatecznie pobierany jest nowy.
+--- w dołączonej przestrzeni tworzy się nową listę bloków, a następnie scala
+się ją ze starą; może się zdarzyć, że nowo dołączony obszar będzie przylegał do
+początku innego zarządzanego obszaru, wtedy łączy się wszytkie trzy; jeśli nie
+udało się powiększyć żadnego obszaru, ostatecznie pobiera się nowy z
+\texttt{areamgr},
 \item \verb+blkmgr_realloc+ -- przegląda zarządzane obszary i znajduje ten, w
 którym leży zadany blok; następnie wywołuje na bloku procedurę
 \verb+mb_resize+,
@@ -2749,41 +2759,76 @@ bloków.
 
 \newpage
 
-\subsection{Manadżer pamięci}
+\subsection{Ogólny manadżer pamięci --- \texttt{MEMMGR}}
 
-Oczywiście, nie można w nieskończoność kumulować nieużyków --- musi istnieć
-jakieś zdarzenie generujące ich oddawanie do systemu. Takim wyzwalaczem może
-być przekroczenie pewnej sumarycznej objętości nieużywanych stron np.: $2$
-\verb+MiB+, albo próba rezerwacji dużego spójnego obszaru pamięci np.: powyżej
-$64$ stron. Warto nadmienić, że zarządzanie stronami w systemie operacyjnym ma
-istotną przewagę nad analogicznym zadaniem w przestrzeni użytkownika. W
-szczególności, jądro systemu może z wielu nieprzylegających do siebie stron
-utworzyć jeden spójny obszar --- o ile proces ma wystarczająco
-niepofragmentowaną przestrzeń adresową.
+Ostatnim elementem całej implementacji jest ogólny manadżer, który łączy
+wszystkie dotychczas opisan elementy tworząc jeden uniwersalny interfejs
+zarządzania pamięcią.
 
-By zmniejszyć rywalizację o dostęp do struktury zasobu można zastosować
-dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych
-na potrzeby alokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
-odśmiecania. Lista globalna może je zmieniać w zależności od ilości
-działających wątków. Kiedy jeden z wątków będzie wymagał przydzielenia nowej
-strony najpierw odpytuje się wyznaczonej listy lokalnej, potem globalnej
+Zadaniem \verb+memmgr+ jest przede wszystkim przekierowywanie żądań do
+podrzędnych alokatorów mając na uwadze ich właściwości --- żądania powinny być
+przydzielane do alokatorów na podstawie podanego rozmiaru --- i ograniczenia
+--- \verb+eqsbmgr+ nie potrafi przydzielać obszarów wyrównanych do adresów
+podzielnych przez więcej niż $8$, ani zmieniać rozmiaru zaalokowanych bloków
+bez ich przenoszenia.
 
-Można się spodziewać, że w większości przypadków wątek budujący jakieś
-dynamiczne struktury danych będzie sam na nich operował, co najwyżej
-prezentując wyniki innym wątkom. Innymi słowy większość operacji \verb+free+
-wątek będzie wykonywał na blokach, które sam zarezerwował. Oczywiście nie może
-być to założeniem, ale praktyka pokazuje, że zachowanie sprzeczne z opisanym
-wyżej przyczynia się do wielu błędów i programiści pisząc programy unikają
-takich zachowań.
+Drugim, i równie ważnym, zadaniem ogólnego alokatora jest kontrolowanie
+dostępnej liczby wolnych stron pamięci, które podrzędne alokatory mogą
+wykorzystywać na swoje potrzeby. Ponieważ w miarę działania poszczególnych
+zarządców niższego szczebla powstają puste obszary, a nie możemy pozwolić na to
+by kumulować je w nieskończoność, musi istnieć jakieś zdarzenie generujące ich
+oddawanie do systemu. Takim wyzwalaczem może być przekroczenie pewnej
+sumarycznej objętości nieużywanych stron np.: $2$ \verb+MiB+, albo próba
+rezerwacji dużego spójnego obszaru pamięci np.: powyżej $64$ stron. 
 
-Kiedy wątek kończy swoje działanie powinien zadbać o to, by pamięć, którą
-zarządza korzystając z prywatnych struktur, oddać na użytek globalnej listy
-nieużytków lub menedżera osieroconych bloków --- takich, które nie posiadają
-właściciela.
+Warto nadmienić, że zarządzanie stronami w systemie operacyjnym ma istotną
+przewagę nad analogicznym zadaniem w przestrzeni użytkownika. Jeśli proces ma
+wystarczająco niepofragmentowaną przestrzeń adresową, to jądro systemu może z
+wielu nieprzylegających do siebie fizycznie stron utworzyć jeden logicznie
+spójny obszar pamięci.
 
-Istotnym zagadnieniem jest też dobór progów odśmiecania list nieużytków.
-Należałoby przeprowadzić empiryczne badania programów i spróbować wyłowić
-często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
+Rekord ogólnego zarządcy \verb+memmgr+ zawiera w sobie rekordy podległych
+manadżerów tj. \verb+eqsbmgr+, \verb+blkmgr+ oraz \verb+mmapmgr+, i jest
+tworzony w pierwszym nowo utworzonym obszarze, który jednocześnie jest
+kontenerem dla manadżera \verb+areamgr+. 
+
+\vspace{2ex}
+\begin{lstlisting}[caption={Prototypy funkcji menedżera pamięci \texttt{memmgr}.},xleftmargin=1cm,xrightmargin=1cm]
+memmgr_t *memmgr_init();
+void *memmgr_alloc(memmgr_t *mm, uint32_t size, uint32_t alignment);
+bool memmgr_realloc(memmgr_t *mm, void *memory, uint32_t new_size);
+bool memmgr_free(memmgr_t *mm, void *memory);
+void memmgr_verify(memmgr_t *mm, bool verbose);
+\end{lstlisting}
+
+Poniżej podano znaczenie wyżej wymienionych funkcji:
+\begin{itemize}
+\item \verb+memmgr_init+ -- tworzy nowego zarządce pamięci; pobiera z systemu
+operacyjną stronę po czym przekształca ją w zarządcę \verb+aremgr+; w adresie
+przyległym do początku obszaru umieszcza rekord \verb+memmgr_t+ i inicjalizuje
+jego zawartość,
+\item \verb+memmgr_alloc+ -- próbuje przydzielić żądany blok o rozmiarze $size$
+i adresie podzielnym przez $alignment$; jeśli $size \le 32$ i $alignment \le 8$
+to do realizacji żądania wybierany jest \verb+eqsbmgr+, jeśli $size \le 32760$
+to \verb+blkmgr+, w p.p. \verb+memmgr+,
+\item \verb+memmgr_realloc+ -- zmienia rozmiar bloku o adresie $memory$ na
+$new\_size$; znajduje obszar, do którego należy podany adres; na podstawie typu
+obszaru przekierowuje żądanie do odpowiedniego podrzędnego zarządcy,
+\item \verb+memmgr_free+ -- zwalnia blok wskazywany przez $memory$; na
+podstawie typu obszaru, do którego należy podany adres, żądanie jest
+przekazywane do podległego manadżera, a następnie sprawdza się czy nie powstały
+nieużytki, które należy zwrócić do systemu operacyjnego; jeśli jest łącznie
+więcej niż 64 wolne strony pamięci, to procedura przegląda w porządku malejącym
+względem wielkości listy wolnych obszarów \verb+areamgr+; w~trakcie
+przeglądania zwalnia obszary dopóty wolnych stron nie będzie mnie niż wcześniej
+podany próg,
+\item \verb+memmgr_verify+ -- sprawdza spójność i poprawność struktur danych
+należących do podrzędnych alokatorów.
+\end{itemize}
+
+\subsubsection{Możliwe optymalizacje}
+
+Jeszcze się zastanawiam.
 
 \newpage
 
@@ -2792,7 +2837,39 @@ często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
 \section{Podsumowanie i kierunek dalszych badań}
 \hypertarget{Podsumowanie}{}
 
-Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić.
+Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić:
+\begin{enumerate}
+\item System logowania, asercji i programowania transakcyjnego dla języka C ---
+\texttt{GNU Nana}.
+\item Alternatywne podejście do wielowątkowych struktur danych --- pamięć
+transakcyjna (ang. \textit{Transactional Memory}).
+\item Kompletny system testowania --- biblioteki \texttt{CUnit}, \texttt{GNU
+AutoUnit}, \texttt{Check}.
+\end{enumerate}
+
+%By zmniejszyć rywalizację o dostęp do struktury zasobu można zastosować
+%dwupoziomowość --- rozbić listę nieużytków na jedną globalną i wiele lokalnych
+%na potrzeby alokatorów niższego rzędu.  Oba rodzaje list mają różne kryteria
+%odśmiecania. Lista globalna może je zmieniać w zależności od ilości
+%działających wątków. Kiedy jeden z wątków będzie wymagał przydzielenia nowej
+%strony najpierw odpytuje się wyznaczonej listy lokalnej, potem globalnej
+
+%Można się spodziewać, że w większości przypadków wątek budujący jakieś
+%dynamiczne struktury danych będzie sam na nich operował, co najwyżej
+%prezentując wyniki innym wątkom. Innymi słowy większość operacji \verb+free+
+%wątek będzie wykonywał na blokach, które sam zarezerwował. Oczywiście nie może
+%być to założeniem, ale praktyka pokazuje, że zachowanie sprzeczne z opisanym
+%wyżej przyczynia się do wielu błędów i programiści pisząc programy unikają
+%takich zachowań.
+
+%Kiedy wątek kończy swoje działanie powinien zadbać o to, by pamięć, którą
+%zarządza korzystając z prywatnych struktur, oddać na użytek globalnej listy
+%nieużytków lub menedżera osieroconych bloków --- takich, które nie posiadają
+%właściciela.
+
+%Istotnym zagadnieniem jest też dobór progów odśmiecania list nieużytków.
+%Należałoby przeprowadzić empiryczne badania programów i spróbować wyłowić
+%często spotykane wzorce zachowań mogące pomóc w oszacowaniu wartości.
 
 \newpage
 
