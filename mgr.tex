@@ -1,21 +1,18 @@
-% --- Inicjalizacja dokumentu --------------------------------------------------
+% --- Inicjacja dokumentu ------------------------------------------------------
 
 \documentclass[12pt,a4paper,titlepage,twoside]{mwart}
 \usepackage{latexsym}
 \usepackage{polski}
-%\usepackage{array}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
-%\usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{a4wide}
 \usepackage{fancyhdr}
 \usepackage{tabularx}
-%\usepackage{enumitem}
 \usepackage[iso]{isodateo}
 \usepackage{hyperref}
+\hypersetup{colorlinks=true}
 \usepackage{listings}
-%\usepackage{subfigure}
 \usepackage{graphicx}
 \pagestyle{fancy}
 \lstset{language=[ANSI]C,frame=single,captionpos=b,flexiblecolumns=true,xleftmargin=20mm,xrightmargin=20mm,tabsize=4}
@@ -83,12 +80,12 @@ będzie niskopoziomowy menedżer pamięci bez odśmiecania --- taki jaki znamy z
 biblioteki standardowej języka C. Udostępnia on co najmniej dwie operacje:
 \texttt{malloc} i \texttt{free}. Raz przydzielony blok pamięci nie może się
 przemieszczać, ani być w jakikolwiek inny sposób modyfikowany przez algorytm
-zarządcy. Zagadnienia te zostanie dokładniej opisane w dziale
+zarządcy. Zagadnienia te zostaną dokładniej opisane w dziale
 \hyperlink{Teoria}{\textbf{Teoretyczne podstawy}}. Zostaną tam również
 wytłumaczone pewne terminy, które wydają się być niejasne i często --- być może
 bez świadomości czytelnika --- są używane zamiennie.
 
-Problem allokacji pamięci jest od strony teoretycznej bardzo dobrze zbadany.
+Problem alokacji pamięci jest od strony teoretycznej bardzo dobrze zbadany.
 Większość badań została przeprowadzona na przełomie lat 60-tych i 70-tych
 ubiegłego wieku. Skupiały się one głównie na analizie nieużytków powstałych w
 wyniku przeprowadzenia ciągu operacji na zarządzanym obszarze. Określiły górną
@@ -117,10 +114,19 @@ wykorzystania pamięci dostarczanej przez system operacyjny, przystosowanie do
 wielowątkowości i inne aspekty, mogą mieć wpływ nie tylko na wydajność operacji
 \texttt{malloc} i \texttt{free}. Umiejętna implementacja korzystająca ze
 specyfiki architektury ma również wpływ na prędkość algorytmów korzystających z
-alokatora. Innymi słowy --- nie sposób zbudować wydajny algorytm zarządzania
+alokatora. Innymi słowy --- nie sposób zbudować wydajnego algorytmu zarządzania
 pamięcią nie znając dobrze specyfiki architektury sprzętowej i zachowań systemu
 operacyjnego. Zagadnienia z tym związane poruszono w rozdziale
 \hyperlink{Architektura}{\textbf{Podstawy architektury pamięci}}.
+
+Nowoczesny algorytm zarządzania pamięcią jest tworem hybrydowym i z reguły
+posiada pięć rozróżnialnych podsystemów. Zarządzanie stronami to najbardziej
+niskopoziomowy element całego menedżera. Odpowiada za pobieranie, zwalnianie i
+buforowanie stron pamięci. Istnieją trzy pomniejsze algorytmy zarządzania
+blokami o odpowiednich rozmiarach --- podział ten jest stosowany ze względu na
+odmienne preferencje programów co do określonych rozmiarów alokacji. Ostatnim
+elementem jest właściwy menedżer pamięci, który używa wyżej wymienionych
+elementów i realizuje pewną strategię zarządzania blokami i obszarami pamięci.
 
 System \texttt{Linux} posiada stosunkowo dobre algorytmy zarządzania stertą,
 zarówno te działające w przestrzeni użytkownika (biblioteka \texttt{GNU libc} i
@@ -138,23 +144,22 @@ podstawowych strategi przydziału bloków zostało zaprezentowanych w rozdziale
 
 Pamięć dzielona jest to spójny obszar pamięci umiejscowiony w przestrzeni
 adresowej kilku ścieżek wykonania instrukcji nazywanych procesami lub wątkami.
-Istotne jest zrozumienie różnic między tymi dwoma klasami obiektów.
+Istotne jest zrozumienie różnic między tymi dwiema klasami obiektów.
 
 Wątki działają wewnątrz jednego procesu. Dzielą między siebie przestrzeń
 adresową procesu w ramach którego powstały. Wątki angażują zdecydowanie mniej
 zasobów niż procesy. Ich wadą jest to, że potencjalnie są bardzo niebezpieczne.
 Potencjalny błąd w jednym wątku może zniszczyć dane innych wątków. Czasem, ze
-wzgędów bezpieczeństwa i poufności danych, nie można dzielić całej przestrzeni
+względów bezpieczeństwa i poufności danych, nie można dzielić całej przestrzeni
 adresowej.
 
 Procesy, w odróżnieniu od wątków, posiadają własne niezależne przestrzenie
 adresowe. Separują własne zasoby od innych procesów. Ograniczanie dostępu do
 pewnych zasobów zlecają systemowi operacyjnemu --- zapewniając duży stopień
 poufności danych. Czasem jednak muszą się ze sobą komunikować. Wydaje się, że
-najwydajnieszym sposobem na szybką wymianę danych między procesami jest
+najwydajniejszym sposobem na szybką wymianę danych między procesami jest
 dzielenie pewnego obszaru pamięci. Stworzenie pamięci dzielonej między
 procesami wymaga specjalnych mechanizmów systemu operacyjnego.
-
 
 \subsection{Mój wkład}
 
@@ -181,17 +186,8 @@ przechowywania danych o połączeniach wybrano pamięć dzieloną, ze względu n
 najmniejszy narzut obliczeń wymaganych do obsługi żądania. Główny proces
 serwera rezerwował pewien obszar pamięci współdzielonej, która była
 przekazywana w niezmienionej postaci do procesów potomnych --- co gwarantuje
-procedura \verb+fork+. Dzięki temu wszystkie procesy potomne mogły się ze soba
+procedura \verb+fork+. Dzięki temu wszystkie procesy potomne mogły się ze sobą
 w efektywny sposób komunikować.
-
-Nowoczesny algorytm zarządzania pamięcią jest tworem hybrydowym i z reguły
-posiada pięć rozróżnialnych podsystemów. Zarządzanie stronami to najbardziej
-niskopoziomowy element całego menedżera. Odpowiada za pobieranie, zwalnianie i
-buforowanie stron pamięci. Istnieją trzy pomniejsze algorytmy zarządzania
-blokami o odpowiednich rozmiarach --- podział ten jest stosowany ze względu na
-odmienne preferencje programów co do określonych rozmiarów allokacji. Ostatnim
-elementem jest właściwy menedżer pamięci, który używa wyżej wymienionych
-elementów i realizuje pewną strategię zarządzania blokami i obszarami pamięci.
 
 W rozdziale \hyperlink{Implementacja}{\textbf{Implementacja}} autor przedstawił
 założenia, które poczynił implementując własny menedżer pamięci. Został tam
@@ -216,9 +212,9 @@ Okazuje się, że programy korzystają z menedżera pamięci w pewien określony
 sposób, zdradzając przy tym ściśle określone wzorce. Alokatory można testować
 jako samodzielne programy i jako elementy innych programów. Często do testów
 wybiera się pewien zbiór aplikacji i obserwuje czas działania w zależności od
-algorymu alokatora.
+algorytmu alokatora.
 
-Systemy uniksowe dzięki mechanizmowi przesłaniania symboli bibliotecznych
+Dzięki mechanizmowi przesłaniania symboli bibliotecznych systemy uniksowe
 umożliwiają zmuszanie programów do korzystania z menedżera pamięci spoza
 biblioteki standardowej. Dzięki temu można generować tzw. ślady wykonania
 programu i analizować w jaki sposób korzystał z wywołań \texttt{malloc} i
@@ -251,12 +247,12 @@ zwalnianie obszarów za czarne skrzynki --- nie wiedząc, że wewnątrz tkwią c
 zaawansowane algorytmy. Z reguły są one dość dobrze przetestowane i sprawują
 się dobrze w większości przypadków. Niestety bywają sytuacje kiedy działają
 skrajnie nieefektywnie.  Słowo \textit{efektywnie} w kontekście alokatorów
-pamięci może być rozumiane na kilka sposóbów.
+pamięci może być rozumiane na kilka sposobów.
 
 Algorytm może być \textit{efektywny} pamięciowo, co znaczy że:
 \begin{itemize}
 \item zużywa niewiele pamięci na własne wewnętrzne pomocnicze struktury danych,
-\item charakteryzuje się niewielką fragmentacją wewnętrzą i zewnętrzną.
+\item charakteryzuje się niewielką fragmentacją wewnętrzną i zewnętrzną.
 \end{itemize}
 Tematyka efektywności wykorzystania pamięci została szczegółowo omówiona w
 przekrojowej pracy na temat alokatorów pamięci \cite{paul95dynamic}.
@@ -273,7 +269,7 @@ rywalizacją o blokady (ang. \textit{lock contention}) niezbędne do utrzymania
 spójności wewnętrznych struktur.
 \end{itemize}
 
-Celem tego rodziału jest przedstawienie podstawowych koncepcji związanych z
+Celem tego rozdziału jest przedstawienie podstawowych koncepcji związanych z
 algorytmami zarządzania pamięcią niezbędnych do zrozumienia treści kolejnych
 rozdziałów. 
 
@@ -337,14 +333,14 @@ Fragmentacja wewnętrzna jest mniej groźna, lecz trudniejsza w minimalizacji. W
 większości przypadków jest ona wynikiem poczynienia pewnych założeń w działaniu
 alokatora. Rezerwowane bloki pamięci są z reguły większe, niżby wynikało to z
 wartości przekazywanej do funkcji \texttt{malloc}. Procesory działają
-wydajniej, a czasami wręcz wymagają\footnote{Procesory \texttt{PowerPC} przy
-próbie odczytu słów danych o parzystej długości spod nieparzystych adresów
-zgłaszają przerwanie sprzętowe.}, by słowa danych były odczytywane z adresów
-podzielnych przez ich długość. Większość menedżerów pamięci za jednostkę
-allokacji przyjmuje $8$ bajtów, co odpowiada rozmiarowi najdłuższej danej
-całkowitej oznaczanej w języku \verb+C+ jako \verb+long long int+. W związku z
-tym każdy blok ma adres początku podzielny przez $8$, co implikuje również 
-podzielność rozmiaru bloku przez~$8$.
+wydajniej, a czasami wręcz wymagają\footnote{Przykładowo przy próbie odczytu
+słów danych o parzystej długości spod nieparzystych adresów procesory
+\texttt{PowerPC} zgłaszają przerwanie sprzętowe.}, by słowa danych były
+odczytywane z adresów podzielnych przez ich długość. Większość menedżerów
+pamięci za jednostkę alokacji przyjmuje $8$ bajtów, co odpowiada rozmiarowi
+najdłuższej danej całkowitej oznaczanej w języku \verb+C+ jako \verb+long long int+.
+W związku z tym każdy blok ma adres początku podzielny przez $8$, co
+implikuje również podzielność rozmiaru bloku przez~$8$.
 
 Wydaje się, że fragmentacja wewnętrzna jest nie do uniknięcia. Algorytm
 zarządzania pamięcią nie wie nic na temat struktur, które będzie przechowywał w
@@ -390,7 +386,7 @@ możliwy blok satysfakcjonujący żądanie.}, która okazuję się być znacznie
 większa niż w przypadku \textit{First-Fit} i wynosi $O(M \cdot n)$. Analiza
 oszacowania górnej granicy ilości zużytej pamięci dla metody \textit{First-Fit}
 działającej w środowisku wielowątkowym ukazała się pracy \cite{luby94tight} i
-jej wynik jest taki sama jak dla przypadku jednowątkowego.
+jej wynik jest taki sam jak dla przypadku jednowątkowego.
 
 \subsection{Istniejące implementacje zarządzania pamięcią}
 
@@ -405,7 +401,7 @@ mających na celu zwiększenie wydajności tego mechanizmu.
 
 W~chwili obecnej standardowa biblioteka \verb+C+ dla systemu Linux korzysta z
 alokatora \textit{Doug Lea's Malloc} (w skrócie \textit{dlmalloc}) opisanego w
-pracy \cite{douglea96malloc}. W trakcie swojego instnienia alokator ten
+pracy \cite{douglea96malloc}. W trakcie swojego istnienia alokator ten
 przeszedł szereg modyfikacji: zwiększenie lokalności odwołań do pamięci,
 usprawnienie heurystyk przygotowujących bloki na potrzeby przyszłych wywołań,
 odroczone scalanie bloków, intensywne sprawdzanie spójności zarządzanej pamięci
@@ -426,18 +422,17 @@ Ideę prywatnych stert z alokatora \textit{Hoard} rozwinięto w
 \textit{tcmalloc} wykonanym przez pracowników firmy Google opisanym w pracy
 \cite{ghemawat07tcmalloc}. Zamiast semaforów, korzystających z systemu
 operacyjnego, zastosowano tam blokady pętlowe (ang.  \textit{spin locks}).
-Zaprezenowano tam efektywniejszą organizację wolnych obszarów pamięci
+Zaprezentowano tam efektywniejszą organizację wolnych obszarów pamięci
 minimalizującą ilość odwołań do systemu operacyjnego.  Obecnie
 \textit{tcmalloc} wydaje się być najwydajniejszym publicznie dostępnym
 alokatorem pamięci ogólnego przeznaczenia.
 
 \subsubsection{Problemy powiązane}
 
-Z problemem zarządzania pamięcią analogicznym to zdefinowanego w poprzednim
+Z problemem zarządzania pamięcią analogicznym do zdefiniowanego w poprzednim
 paragrafie można się spotkać na wielu szczeblach działania systemu
 operacyjnego. W jądrze Linuksa są co najmniej dwa menedżery pamięci o rożnych
-zastosowaniach i właściwościach. Istnieje cała gama alokatorów działających w
-przestrzeni użytkownika.
+zastosowaniach i właściwościach.
 
 \paragraph{Zarządzenie stronami pamięci.}
 
@@ -449,7 +444,7 @@ ograniczeń, ale również pułapek wydajnościowych.
 
 Jądro systemu uniksowego nie udostępnia procesom przestrzeni użytkownika
 mechanizmu zarządzania pamięcią dla bloków różnej długości. Dostarcza zamiast
-tego nieco bardziej niskopoziomowy interfejs pobierania lub zwalaniania pewnej
+tego nieco bardziej niskopoziomowy interfejs pobierania lub zwalniania pewnej
 ilości całych stron pamięci (najczęściej są to bloki 4\verb+KiB+). Z punktu
 widzenia procesora taki blok to najmniejsza jednostka pamięci, której
 właściwości jest w stanie kontrolować. Jądro systemu zarządza pamięcią fizyczną
@@ -494,13 +489,13 @@ pamięci.
 W tym rozdziale zostaną omówione podstawy i pojęcia związane z:
 \begin{itemize}
 \item organizacją sprzętową pamięci dla architektury sprzętowej \textit{Intel x86},
-\item przestrzeni adresowej programu i jej obłożenia w systemie Linux,
-\item interfejsem rezerwacji i zwalnianiem stron w systemach uniksowych,
+\item przestrzeni adresowej programu i jej ułożenia w systemie Linux,
+\item interfejsem rezerwacji i zwalniania stron w systemach uniksowych,
 \item zagadnieniami wydajności pamięci w systemach jedno- i wieloprocesorowych,
 \item metodami synchronizacji dla programów wielowątkowych.
 \end{itemize}
 
-Część z tych zagadnien w przystępny sposób opisuje praca \cite{pas02memory}
+Część z tych zagadnień w przystępny sposób opisuje praca \cite{pas02memory}
 skierowana do programistów kodujących aplikacje korzystające w intensywny
 sposób z pamięci RAM.
 
@@ -521,8 +516,8 @@ Nad pamięcią fizyczną system operacyjny --- korzystając z jednostki MMU (ang
 \textit{Memory Management Unit}) procesora --- buduje warstwę zwaną pamięcią
 logiczną. Zadanie to jest realizowane przez mechanizm translacji adresów ---
 często określany także mechanizmem stronicowania. Do translacji adresów
-procesor wykorzystuje opis pamięci logicznej składający się na wielopoziomowe
-tablice deskryptorów stron.
+procesor wykorzystuje opis pamięci logicznej składający się z wielopoziomowych
+tablic deskryptorów stron.
 
 \begin{figure}[ht]
 \centering
@@ -568,7 +563,7 @@ procesów te same strony pamięci fizycznej.
 \end{itemize}
 
 Zasadniczo dwóch terminów: \textit{pamięć logiczna} i \textit{pamięć wirtualna}
-mówiąc o mechaniźmie stronicowania często się nie rozróżnia i będę ich używać
+mówiąc o mechanizmie stronicowania często się nie rozróżnia i będę ich używać
 zamiennie.
 
 Nie sposób też pominąć istotnej przewagi stronicowania nad innymi metodami
@@ -600,7 +595,7 @@ Podstawowymi właściwościami pamięci podręcznej są:
 \item szybkość --- ile cykli trzeba czekać na sprowadzenie danych jednostki
 obliczeniowej procesora,
 \item architektura --- bezpośrednio mapowana, wielodrożna, w pełni asocjacyjna,
-\item ilość --- im szybsza pamięć podręczna tym jej mniej. 
+\item ilość --- im szybsza pamięć podręczna, tym jej mniej. 
 \end{itemize}
 
 Pamięć cache jest dla programisty do pewnego stopnia przezroczysta. Nie jest to
@@ -619,7 +614,7 @@ zapisania jej wartości do pamięci RAM, a następnie sprowadzenia w to miejsce
 innego obszaru. Pesymistyczny wariant to wiele cykli mocy obliczeniowej
 procesora zmarnowanych na oczekiwanie.
 
-Powrócmy na chwilę do stronicowania. Jeśli dobrze się przypatrzeć mechanizmowi
+Powróćmy na chwilę do stronicowania. Jeśli dobrze się przypatrzeć mechanizmowi
 to widać, że jest on kosztowny w sensie ilości operacji na pamięci. Każdy zapis
 czy odczyt wymusza na procesorze dodatkowe dwie operacje dostępu do pamięci
 celem obliczenia adresu fizycznego. Strony przechowujące katalogi i tablice
@@ -691,7 +686,7 @@ następujące obszary:
 
 \subsection{Metody rezerwacji stron w Linuksie}
 
-Jądro linuksa nie udostępnia programom wywołań systemowych pełniących rolę
+Jądro Linuksa nie udostępnia programom wywołań systemowych pełniących rolę
 funkcji \texttt{malloc} i \texttt{free}. Zarządzanie ma o wiele bardziej
 niskopoziomową postać. Linux umożliwia wyłącznie pobieranie i zwracanie pewnej
 ilości stron poprzez umieszczanie ich w przestrzeni adresowej w obszarach do
@@ -723,7 +718,7 @@ przenośny między różnymi platformami. Innymi słowy tą metodę pozyskiwania
 pamięci uważa się z przestarzałą i nie zaleca jej używania.
 
 Wywołanie \texttt{brk} ma też oczywistą wadę, powodującą nieefektywne
-wykorzystanie pamięci. Przypuścmy, że program wykonuje ciąg operacji:
+wykorzystanie pamięci. Przypuśćmy, że program wykonuje ciąg operacji:
 
 \begin{enumerate}
 \item zarezerwuj obszar $A$ o rozmiarze $n$,
@@ -739,8 +734,8 @@ dużych bloków jest nieefektywne i może powodować powstawanie nieużytków.
 
 \subsubsection{Wywołanie systemowe \texttt{mmap}}
 
-Historycznie nowszą, a jednocześnie zalecaną, metodą rezerwacji i zwalniania
-spójnego obszaru stron pamięci stanowią wywołania \texttt{mmap} i
+Historycznie nowszymi, a jednocześnie zalecanymi, metodami rezerwacji i
+zwalniania spójnego obszaru stron pamięci są wywołania \texttt{mmap} i
 \texttt{munmap}. Zaletą tej metody pobierania pamięci z systemu operacyjnego
 jest możliwość skonstruowania lepszej metody radzenia sobie z nieużytkami.
 Zmapowany spójny obszar pamięci może być odmapowany fragmentarycznie. Jeśli
@@ -849,7 +844,7 @@ bieżącą zawartość $n$,
 \item protokół uspójniania pamięci podręcznej informuje $B$, że posiada
 nieaktualną wersję linii zawierającej $n$,
 \item $B$ żąda odczytu komórki $n$,
-\item $A$ synchronizuje zawartość linii przechowującej $n$ z pamiecią
+\item $A$ synchronizuje zawartość linii przechowującej $n$ z pamięcią
 systemową,
 \item $B$ pobiera linię przechowującą $n$ do swojej pamięci podręcznej,
 \item $B$ posiada aktualną wersję linii przechowującej $n$ i może operować na
@@ -861,14 +856,14 @@ międzyprocesorowej niezbędny.
 
 Może się jednak zdarzyć, że jedna linia pamięci podręcznej przechowuje kilka
 struktur, lecz nie służą one do wymiany danych między procesorami --- są
-prywatnymi danymi pewnych wątków obliczeń działających na odrębnych procesorach.
-Zjawisko takie określa się mianem fałszywego współdzielenia (ang. \textit{false
-sharing}). Jest ono bardzo niepożądane, a w przypadku kiedy obejmuje duże
-obszary pamięci, prowadzi do poważnego obniżenia wydajności związanego z
-masowym przepływem danych między pamięciami podręcznymi procesorów. Sytuację
-taką określa się mianem zaśmiecania pamięci podręcznej (ang. \textit{cache
-trashing}), które, w dosłownym tego słowa sensie, rujnuje wydajność programu
-działającego na architekturze wieloprocesorowej.
+prywatnymi danymi pewnych wątków obliczeń działających na odrębnych
+procesorach.  Zjawisko takie określa się mianem fałszywego współdzielenia (ang.
+\textit{false sharing}). Jest ono bardzo niepożądane, a w przypadku kiedy
+obejmuje duże obszary pamięci, prowadzi do poważnego obniżenia wydajności
+związanego z masowym przepływem danych między pamięciami podręcznymi
+procesorów. Sytuację taką określa się mianem zaśmiecania pamięci podręcznej
+(ang. \textit{cache trashing}), które --- w dosłownym tego słowa sensie ---
+rujnuje wydajność programu działającego na architekturze wieloprocesorowej.
 
 \subsection{Synchronizacja}
 
@@ -881,7 +876,7 @@ Blokady używa się do obrony zasobów przed modyfikacją przez więcej niż jed
 ściężkę wykonania kodu. Zwrócenie sterowania do jądra systemu jest opłacalne,
 jeśli przewiduje się, że program będzie oczekiwał na zwolnienie blokady przez
 dłuższy moment czasu. Odpowiedni dobór środków synchronizacji przy konstrukcji
-alokatora mającego działać w środowisku wielowątkowym może mieć dużym wpływ na
+alokatora mającego działać w środowisku wielowątkowym może mieć duży wpływ na
 jego wydajność.
 
 \paragraph{Semafory POSIX.} Są środkiem do synchronizacji wielu procesów w
@@ -979,7 +974,7 @@ techniki znaczników granicznych (ang.  \textit{boundary tags}) opisane przez
 Knutha w książce \cite{knuth73fundamental}. Znaczniki są częścią bloku --- leżą
 bezpośrednio przed adresem zwracanym przez procedurę rezerwującą blok.
 Znaczniki to rekord przechowujący co najmniej wielkość bloku i flagę zajętości.
-Kiedy blok jest wolny bezpośrednio za zacznikami, a czasem również na samym
+Kiedy blok jest wolny bezpośrednio za znacznikami, a czasem również na samym
 końcu, przechowywane są pola struktury utrzymującej porządek wolnych bloków
 według zasad określonych przez pewną politykę. Najczęściej wykorzystywaną
 strukturą danych jest lista dwukierunkowa, która niestety wypada bardzo źle pod
@@ -1030,10 +1025,10 @@ zwolnione bloki znajdują się w pamięci podręcznej procesora.
 \vspace{1ex}
 
 \item[Polityka gorliwego podziału.] Motywowana jest strategią brzmiącą: ``jeśli
-program zrezerwował blok o niewielkim rozmiarze $n$, to najprawdopodobniej
-zaraz będzie żądął bloku o podobnym rozmiarze''. Strategia taka sprawdza się w
+program zarezerwował blok o niewielkim rozmiarze $n$, to najprawdopodobniej
+zaraz będzie żądał bloku o podobnym rozmiarze''. Strategia taka sprawdza się w
 przypadku, kiedy program szybko buduje dużą strukturę danych. Polityka
-relizująca tą strategię zapewnia, że przy żądaniach o odpowiednim rozmiarze
+realizująca tą strategię zapewnia, że przy żądaniach o odpowiednim rozmiarze
 (dla struktur o rozsądnym rozmiarze rekordu) zostanie znaleziony odpowiednio
 większy wolny blok pamięci. Zostanie on podzielony na pewną ilość wolnych
 bloków o żądanym rozmiarze. Pierwszy z tych bloków zostanie zwrócony jako
@@ -1059,7 +1054,7 @@ na przydzielaniu takiego bloku, którego rozmiar jest najmniejszym możliwym
 spełniającym żądanie \texttt{malloc}. Mimo, że teoretycznie jest to polityka
 powodująca największą fragmentację, to w praktyce nie obserwuje się takich
 anomalii. Na dodatek jej stosowanie często powoduje mniejszą fragmentację niż
-\textit{first-fit} o lepszych teoretycznie właściwościach. Polityka
+\textit{first-fit} o teoretycznie lepszych właściwościach. Polityka
 \textit{best-fit} wynika z następujących dwóch strategii:
 \vspace{-1ex}
 
@@ -1091,7 +1086,7 @@ samym początku listy i w efekcie długi czas wyszukiwania dużych bloków.
 \paragraph{Polityka, a porządek listy wolnych bloków.}
 
 W przypadku obu polityk wyboru położenia bloku (tj. \textit{best-fit} i
-\textit{first-fit}) fregmentacja, którą powstaje w wyniku działania alokatora
+\textit{first-fit}) fragmentacja, którą powstaje w wyniku działania alokatora
 w istotny sposób zależy od tego, w jaki sposób zorganizowany jest porządek na
 liście wolnych bloków. W pracy \cite{johnstone98memory} przeprowadzono
 gruntowne badania nt.  fragmentacji dla porządku \texttt{AO} (ang.
@@ -1109,7 +1104,7 @@ względem adresów lub stosowo charakteryzuje się najmniejszą fragmentacją.
 bloki. W łatwy sposób można rozszerzyć ten pomysł o właściwości
 \textit{polityki buforowania}, jeśli tylko nie będzie się scalać pewnej ilości
 bloków z początku listy. Polityka ta charakteryzuje się dużą lokalnością
-odwołań. Ponieważ na czele listy znajdują się ostanio używane bloki, to z dużym
+odwołań. Ponieważ na czele listy znajdują się ostatnio używane bloki, to z dużym
 prawdopodobieństwem znajdują się one również w pamięci podręcznej procesora.
 
 \vspace{1ex}
@@ -1117,7 +1112,7 @@ prawdopodobieństwem znajdują się one również w pamięci podręcznej proceso
 \item[Porządek FIFO.] Ostatnio zwolnione bloki będą umiejscawiane na końcu
 kolejki. Cały zarządzany obszar będzie cyklicznie przeglądany. Trudno
 stwierdzić praktyczną przydatność takiej polityki. Wydaje się ona być mało
-interesująca ze względu na niską lokalność odwołań i empirycznie udowodnioną
+interesująca ze względu na niską lokalność odwołań i empirycznie wykazaną
 dużą fragmentację.
 
 \vspace{1ex}
@@ -1136,7 +1131,7 @@ zbadane.
 Prostym i efektywnym rozszerzeniem mechanizmu omówionego w poprzednim punkcie
 jest tablica list. Każdy element takiej tablicy przechowuje wskaźnik do listy
 wolnych bloków o określonej wielkości. Kiedy blok jest zwalniany umieszcza się
-go na liście odpowiadającej rozmiarowi zwalnianiego bloku. Kiedy program chce
+go na liście odpowiadającej rozmiarowi zwalnianego bloku. Kiedy program chce
 zarezerwować pamięć, wtedy bloków o żądanej wielkości szuka się na odpowiedniej
 liście. Jeśli lista jest pusta, to alokator przy pomocy odpowiednich działań
 musi pobrać wolną pamięć, stworzyć nowe bloki i uzupełnić pustą listę.  Należy
@@ -1193,7 +1188,7 @@ omówionych wcześniej i warte komentarza:
 
 \begin{description}
 
-\item[Systemy partnerskie.] Znane jako \textit{buddy system}, są szczególnym
+\item[Systemy partnerskie.] Znane jako \textit{buddy systems}, są szczególnym
 wariantem list wolnych bloków implementujących efektywną, lecz ograniczoną
 formę scalania i podziału. Na $i$-tej liście przechowywane są bloki, których
 długość jest sumą wielkości bloków z poprzednich list --- zazwyczaj z
@@ -1203,7 +1198,7 @@ danej wielkości muszą mieć adres podzielny przez określoną wielkość.  Sca
 odbywa się jedynie na przyległych blokach o takim samym rozmiarze --
 określanych mianem partnerów lub bliźniaków. Adres pierwszego bloku musi być
 podzielny przez rozmiar bloku, który powstałby w wyniku scalenia bliźniaków.
-Intuicyjnie patrząc --- przestrzeń zarządzana przez \textit{buddy system} jest w
+Intuicyjnie patrząc --- przestrzeń zarządzana przez \textit{buddy systems} jest w
 rekurencyjnie podzielona na dwie części o ustalonych rozmiarach --- najczęściej
 są to potęgi dwójki. Efektywną implementację binarnych systemów bliźniaczych
 zaprezentowano w pracy \cite{demaine99fast}.
@@ -1239,7 +1234,7 @@ skromnie przebadane od strony teoretycznej. Może to wynikać z braku dobrze
 zdefiniowanych środków do modelowania pewnych zachowań.  Menedżery pamięci to z
 reguły algorytmy hybrydowe inaczej traktujące poszczególne wielkości bloków --
 ze względu na to ich teoretyczna analiza może okazać się bardzo kłopotliwa i
-nader skomplikowana. Ostanim i najbardziej prawdopodobnym wyjaśnieniem rozważanej
+nader skomplikowana. Ostatnim i najbardziej prawdopodobnym wyjaśnieniem rozważanej
 rozbieżności jest to, że przekrój programów wykorzystujących menedżery pamięci
 zachowuje się w mało losowy sposób, za który odpowiadają pewne wzorce
 programistyczne.
@@ -1264,12 +1259,11 @@ reprezentatywny.
 Kolejnym problemem jest fakt, że badanie alokatorów ze względu na wydajność
 traci sens, jeśli wydzielić je ze środowiska lub programu, w którym działają.
 Efektywność aplikacji w dużym stopniu zależy od tego, jak alokator rozmieści
-bloki w pamięci. Lokalność referencji to na tyle istotne zagadnienie, że
+bloki w pamięci. Lokalność odwołań to na tyle istotne zagadnienie, że
 programista świadomie i poprawnie posługujący się mechanizmami współczesnych
 procesorów jest w stanie przyśpieszyć swój program nawet o rząd wielkości.
-Menedżer pamięci powinen maksymalizować lokalność odwołań, zwalniając
-programistę z pamiętania o niskopoziomowych aspektach związanych z hierarchią
-pamięci.
+Menedżer pamięci powinien maksymalizować tę lokalność, zwalniając programistę z
+pamiętania o niskopoziomowych aspektach związanych z hierarchią pamięci.
 
 Przed wdrożeniem kompletnego menedżera pamięci do szerszego zastosowania należy
 go gruntownie przetestować pod względem poszczególnych właściwości:
@@ -1291,7 +1285,7 @@ korzystający.
 
 \paragraph{Fragmentacja.} Pamięć RAM w dzisiejszych czasach jest zasobem
 stosunkowo tanim. Niemniej trzeba go wykorzystywać z rozsądkiem --- wydaje się,
-że straty większe niż 10\% --- 15\% są już martnorawstwem. Fragmentacja była
+że straty większe niż 10\% --- 15\% są już marnotrawstwem. Fragmentacja była
 zawsze głównym celem badań alokatorów i często minimalizowano ją kosztem
 wydajności. Ze względów ekonomicznych w dzisiejszych czasach można już kłaść na
 to mniejszy nacisk. Istnieje dość szeroki wachlarz publicznie dostępnych
@@ -1365,7 +1359,7 @@ pobierania lub oddawania stron do systemu operacyjnego. Każde wywołań takich
 jak \texttt{mmap} lub \texttt{munmap} jest kosztowne i w niewielkim stopniu
 zależy od ilości stron, którymi się zajmuje. Alokator powinien minimalizować
 ilość wywołań systemu operacyjnego gorliwie rezerwując nowe strony i leniwie
-zwalniająć nieużywane.
+zwalniając nieużywane.
 
 \vspace{1ex}
 
@@ -1378,7 +1372,7 @@ zachowań.
 \end{enumerate}
 
 \paragraph{Lokalność.} Współczesne procesory pod względem wydajności faworyzują
-dostęp do danych będacych w zbitkach. Paradoksalnie może się zdarzyć, że
+dostęp do danych będących w zbitkach. Paradoksalnie może się zdarzyć, że
 program wykorzystujący wolniejszy, ale staranniej wybierający bloki alokator,
 może działać szybciej niż menedżer nie wykorzystujący zjawiska lokalności
 referencji. Testowanie omawianej właściwości opiera się na uruchomieniu
@@ -1407,7 +1401,7 @@ Występuje ono rzadziej niż \textit{cache miss} jednak ma o wiele większy wpł
 na wydajność. Lokalność w wykorzystaniu stron nabiera szczególnego znaczenia w
 przypadku, kiedy system operacyjny posiada mało pamięci fizycznej i często musi
 korzystać z pamięci zewnętrznej wyrzucając lub sprowadzając strony. Jeśli
-aplikacja intesywnie operuje na pewnej strukturze danych, a alokator
+aplikacja intensywnie operuje na pewnej strukturze danych, a alokator
 niepotrzebnie ją rozrzuci po pamięci, to czas spędzony na wymianę stron może
 drastycznie ograniczyć wydajność. Zagadnienie to zostało dokładniej omówione w
 pracy \cite{feng05localityimproving}.
@@ -1415,9 +1409,9 @@ pracy \cite{feng05localityimproving}.
 \end{description}
 
 \paragraph{Skuteczność w wykrywaniu błędów.} Wiszące wskaźniki, próba dostępu
-do zwolnionych już bloków, wyjechanie poza granice tablicy, czy inne błędy
+do zwolnionych już bloków, "wyjechanie" poza granice tablicy, czy inne błędy
 związane z dostępem do pamięci, to jedne z najczęściej spotykanych usterek w
-programach. Dobry alokator pamięci powinen wykrywać lub ułatwiać wykrycie
+programach. Dobry alokator pamięci powinien wykrywać lub ułatwiać wykrycie
 takich nieprawidłowych zachowań. Menedżer pamięci może udostępniać procedury
 sprawdzające spójność jego struktur danych. Celem uniknięcia błędów w trakcie
 zwalniania lub rezerwacji bloku menedżer może wykonywać ograniczone sprawdzanie
@@ -1452,7 +1446,7 @@ dokładności $1-10$ ms. Do mierzenia wydajności niezbędne są źródła czasu
 większej rozdzielczości, liczące z dokładności do mikrosekund, nanosekund lub
 cykli procesora. Procesory \textit{Intel x86} dysponują instrukcją
 \texttt{RDTSC} zwracającą $64$-bitową wartość reprezentującą ilość cykli.
-które upłyneły od ostatniego restartu. Jest to najdokładniejsze i jednocześnie
+które upłynęły od ostatniego restartu. Jest to najdokładniejsze i jednocześnie
 najmniej kosztowne pod względem odczytu źródło czasu. Niestety posiada też
 liczne wady --- przede wszystkim jest ograniczone do architektury \textit{Intel
 x86}, po drugie nie jest gwarantowane, że w systemach wieloprocesorowych
@@ -1480,11 +1474,11 @@ logicznych. Dane do testów to plik \texttt{largest.espresso}. \\
 serwerów. W każdej rundzie wątek rezerwuje i zwalnia bloki o zadanym rozmiarze.
 Przed zakończeniem działania przekazuje on zajęte bloki do innego wątku. Dane
 wejściowe podaje się z wiersza poleceń i są nimi kolejno: czas działania, rozmiar
-min. i max. bloku, min. i max.  ilość wątków, ilość bloków rezerwowanych przez
-wątek, ilość rund i ziarno generatora liczb pseudolosowych. \\
+min. i max. bloku, min. i max. ilość wątków, ilość bloków rezerwowanych przez
+wątek, ilość rund i zarodek generatora liczb pseudolosowych. \\
 \hline
 \verb+lindsay+ & Symulacja przenoszenia komunikatów w sieci o topologii
-hiperkostki. Przykładowy plik wejściowy to \texttt{scirpt.mine}. \\
+hiperkostki. Przykładowy plik wejściowy to \texttt{script.mine}. \\
 \hline
 \verb+linux-scalability+ & Wielowątkowy test dołączany do biblioteki
 \texttt{glibc}. Dostępne parametry z linii poleceń: wielkość bloków, ilość
@@ -1526,14 +1520,14 @@ użyciem funkcji określonych w pliku \texttt{ptmalloc3/traces.h},
 Wszystkie pliki znajdują się w katalogu \texttt{src/traces} w dołączonym do
 pracy archiwum.
 
-\paragraph{Impementacja.} Założeniami przy tworzeniu programu zbierającego ślady
-były: możliwie jak najmniejszy narzut mocy obliczeniowej, maksymalna
+\paragraph{Implementacja.} Założeniami przy tworzeniu programu zbierającego
+ślady były: możliwie jak najmniejszy narzut mocy obliczeniowej, maksymalna
 przezroczystość dla aplikacji działającej pod jego kontrolą, możliwość
-stosowania w programach bez ich rekompilacji, obługa wielu wątków i wielu
-procesów.
+stosowania w programach bez ich powtórnej kompilacji, obsługa wielu wątków i
+wielu procesów.
 
 Pierwsze założenie otrzymano implementując gromadzenie logów operacji do
-statycznego bufora o dużym rozmiarze. Algorytmy użyte celem relizacji funkcji
+statycznego bufora o dużym rozmiarze. Algorytmy użyte celem realizacji funkcji
 dostępu do tego bufora działają bez blokad i zapewniają bardzo dobrą wydajność
 w przypadku wielowątkowych programów. Ślady są zapisywane na dysk w dużych
 paczkach minimalizując obciążenie spowodowane operacjami wejścia-wyjścia.
@@ -1564,7 +1558,7 @@ Obsługę wielowątkowości i wieloprocesorowości osiągnięto przez przypisani
 identyfikatora wątku i procesu do każdej operacji menedżera pamięci. Dodatkowo
 wszyscy potomkowie utworzeni przez dany proces przy pomocy wywołania
 \texttt{fork(2)} zapisują ślad do tego samego pliku. Procesy utworzone przy
-pomocy wywołania \texttt{system(3)} lub \texttt{exec*(3)} jako osobne instacje
+pomocy wywołania \texttt{system(3)} lub \texttt{exec*(3)} jako osobne instancje
 procesów zapisują ślady do innych plików.
 
 \paragraph{Sposób wykorzystania.} Poniższe polecenie uruchamia program
@@ -1654,7 +1648,7 @@ obserwować jak wygląda zużycie pamięci w poszczególnych etapach działania
 programu.
 
 Ostatni wykres wizualizuje ilość używanych bloków w określonym momencie
-działania progamu. Podobnie jak w poprzednim wykresie zastosowano podział
+działania programu. Podobnie jak w poprzednim wykresie zastosowano podział
 wielkości bloków. Wykres pozwala oszacować na jakie bloki było największe
 zapotrzebowanie w danym okresie działania programu.
 
@@ -1684,7 +1678,7 @@ Implementacja menedżera pamięci składa się z następujących elementów:
 \begin{itemize}
 \item trzech alokatorów podrzędnych -- \verb+eqsbmgr+, \verb+blkmgr+, \verb+mmapmgr+;
 \item zarządcy stron -- \verb+areamgr+;
-\item warstwy abstrakcji nad przydziałem stron -- \verb+sysmem+;
+\item warstwy abstrakcji odpowiedzialnej za przydział stron -- \verb+sysmem+;
 \item programu testującego -- \verb+tst-random+;
 \item warstwy zgodności ze standardem POSIX -- \verb+ldwrapper+.
 \end{itemize}
@@ -1702,27 +1696,27 @@ moduły.
 to zadanie ciężkie i pracochłonne. W trakcie implementacji napotkano wiele
 trudności, których przyczyny opisano poniżej.
 
-Ponieważ kod powinien być portowalny, a jednocześnie dawać dużą
-kontrolę nad maszyną, implementacja autora jest napisana w języku \verb+C+.
-Niestety jest to język powszechnie uważany za mało bezpieczny i wymagający
-bardzo defensywnej strategii pisania kodu. Dlatego w źródłach zostało
-zaszyte mnóstwo mechanizmów sprawdzających temporalne stany struktur
-menedżera pamięci.
+Ponieważ kod powinien być przenośny, a jednocześnie dawać dużą kontrolę nad
+maszyną, implementacja autora jest napisana w języku \verb+C+.  Niestety jest
+to język powszechnie uważany za mało bezpieczny i wymagający bardzo defensywnej
+strategii pisania kodu. Dlatego w źródłach zostało zaszyte mnóstwo mechanizmów
+sprawdzających temporalne stany struktur menedżera pamięci.
 	
 Często występującymi błędami w programach napisanych w języku \verb+C+ są
 nieprawidłowe odwołania do pamięci. Istnieje mnóstwo narzędzi, które pomagają
 wyłapywać te usterki. Niestety, w przypadku kiedy zarządzamy pamięcią sami
-narzędzia te stają się bezużyteczne. Abstrahują nad alokatorem zakładając jego
-poprawność, zamiast ją badać. Ze względu na to, w trakcie implementacji błędy
-odwołań do pamięci były często bardzo trudne do wykrycia. Czasami pomocne było
-użycie programu do analizy dynamicznej odwołań do pamięci \verb+valgrind+, a
-także śledzenie stosu wywołań funkcji przy pomocy debugera \verb+gdb+.
+narzędzia te stają się bezużyteczne --- korzystają z procedur alokatora i
+zakładają ich poprawność, zamiast ją badać. Ze względu na to, w trakcie
+implementacji błędy odwołań do pamięci były często bardzo trudne do wykrycia.
+Czasami pomocne było użycie programu do analizy dynamicznej odwołań do pamięci
+\verb+valgrind+, a także śledzenie stosu wywołań funkcji przy pomocy debuggera
+\verb+gdb+.
 
-Założenie o możliwości prawidłowego obsłużenia wielu wątków wewnątrz alokatora
-przysparza wiele problemów. Trzeba ustalić, które struktury zarządcy są
-chronione i ustalić strategię zakładania blokad tak, aby uniknąć zakleszczeń
-czy wyścigów. Z pomocą przychodzi tutaj element programu \verb+valgrind+ o
-nazwie \verb+helgrind+. Przeprowadza on dynamiczną analizę programu pod kontem
+Umożliwienie prawidłowego obsłużenia wielu wątków wewnątrz alokatora przysparza
+wiele problemów. Trzeba ustalić, które struktury zarządcy są chronione i
+ustalić strategię zakładania blokad tak, aby uniknąć zakleszczeń czy wyścigów.
+Z pomocą przychodzi tutaj element programu \verb+valgrind+ o nazwie
+\verb+helgrind+. Przeprowadza on dynamiczną analizę programu pod kontem
 zakładania blokad i wykorzystania dzielonych zasobów. Program ten był bardzo
 użyteczny mimo dużej ilości fałszywych alarmów (ang. \textit{false positives}).
 
@@ -1732,7 +1726,7 @@ pewien ciąg operacji zależny tylko od parametrów podanych z wiersza poleceń.
 Problem wynikał z tego, że jądro systemu nie ma obowiązku mapowania stron
 zawsze na te same miejsca przestrzeni adresowej nawet, jeśli wzór wykonania
 programu jest identyczny.  Szczęśliwie niedeterminizm jądra systemu objawia się
-w takich przypadkach rzadko, zapewne dzięki deterministyczności wewnętrznych
+w takich przypadkach rzadko, zapewne dzięki determinizmowi wewnętrznych
 mechanizmów jądra.
 	
 Niedeterminizm przełączania wątków przysparzał najwięcej problemów w trakcie
@@ -1751,10 +1745,10 @@ pomocy analizatora śladów, można założyć poczynić pewne założenia.
 \paragraph{Eksploatacja zależności między rozmiarem, a liczbą bloków.} Wiemy
 już, że w praktyce obserwuje się malejącą liczbę bloków względem rosnącej ich
 długości. Pierwszym założeniem jakie zostało obrane jest podział menedżera
-pamieci na podmenedżery specjalizujące się obsłudze bloków określonej
+pamięci na podmenadżery specjalizujące się obsłudze bloków określonej
 wielkości. Podalokatory będą posiadały różne właściwości (np. fragmentację,
 efektywność działania) w zależności od klasy bloku. Opłaca się włożyć dużo
-wysiłku w podmenedżer zajmujący się małymi blokami, gdyż to on będzie
+wysiłku w podmenadżer zajmujący się małymi blokami, gdyż to on będzie
 najmocniej rzutował na działanie całego alokatora.
 
 \paragraph{Eksploatacja zależności między rozmiarem, a długością życia bloku.}
@@ -1765,7 +1759,7 @@ zajrzeć do każdej komórki takiego bloku. Z drugiej strony małe bloki często
 bywają częścią jakiejś dużej dynamicznej struktury danych. Elementy tej
 struktury często powracają do menedżera pamięci. Warto poświęcić trochę czasu
 na badanie lokalności odwołań podalokatora zajmującego się małymi blokami, gdyż
-może to znacząćo poprawić ogólną wydajność zarządcy pamięci jak i programu z
+może to znacząco poprawić ogólną wydajność zarządcy pamięci jak i programu z
 niego korzystającego.
 
 \paragraph{Minimalizacja odwołań do systemu operacyjnego.} Pobieranie i
@@ -1777,7 +1771,7 @@ uspójnieniem zawartości bufora \texttt{TLB}. Taki zabieg może w rezultacie
 wymagać kilkudziesięciu tysięcy dostępów do obszarów składujących tablice
 deskryptorów. Dodatkowo nie ma gwarancji, że obszary te znajdują się w pamięci
 podręcznej, a ponieważ są rzadko używane najprawdopodobniej trzeba będzie je
-sprowadzić z pamięci RAM. Każdą nieużywaną stronę warto przchowywać w jakiejś
+sprowadzić z pamięci RAM. Każdą nieużywaną stronę warto przechowywać w jakiejś
 podręcznej strukturze danych, zamiast odsyłać od razu do systemu operacyjnego.
 Bez udziału systemu można wtedy powtórnie przydzielić nieużywane strony na
 potrzeby kolejnych operacji.
@@ -1827,7 +1821,7 @@ procesie potomka.
 \paragraph{Wykrywanie błędów.} Usterki związane z błędami wykorzystania
 alokatora pamięci są bardzo częste. Programista powinien być możliwie jak
 najwcześniej informowany o tym, że jego program zachowuje się nieprawidłowo.
-Często stosowanym zabiegiem jest czyszczenie nowo zarezerowanej pamięci pewną
+Często stosowanym zabiegiem jest czyszczenie nowo zarezerwowanej pamięci pewną
 ustaloną wartością np. \texttt{0xDEADC0DE}. Błędny program przeczytawszy
 zawartość tak ustawionej komórki, która w wyniku fragmentacji wewnętrznej nie
 należy do bloku, najprawdopodobniej ulegnie awarii. Może to ułatwić wykrycie
@@ -1854,10 +1848,11 @@ programisty.
 
 Pierwsza warstwa znajdująca się najbliżej systemu operacyjnego to mechanizm
 pobierania i zwalniania stron pamięci --- \texttt{sysmgr}. Interfejs ten
-abstrahuje nad źródłem stron, którym może być wywołanie systemu operacyjnego
-\texttt{mmap}, \texttt{sbrk} lub spójny obszar pamięci dzielonej.
+dostarcza abstrakcji nad zarządzaniem stronami pamięci, których źródłem mogą
+być wywołania systemu operacyjnego \texttt{mmap}, \texttt{sbrk} lub spójny
+obszar pamięci dzielonej.
 
-Następną warstwą jest manadżer obszarów --- \texttt{areamgr}. Obszar to
+Następną warstwą jest menadżer obszarów --- \texttt{areamgr}. Obszar to
 niezerowa liczba przylegających do siebie stron, może być oznaczony jako wolny
 lub używany przez dany alokator niższego rzędu. Menedżer stron odpowiada za
 następujące operacje:
@@ -1866,7 +1861,7 @@ następujące operacje:
 \item scalanie i podział obszarów,
 \item utrzymywanie listy obszarów zajętych i wolnych,
 \item odczepianie i dołączanie stron do istniejących obszarów,
-\item przydział obszarów na potrzeby manadżerów niższego rzędu,
+\item przydział obszarów na potrzeby menadżerów niższego rzędu,
 \item powiększanie, zmniejszanie istniejących obszarów,
 \item odpowiadanie na zapytania: "Który alokator odpowiada za blok o podanym
 adresie?", "Do którego obszaru należy dany adres?".
@@ -1885,14 +1880,14 @@ długości zarządzanych bloków, a także bitmapę określającą, które bloki
 są zajęte, a które wolne.
 
 Za zarządzanie bloków długości większej niż $32$ bajty, ale nie dłuższych niż
-$32$ kilobajty, odpowiada manadżer utrzymujący listę bloków posortowanych
+$32$ kilobajty, odpowiada menadżer utrzymujący listę bloków posortowanych
 względem adresu -- \texttt{blkmgr}. Jest to modyfikacja standardowego algorytmu
 znaczników granicznych. Zmiany obejmują możliwość powtórnego określenia rozmiaru
 zarezerwowanego bloku, przydział bloku o adresie podzielnym przez liczbę będącą
 potęgą dwójki, podział, scalanie, powiększanie i zmniejszanie list bloków.
 
 Utrzymywaniem informacji o blokach długości większej niż $32$ kilobajty zajmuje
-się manadżer obszarów bezpośrednio mapowanych --- \texttt{mmapmgr}. Blok w tym
+się menadżer obszarów bezpośrednio mapowanych --- \texttt{mmapmgr}. Blok w tym
 przypadku jest tożsamy z obszarem. Zarządca podobnie jak w przypadku
 \texttt{blkmgr-ao} potrafi wykonywać operacje \texttt{realloc} i
 \texttt{memalign}.
@@ -1903,7 +1898,7 @@ Nad wszystkimi trzema menedżerami pracuje ogólny zarządca pamięci ---
 
 Do procedur ogólnego zarządcy pamięci ma dostęp warstwa emulująca interfejs
 \texttt{POSIX}. Implementuje ona wszystkie te funkcje, które są określone przez
-wspomniany standard, a nie są częścią podległego manadżera.
+wspomniany standard, a nie są częścią podległego menadżera.
 
 \newpage
 
@@ -1951,8 +1946,8 @@ void *calloc(size_t count, size_t eltsize);
 \end{lstlisting}
 
 Procedura ta zachowuję się podobnie jak \texttt{malloc}, poza gwarancją
-zainicjalizowania obszaru zerami. Implementacja tego wywołania może, ale nie
-musi, korzystać wewnętrznie z wywołania \texttt{malloc}.
+zainicjowania obszaru zerami. Implementacja tego wywołania może, ale nie musi,
+korzystać wewnętrznie z wywołania \texttt{malloc}.
 
 \paragraph{Procedura realloc.}
 
@@ -2021,7 +2016,7 @@ Funkcja \texttt{cfree} jest synonimem \texttt{free} i istnieje wyłącznie ze
 względów historycznych --- dla kompatybilności z systemem \textit{SunOS}.
 
 Dostęp do bloku pamięci po jego zwolnieniu mimo, że jest operacją błędną to
-często jest możliwy. Istnieją narzędzia wykrywające takie anomalie. Deallokacja
+często jest możliwy. Istnieją narzędzia wykrywające takie anomalie. Zwolnienie
 bloku pamięci uszkadza jego zawartość.
 
 Program nie musi zwalniać wszystkiej pamięci przed zakończeniem swego
@@ -2107,7 +2102,7 @@ Moduł \texttt{sysmem-mmap} używa procedury \texttt{mmap}. Właściwości tego
 wywołania pozwalają na aktywne używanie w \texttt{pm\_mmap\_alloc} parametru
 \texttt{hint}, który jest preferowanym adresem początku nowego obszaru --- tj.
 procedura ta powinna, ale nie musi, zarezerwować strony poczynając od adresu
-\texttt{hint}. W przeciwieńswie do wcześniejszych modułów na funkcję
+\texttt{hint}. W przeciwieństwie do wcześniejszych modułów na funkcję
 \texttt{pm\_mmap\_free} nie są nałożone ograniczenia, więc zawsze powinna
 zwrócić podane strony do systemu. Jest to najuniwersalniejszy moduł i pozwala
 najefektywniej korzystać z pamięci przydzielonej przez system.
@@ -2120,16 +2115,16 @@ Menedżer stron udostępnia nadrzędnym zarządcom abstrakcję nad mechanizmem
 pobierania i zwalniania stron pamięci. Zasadniczym jego zadaniem jest
 utrzymywanie i operowanie na globalnej liście obszarów. 
 
-\paragraph{Rekord obszaru} jest zdefinowany przez strukturę \verb+area_t+ i
+\paragraph{Rekord obszaru} jest zdefiniowany przez strukturę \verb+area_t+ i
 oprócz długości oraz początkowego adresu ma kilka innych właściwości:
 \begin{itemize}
-\item flagi, określające czy dany obszar jest używany lub zainicjalizowany do
+\item flagi, określające czy dany obszar jest używany lub zainicjowany do
 użycia,
 \item numer alokatora, który zarządza pamięcią w obrębie obszaru,
 \item typ obszaru, określający który menedżer zarezerwował strony
 składające się na ten obszar,
 \item wskaźniki struktury danych utrzymującej globalną listę wszystkich obszarów,
-\item wskaźniki struktury danych utrzymymywanej na potrzeby alokatorów,
+\item wskaźniki struktury danych utrzymywanej na potrzeby alokatorów,
 \item sumę kontrolną, umożliwiającą weryfikację pól zawartych w rekordzie.
 \end{itemize}
 
@@ -2137,7 +2132,7 @@ Rekord określający właściwości obszaru zawiera się w nim i przylega do jeg
 końca. Odpowiednie procedury służą do obliczania jego początku i końca na
 podstawie pól zawartych w rekordzie. Istnieje także funkcja wyliczająca adres
 rekordu obszaru z adresu jego początku i jego długości. Należy skomentować po
-pierwsze czemu rekord leży wewnątrz obszaru, a po drugie czemu na jego końcu, a
+pierwsze dlaczego rekord leży wewnątrz obszaru, a po drugie czemu na jego końcu, a
 nie początku.
 
 Gdyby rekord nie był przechowywany wewnątrz obszaru, wymagałoby to
@@ -2202,7 +2197,7 @@ obszar o podanej długości. Innymi słowy --- sprawdza czy odpowiednie kubełki
 niepuste, a jeśli są puste to tworzy nowy obszar.
 
 \textit{Poszerzanie obszaru} może być użyte, gdy menedżerowi bloków brakuje
-przestrzeni do spełnienia żądania. Może on wtedy zarządać by pewną liczbę stron
+przestrzeni do spełnienia żądania. Może on wtedy zażądać, by pewną liczbę stron
 przyłączyć z lewej lub prawej strony do danego obszaru. Procedura poszerzająca
 może dołączyć większą liczbę stron. Zarządca bloków może skrócić obszar jeśli
 stwierdzi, że dołączono za dużo stron. Funkcja poszerzania sprawdza czy
@@ -2224,42 +2219,41 @@ Kolejną poruszoną wcześniej ideą jest zbudowanie alokatora na wewnętrzne
 potrzeby zarządcy obszarów. Realizacja tego pomysłu mogłaby uprościć
 implementację menadżerów korzystających z \texttt{areamgr}, tj. nie trzeba
 uwzględniać obcych elementów (w tym przypadku rekordu \texttt{area\_t}) w
-obsługiwanych obszarach. Wyeleminowałoby to zbędne powiązania między modułami.
+obsługiwanych obszarach. Wyeliminowałoby to zbędne powiązania między modułami.
 Wewnętrzny alokator przyczyniłby się również do poprawy wykorzystania pamięci
 podręcznych. W chwili obecnej przeszukiwanie globalnej listy obszarów jest
-nieefektywne. Zauważmy, że każde przyczytanie rekordu \texttt{area\_t} jest
+nieefektywne. Zauważmy, że każde przeczytanie rekordu \texttt{area\_t} jest
 związane z dostępem do strony pamięci, która go przechowuje. Powoduje to duże
 zaśmiecanie \textit{TLB cache} i ujemnie odbija się również na programie
-korzystającym z alokatora. Oczywistym jest, że wartoby zebrać rekordy obszarów
+korzystającym z alokatora. Oczywistym jest, że warto by zebrać rekordy obszarów
 i umieścić blisko siebie. Takie scalenie miejsca przechowywania miałoby też
 pozytywny skutek na wykorzystanie pamięci podręcznej procesora. W jednej linii
-możnaby zmieścić kilka rekordów obszaru.
+można by zmieścić kilka rekordów obszaru.
 
 Niewątpliwie menadżer obszarów mógłby skorzystać na wymianie struktury danych
 służącej do przechowywania i wyszukiwania rekordów. W chwili obecnej listę
-dwukierunkową możnaby było zastąpić strukturą \textit{Splay Tree}.
-Zredukowałoby to złożoność operacji do oczekiwanego czasu $O(log n)$. Z
-praktycznego punktu widzenia drzewa te mają dodatkową zaletę --- często używane
-elementy znajdują się blisko korzenia drzewa. W przypadku osobnej implementacji
-alokatora rekordów obszarów możnaby było się pokusić o implementację
-zmodyfikowanego B-drzewa.  Ponieważ jeden wierzchołek B-drzewa mógłby
-przechowywać wiele rekordów pozytywnie odbiłoby się to także na wykorzystaniu
-pamięci podręcznej.
+dwukierunkową można byłoby zastąpić strukturą \textit{Splay Tree}.
+Zredukowałoby to złożoność operacji do czasu $O(\log n)$. Z praktycznego punktu
+widzenia drzewa te mają dodatkową zaletę --- często używane elementy znajdują
+się blisko korzenia drzewa. W przypadku osobnej implementacji alokatora
+rekordów obszarów można by było się pokusić o implementację zmodyfikowanego
+B-drzewa.  Ponieważ jeden wierzchołek B-drzewa mógłby przechowywać wiele
+rekordów pozytywnie odbiłoby się to także na wykorzystaniu pamięci podręcznej.
 
 \newpage
 
 \subsection{Zarządca małych bloków --- \texttt{EQSBMGR}}
 
-Manadżer małych bloków odpowiada za utrzymywanie niewielkich bloków o równej
+Menadżer małych bloków odpowiada za utrzymywanie niewielkich bloków o równej
 długości. W bieżącej implementacji występują cztery długości: $8$, $16$, $24$ i
 $32$ bajtów. Bloki o długości $n \in [1,8]$ są zaokrąglane do rozmiaru $8$
 bajtów, $n \in [9,16]$ do $16$ bajtów, $n \in [17,24]$ do $24$ bajtów i $n \in
 [25,32]$ do $32$ bajtów. Bloki o różnych długościach nie sąsiadują ze sobą, a
-są trzymane w grupach zwanych superblokami. Stąd też wynika nazwa manadżera ---
+są trzymane w grupach zwanych superblokami. Stąd też wynika nazwa menadżera ---
 \texttt{eqsbmgr} (ang. \textit{equally sized blocks manager}).
 
 Z przeprowadzonych wcześniej obserwacji spodziewamy się, że program
-wykorzytujący nasz alokator będzie masowo przydzielał małe bloki pamięci ---
+wykorzystujący nasz alokator będzie masowo przydzielał małe bloki pamięci ---
 może to na przykład robić intensywnie operując na dynamicznych strukturach danych.
 Wyobraźmy sobie aplikację wczytującą dane do zbalansowanego drzewa binarnego.
 Zauważmy że, w trakcie konstrukcji dość rzadko będzie ona zwalniała rekordy
@@ -2289,7 +2283,7 @@ może być zmienna, natomiast nie może ona przekraczać 1024 bajtów.
 \end{figure}
 
 W nagłówku superbloku znajdują się lista z 16--bitowymi wskaźnikami, których
-znaczenie zostanie omówione w ramach opisu manadżera superbloków. Oprócz tego
+znaczenie zostanie omówione w ramach opisu menadżera superbloków. Oprócz tego
 składowane są tam następujące informacje:
 \begin{itemize}
 \item \texttt{fblkcnt} -- liczba wolnych bloków (7 bitów),
@@ -2309,14 +2303,15 @@ szybkości działania alokatora korzystającego z superbloków.
 
 Warto wspomnieć, że faktyczny rozmiar superbloku jest równy $(size + 1) * 8$
 bajtów, rozmiar przechowywanych bloków $(blksize + 1) * 8$ bajtów. Dodatkowo
-jeśli fblkcnt ma wartość $127$ to superblok uznaje się za wolny niezależnie od
-wielkości przechowywanych bloków. Powyższe ograniczenia wynikąją ze schematu
-kodowania rekordu superbloku w możliwie najmniejszej przestrzeni pamięci.
+jeśli \texttt{fblkcnt} ma wartość $127$ to superblok uznaje się za wolny
+niezależnie od wielkości przechowywanych bloków. Powyższe ograniczenia wynikają
+ze schematu kodowania rekordu superbloku w możliwie najmniejszej przestrzeni
+pamięci.
 
 Najważniejsze procedury operujące na superblokach to:
 \begin{itemize}
-\item \verb+sb_prepare+ -- inicjalizuje pola nagłówka oraz bitmapę
-przygotowując superblok do dalszych działań,
+\item \verb+sb_prepare+ -- inicjuje pola nagłówka oraz bitmapę przygotowując
+superblok do dalszych działań,
 \item \verb+sb_alloc+ -- sprawdza czy licznik wolnych bloków jest niezerowy i
 jeśli tak do dekrementuje go; wyszukuje w bitmapie bitu oznaczającego wolny
 blok, ustawia go, po czym na jego podstawie oblicza i zwraca adres bloku,
@@ -2333,10 +2328,10 @@ Pełny superblok różni się od używanego tym, iż nie posiada żadnego wolneg
 \begin{figure}[ht]
 \centering
 \includegraphics[width=0.9\textwidth]{eqsbmgr}
-\caption{Graficzna reprezentacja obszaru zarządzanego przez manadżer superbloków}
+\caption{Graficzna reprezentacja obszaru zarządzanego przez menadżer superbloków}
 \end{figure}
 
-Manadżer superbloków wraz z rekordem \texttt{area\_t} przylega do końca
+Menadżer superbloków wraz z rekordem \texttt{area\_t} przylega do końca
 zarządzanego obszaru, zmniejszając rozmiar ostatniego superbloku, i posiada
 następujące pola w swoim rekordzie\footnote{Pierwsze dwie pozycje widać na
 rysunku, reszta została ukryta dla zachowania czytelności.}:
@@ -2359,11 +2354,11 @@ wskaźniki nie są prawdziwymi adresami. Ze względu na oszczędność miejsca a
 zostały zakodowane w 16--bitowych liczbach ze znakiem będących w rzeczywistości
 relatywnymi indeksami. Dokładniej indeks $n$ znajdujący się w superbloku o
 adresie $sb$ koduje adres o następującej wartości: $sb + n * 1024$. Narzuca to
-ograniczenie na wielkość pojedyńczego obszaru zarządzanego przez manadżer
+ograniczenie na wielkość pojedynczego obszaru zarządzanego przez menadżer
 superbloków --- nie może on być większy niż $(2^{15} - 1) * 1024$ bajtów, czyli
 dokładnie 8191 stron pamięci.
 
-Następujący zestaw procedur umożliwia operowanie na manadżerze superbloków:
+Następujący zestaw procedur umożliwia operowanie na menadżerze superbloków:
 \begin{itemize}
 \item \verb+sb_mgr_init+ -- przygotowuje nowy obszar umieszczając w nim rekord
 manadżera superbloków i inicjując resztę miejsca wolnymi superblokami,
@@ -2375,8 +2370,8 @@ potrzeby przydziału bloków o zadanym rozmiarze, a dokładniej wywołuje proced
 dołączyć go do istniejących grup, jeśli mu się to uda powiększona grupa zostaje
 przeniesiona na odpowiednią listę przyległych superbloków,
 \item \verb+sb_mgr_expand+ -- jest wywoływana w przypadku powiększania
-zarządzanego obszaru o dodatkowe strony, które zostają zainicjalizowane pustymi
-superblokami i dodane do manadżera superbloków.
+zarządzanego obszaru o dodatkowe strony, które zostają zainicjowane pustymi
+superblokami i dodane do menadżera superbloków.
 \end{itemize}
 
 Wyżej wymienione mechanizmy są elementami wykorzystywanymi do zbudowania
@@ -2385,24 +2380,24 @@ nadrzędnemu zarządcy \texttt{memmgr}. Przechowuje on listę zarządzanych
 obszarów i implementuje następujące operacje:
 
 \begin{itemize}
-\item \verb+eqsbmgr_alloc+ -- wyszukuje obszar, w którym manadżer superbloków
+\item \verb+eqsbmgr_alloc+ -- wyszukuje obszar, w którym menadżer superbloków
 posiada używany superblok przechowujący bloki odpowiedniego rozmiaru, jeśli
 takiego nie znajdzie szuka pierwszego obszaru z wolnymi superblokami, w
-ostateczności prosi manadżer \texttt{areamgr} o poszerzenie zarządzanych
+ostateczności prosi menadżer \texttt{areamgr} o poszerzenie zarządzanych
 obszarów lub przygotowanie nowego; po znalezieniu lub utworzeniu nowego
 superbloku wywołuje procedurę \verb+sb_mgr_alloc+,
-\item \verb+eqsbmgr_realloc+ -- wyszukuje manadżer superbloków, do którego
+\item \verb+eqsbmgr_realloc+ -- wyszukuje menadżer superbloków, do którego
 należy podany adres i sprawdza czy po zmianie wielkości, blok wymaga
 przeniesienia w nowe miejsce,
 \item \verb+eqsbmgr_free+ -- wyszukuje superblok, do którego należy
 podany adres, wywołuje procedurę \verb+sb_free+, następnie sprawdza czy dany
 superblok da się zwolnić i czy przypadkiem nie można zmniejszyć lub podzielić
-obszaru zarządzanego przez manadżer superbloków na dwa mniejsze.
+obszaru zarządzanego przez menadżer superbloków na dwa mniejsze.
 \end{itemize}
 
 Procedura \verb+eqsbmgr_alloc+ niestety nie umożliwia alokacji bloków
 wyrównanych do adresu podzielnego przez więcej niż 8. Implementacja tej funkcji
-wymagałaby gruntownego przebudowania manadżera superbloków co wydaje się być
+wymagałaby gruntownego przebudowania menadżera superbloków co wydaje się być
 nieopłacalne.
 
 \subsubsection{Możliwe optymalizacje}
@@ -2411,36 +2406,36 @@ Pewne fragmenty procedury \verb+eqsbmgr_free+ należałoby w wyniku
 refaktoryzacji kodu wydzielić i umieścić w dodatkowych procedurach
 \verb+sb_mgr_split+ i \verb+sb_mgr_shrink+.
 
-Podobnie jak w \texttt{areamgr}, można by stworzyć dodatkowy manadżer dla
+Podobnie jak w \texttt{areamgr}, można by stworzyć dodatkowy menadżer dla
 rekordów \verb+sb_mgr_t+. Dałoby to możliwość stworzenia blokad na poziomie
 list, co w bieżącej implementacji jest niemożliwe. Wynika to ze zmian
-położenia rekordu manadżera superbloków w trakcie działania alokatora.
+położenia rekordu menadżera superbloków w trakcie działania alokatora.
 Przenoszenie rekordu \verb+sb_mgr_t+ w obrębie obszaru wymaga blokady listy
-utzymywanych obszarów, co kłóci się z wielowątkowością wewnątrz
+utrzymywanych obszarów, co kłóci się z wielowątkowością wewnątrz
 \texttt{eqsbmgr}. Kolejnym problemem są tu własności blokad standardu
 \texttt{POSIX}, które nie zachowują spójności w trakcie przenoszenia do innej
 lokalizacji w pamięci. Podsumowując --- zabieg taki przyczyniłby się do
 zmniejszenia ziarnistości blokad i w rezultacie zwiększenia skalowalności.
 
 Ciekawą i jednocześnie efektywną metodą na zwiększenie skalowalności
-\texttt{eqsbmgr} byłobo umożliwienie wielu wątkom równoległego korzystania z
+\texttt{eqsbmgr} byłoby umożliwienie wielu wątkom równoległego korzystania z
 superbloków.  Zadanie to można wykonać przy użyciu instrukcji procesora
 \verb+CAS+ (ang. \textit{compare-and-swap} --- porównaj i zamień).  W trakcie
-alokacji bloku możnaby wtedy atomowo dekrementować licznik wolnych bloków, a
+alokacji bloku można by wtedy atomowo dekrementować licznik wolnych bloków, a
 następnie wyszukać i atomowo ustawić bit zajętości w bitmapie. Oczywiście nie
-jest to wystarczające. Trzebaby również zadbać o wielowątkowość na poziomie
-manadżera superbloków --- tworząc blokady do odpowiednich zasobów.
+jest to wystarczające. Trzeba by również zadbać o wielowątkowość na poziomie
+menadżera superbloków --- tworząc blokady do odpowiednich zasobów.
 
 Być może warto byłoby uczynić długość superbloku nieco elastyczniejszą.
-Dawałoby to możliwość lepszego przystosowania manadżera \texttt{eqsbmgr} do
+Dawałoby to możliwość lepszego przystosowania menadżera \texttt{eqsbmgr} do
 zmian wynikających z architektury docelowego sprzętu.
 
 Zmiana struktury danych przechowującej przyległe i używane superbloki z list na
-\textit{Splay Tree} zwiększyłoby wydajność operacji podziału manadżera
+\textit{Splay Tree} zwiększyłoby wydajność operacji podziału menadżera
 superbloków. W chwili obecnej listy są nieposortowane, co wymaga liniowego
 czasu na przejrzenie całej listy i podzielenia jej na dwie części względem
 adresu superbloków. Identyczna operacja na \textit{Splay Tree} wykonuje się w
-oczekiwanym czasie $O(log n)$.
+oczekiwanym czasie $O(\log n)$.
 
 Jeśli pozostać przy listach, należałoby przemyśleć strategie utrzymywania
 używanych i wolnych superbloków. Nowe powinny powstawać w grupach z najmniejszą
@@ -2458,7 +2453,7 @@ kawałków pamięci.
 
 \subsection{Zarządca bloków średniego rozmiaru --- \texttt{BLKMGR}}
 
-Manadżer bloków średniego obszaru jest alokatorem ogólnego przeznaczenia. Jego
+Menadżer bloków średniego obszaru jest alokatorem ogólnego przeznaczenia. Jego
 implementacja bazuje w dużym stopniu na algorytmie \textit{boundary tags}
 Knutha. Obszary zarządzane przez \texttt{blkmgr} przechowują bloki o
 rozmiarach od 8 bajtów do 32 kilobajtów. Strategia przechowywania bloków na
@@ -2481,7 +2476,7 @@ rodzaje bloków:
 korzystającą z alokatora; jest oznaczony ustawioną flagą \verb+MB_FLAG_USED+,
 \item \textit{wolny} -- obszar za nagłówkiem ma co najmniej $8$--bajtów i
 składowany jest tam rekord struktury służącej do wyszukiwania wolnych bloków
---- w bieżącej implementacji wolny blok jest zdefinowany strukturą
+--- w bieżącej implementacji wolny blok jest zdefiniowany strukturą
 \verb+mb_free_t+; posiada wyzerowaną flagę \verb+MB_FLAG_USED+,
 \item \textit{sztuczny} -- blok jest wolny, ale zbyt krótki by mógł
 przechowywać strukturę przechowującą wolne bloki; przy najbliższej okazji
@@ -2505,15 +2500,15 @@ wolnych bloków, oraz liczbę bajtów wolnej pamięci. W samym obszarze musi by�
 dokładnie jeden pierwszy i ostatni blok -- są one oznaczone odpowiednią flagą
 \verb+MB_FLAG_FIRST+ i \verb+MB_FLAG_LAST+.
 
-Poniższy zestaw procedur służy do operowania na pojedyńczych blokach wewnątrz
+Poniższy zestaw procedur służy do operowania na pojedynczych blokach wewnątrz
 listy i jest podstawą całego alokatora, a w szczególności funkcji
-przydzielających i zwalniąjących kawałki pamięci.
+przydzielających i zwalniających kawałki pamięci.
 \begin{itemize}
 \item \verb+mb_insert+ -- wstawia dany blok na listę posortowaną względem
 wartości adresów,
 \item \verb+mb_pullout+ -- wyjmuje dany blok z listy,
 \item \verb+mb_split+ -- dzieli podany blok na dwa mniejsze i w zależności od
-żądania zwraca pierwszy lub drugi z nch; szczególnym przypadkiem jest blok
+żądania zwraca pierwszy lub drugi z nich; szczególnym przypadkiem jest blok
 oznaczony specjalną flagą \verb+MB_FLAG_FIRST+ lub \verb+MB_FLAG_LAST+, wtedy
 procedura odpowiednio zmienia flagi w wynikowych blokach,
 \item \verb+mb_coalesce+ -- iteracyjnie sprawdza czy przylegające bloki są
@@ -2523,7 +2518,7 @@ do własnych flag.
 \end{itemize}
 
 Poniższe operacje służą do implementacji procedur alokacji i zwalniania bloków
-w ramach pojedyńczego obszaru:
+w ramach pojedynczego obszaru:
 \begin{itemize}
 \item \verb+mb_alloc+ -- znajduje na liście blok większy lub równy pożądanemu
 rozmiarowi; jeśli znaleziony blok jest zbyt duży wtedy zostaje podzielony przy
@@ -2532,7 +2527,7 @@ pomocy \verb+mb_split+; gotowy blok zostaje oznaczony jako zajęty,
 podzielne przez podaną liczbę \textit{alignment} i dodatkowo posiadające
 wystarczająco dużo miejsca poczynając od wyrównanego adresu; jeśli odpowiedni
 blok zostanie znaleziony, wtedy dzieli się go przy pomocy \verb+mb_split+ by
-jeden z nowoutworzonych bloków miał początek równo w adresie podzielnym przez
+jeden z nowo utworzonych bloków miał początek równo w adresie podzielnym przez
 \textit{alignment} minus rozmiar \verb+mb_t+; reszta procedury jest analogiczna
 do działania \verb+mb_alloc+ po znalezieniu bloku,
 \item \verb+mb_resize+ -- składa się z dwóch przypadków; w pierwszym nowy
@@ -2583,7 +2578,7 @@ jedną większą listę; początek listy o starszym adresie zostaje dołączony 
 końca pierwszej listy, a statystyki odpowiednio zescalone;
 \end{itemize}
 
-Podobnie jak w przypadku \verb+eqsbmgr+ manadżer bloków średniej wielkości
+Podobnie jak w przypadku \verb+eqsbmgr+ menadżer bloków średniej wielkości
 posiada własną statyczną strukturę podległą \verb+memmgr+. W rekordzie
 \verb+blkmgr_t+ przechowuję listę zarządzanych obszarów. Publiczny interfejs
 alokatora \verb+blkmgr+ składa się z następujących procedur:
@@ -2595,7 +2590,7 @@ w żadnym z zarządzanych obszarów, wtedy próbuje się je powiększać dołąc
 przylegające; powiększanie zarządzanego obszaru składa się z dwóch czynności
 --- w dołączonej przestrzeni tworzy się nową listę bloków, a następnie scala
 się ją ze starą; może się zdarzyć, że nowo dołączony obszar będzie przylegał do
-początku innego zarządzanego obszaru, wtedy łączy się wszytkie trzy; jeśli nie
+początku innego zarządzanego obszaru, wtedy łączy się wszystkie trzy; jeśli nie
 udało się powiększyć żadnego obszaru, ostatecznie pobiera się nowy z
 \texttt{areamgr},
 \item \verb+blkmgr_realloc+ -- przegląda zarządzane obszary i znajduje ten, w
@@ -2615,10 +2610,10 @@ który mógłby posłużyć do podziału obszaru na dwa mniejsze.
 
 \subsubsection{Możliwe optymalizacje}
 
-Manadżer \texttt{blkmgr} daje największe pole do popisu jeśli chodzi o
+Menadżer \texttt{blkmgr} daje największe pole do popisu jeśli chodzi o
 optymalizacje. Idea alokatora typu \textit{boundary tags} znacznie wyewoluowała
 od pierwszego momentu jej opisania. Właściwie żaden współczesny liczący się
-manadżer pamięci ogólnego przeznaczenia nie posiada tak prostej implementacji.
+menadżer pamięci ogólnego przeznaczenia nie posiada tak prostej implementacji.
 Naturalną ścieżką rozwoju \texttt{blkmgr} jest próba dogonienia osiągnięć
 alokatorów takich jak \textit{Doug Lua's malloc}. Przy czym implementacja ta
 powinna za wszelką cenę utrzymać uniwersalność i czytelność. Należy się
@@ -2642,10 +2637,10 @@ Oczywiście w takim przypadku należałoby zmienić porządek w strukturach
 przetrzymujących wolne bloki --- z uporządkowania względem adresów na
 porządek względem wielkości bloków.
 
-Kolejnym pomysłem zaczerpiętym z bardziej dojrzałych projektów są listy
+Kolejnym pomysłem zaczerpniętym z bardziej dojrzałych projektów są listy
 odroczonego scalania. Gorliwe łączenie bloków --- tj. bezpośrednio po
-zwolnieniu, o ile przylegają do wolnych --- może być nieporządaną cechą
-manadżera pamięci. Zauważmy, że aplikacja korzystająca z alokatora może mieć w
+zwolnieniu, o ile przylegają do wolnych --- może być niepożądaną cechą
+menadżera pamięci. Zauważmy, że aplikacja korzystająca z alokatora może mieć w
 zwyczaju częstą rezerwację i zwalnianie bloku tego samego rozmiaru. W takich
 przypadkach opłaca się opóźnić scalanie w nadziei, że świeżo zwolniony blok
 zostanie w najbliższym czasie ponownie zarezerwowany.
@@ -2662,10 +2657,10 @@ Istnieje również kilka prostych idei, które mogą się przyczynić do lepszeg
 wykorzystania pamięci podręcznej. Zwróćmy uwagę na to, że specjalnego
 traktowania wymagają bloki o wielkości mniejszej niż linia cache-u. Powinno się
 dążyć do sytuacji, w której zaalokowany fragment pamięci w całości zawiera się
-w pojedyńczej linii.  Zauważmy również, że w obecnej implementacji rekord do
+w pojedynczej linii.  Zauważmy również, że w obecnej implementacji rekord do
 utrzymywania list wolnych bloków jest dość mały w porównaniu z długością linii.
 Oznacza to, że w trakcie przeglądania listy do pamięci podręcznej sprowadza się
-nadmiarowe dane, które nie są używane w trakcie obliczeń. Możnaby jednak zmusić
+nadmiarowe dane, które nie są używane w trakcie obliczeń. Można by jednak zmusić
 wolne bloki do tego by przechowywały informacje nie tylko o sobie, ale też o
 swoich sąsiadach. Zabieg taki z pewnością zmniejszyłby ilość danych
 przepływających między procesorem, a pamięcią operacyjną.
@@ -2678,16 +2673,16 @@ obiektów będzie stosunkowo niewiele w porównaniu z liczbą bloków o małym
 rozmiarze. Gdyby w takim przypadku potraktować obszary typu \verb+area_t+ jako
 bloki, narzut procentowy związany z generowanymi nieużytkami w wyniku
 fragmentacji wewnętrznej można uznać za zaniedbywalnie mały. W przypadku bloków
-o rozmiarach kilkuset kilkobajtów przestrzeń rzędu wielkości strony pamięci
+o rozmiarach kilkuset kilobajtów przestrzeń rzędu wielkości strony pamięci
 jest stosunkowo mała. Stąd wniosek, że duże bloki, które z reguły wymagają
 przestrzeni o rozmiarze co najmniej kilkudziesięciu stron pamięci, korzystnie
 jest zarządzać nie absorbując zbędnej ilości środków, takich które widzieliśmy
 w poprzednich alokatorach. Dlatego też \verb+mmapmgr+ jest najprostszym
-alokatorem, wykorzystującym bezpośrednio obszary do przechowywania pojedyńczych
+alokatorem, wykorzystującym bezpośrednio obszary do przechowywania pojedynczych
 bloków.
 
 Jest jeszcze jedna korzyść wynikająca z zarządzania dużych bloków niezależnie
-od małych. Jeśli przypisujemy jakiemuś blokowi obszar możemy zarządać od
+od małych. Jeśli przypisujemy jakiemuś blokowi obszar możemy zażądać od
 systemu operacyjnego stron innego rozmiaru niż standardowy --- np. architektura
 \verb+x86+ udostępnia strony pamięci rozmiaru $2$ \verb+MiB+. Gdyby użyć takich
 stron do zbudowania obszaru, zmniejszyło by się obciążenie \textit{TLB cache},
@@ -2748,7 +2743,7 @@ ostatniej strony obszaru --- wtedy nie trzeba nic robić; w drugim przypadku
 zwiększa się liczba stron wymaganych do przechowywania bloku --- wywołuje się
 wtedy procedurę \verb+areamgr_expand_area+ z nadzieją, że uda się znaleźć
 przyległy wolny obszar; w ostatnim przypadku zmniejsza się liczbę stron
-przypisanych obszarowi wywołując procedure \verb+areamgr_shrink_area+,
+przypisanych obszarowi wywołując procedurę \verb+areamgr_shrink_area+,
 \item \verb+mmapmgr_free+ -- natychmiastowo oddaje cały obszar na użytek
 \verb+areamgr+.
 \end{itemize}
@@ -2761,8 +2756,8 @@ bloków.
 
 \subsection{Ogólny manadżer pamięci --- \texttt{MEMMGR}}
 
-Ostatnim elementem całej implementacji jest ogólny manadżer, który łączy
-wszystkie dotychczas opisan elementy tworząc jeden uniwersalny interfejs
+Ostatnim elementem całej implementacji jest ogólny menadżer, który łączy
+wszystkie dotychczas opisane elementy tworząc jeden uniwersalny interfejs
 zarządzania pamięcią.
 
 Zadaniem \verb+memmgr+ jest przede wszystkim przekierowywanie żądań do
@@ -2788,9 +2783,9 @@ wielu nieprzylegających do siebie fizycznie stron utworzyć jeden logicznie
 spójny obszar pamięci.
 
 Rekord ogólnego zarządcy \verb+memmgr+ zawiera w sobie rekordy podległych
-manadżerów tj. \verb+eqsbmgr+, \verb+blkmgr+ oraz \verb+mmapmgr+, i jest
+menadżerów tj. \verb+eqsbmgr+, \verb+blkmgr+ oraz \verb+mmapmgr+, i jest
 tworzony w pierwszym nowo utworzonym obszarze, który jednocześnie jest
-kontenerem dla manadżera \verb+areamgr+. 
+kontenerem dla menadżera \verb+areamgr+. 
 
 \vspace{2ex}
 \begin{lstlisting}[caption={Prototypy funkcji menedżera pamięci \texttt{memmgr}.},xleftmargin=1cm,xrightmargin=1cm]
@@ -2805,8 +2800,8 @@ Poniżej podano znaczenie wyżej wymienionych funkcji:
 \begin{itemize}
 \item \verb+memmgr_init+ -- tworzy nowego zarządce pamięci; pobiera z systemu
 operacyjną stronę po czym przekształca ją w zarządcę \verb+aremgr+; w adresie
-przyległym do początku obszaru umieszcza rekord \verb+memmgr_t+ i inicjalizuje
-jego zawartość,
+przyległym do początku obszaru umieszcza rekord \verb+memmgr_t+ i inicjuje jego
+zawartość,
 \item \verb+memmgr_alloc+ -- próbuje przydzielić żądany blok o rozmiarze $size$
 i adresie podzielnym przez $alignment$; jeśli $size \le 32$ i $alignment \le 8$
 to do realizacji żądania wybierany jest \verb+eqsbmgr+, jeśli $size \le 32760$
@@ -2816,7 +2811,7 @@ $new\_size$; znajduje obszar, do którego należy podany adres; na podstawie typ
 obszaru przekierowuje żądanie do odpowiedniego podrzędnego zarządcy,
 \item \verb+memmgr_free+ -- zwalnia blok wskazywany przez $memory$; na
 podstawie typu obszaru, do którego należy podany adres, żądanie jest
-przekazywane do podległego manadżera, a następnie sprawdza się czy nie powstały
+przekazywane do podległego menadżera, a następnie sprawdza się czy nie powstały
 nieużytki, które należy zwrócić do systemu operacyjnego; jeśli jest łącznie
 więcej niż 64 wolne strony pamięci, to procedura przegląda w porządku malejącym
 względem wielkości listy wolnych obszarów \verb+areamgr+; w~trakcie
