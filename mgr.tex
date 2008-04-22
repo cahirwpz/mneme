@@ -23,7 +23,7 @@
 % --- Zdefiniowanie autora i tytułu --------------------------------------------
 \author{Krystian Bacławski}
 \title{Wielowątkowy zarządca pamięci dzielonej}
-\date{Październik 2007}
+\date{Kwiecień 2008}
 
 \frenchspacing
 
@@ -1607,7 +1607,7 @@ dyskowej używanej do przechowywania śladu. Pierwszym i najprostszym pomysłem
 jest zastosowanie zmiennej długości rekordu w zależności od rodzaju operacji --
 dla najczęściej wykonywanych operacji \texttt{malloc} i \texttt{free} nie
 wykorzystuje się drugiego elementu tablicy \texttt{args}, a dla \texttt{free}
-dodatkowo pola \texttt{result}. Następnie można by było skrócić pole
+dodatkowo pola \texttt{result}. Następnie można byłoby skrócić pole
 \texttt{opcode}, które koduje cztery operacje, a zatem wymaga tylko dwóch
 bitów. Mniej oczywistym pomysłem jest skrócenie rekordów poprzez nałożenie
 ograniczenia na maksymalną ilość ścieżek wykonania programu. Wydaje się, że
@@ -2236,8 +2236,8 @@ dwukierunkową można byłoby zastąpić strukturą \textit{Splay Tree}.
 Zredukowałoby to złożoność operacji do czasu $O(\log n)$. Z praktycznego punktu
 widzenia drzewa te mają dodatkową zaletę --- często używane elementy znajdują
 się blisko korzenia drzewa. W przypadku osobnej implementacji alokatora
-rekordów obszarów można by było się pokusić o implementację zmodyfikowanego
-B-drzewa.  Ponieważ jeden wierzchołek B-drzewa mógłby przechowywać wiele
+rekordów obszarów można byłoby pokusić się o implementację zmodyfikowanego
+B-drzewa. Ponieważ jeden wierzchołek B-drzewa mógłby przechowywać wiele
 rekordów pozytywnie odbiłoby się to także na wykorzystaniu pamięci podręcznej.
 
 \newpage
@@ -2648,7 +2648,7 @@ zostanie w najbliższym czasie ponownie zarezerwowany.
 Inną techniką wspomagającą alokację bloków jest gorliwy podział. Zauważmy, że
 bardzo prawdopodobnym zachowaniem aplikacji w trakcie konstrukcji jakiejś
 struktury danych będzie generowanie ciągów operacji \verb+alloc+ o rozmiarze
-rekordu. W takim przypadku można się pokusić o przygotowywanie bloków na wyrost
+rekordu. W takim przypadku można pokusić się o przygotowywanie bloków na wyrost
 --- dla żądań rozmiaru $n$ wyszukać wolnego bloku o rozmiarze co najmniej
 $2*n$, wydzielić z niego dwa bloki o rozmiarze $n$, drugi z bloków przenieść do
 listy odroczonego scalania.
@@ -2798,10 +2798,12 @@ void memmgr_verify(memmgr_t *mm, bool verbose);
 
 Poniżej podano znaczenie wyżej wymienionych funkcji:
 \begin{itemize}
-\item \verb+memmgr_init+ -- tworzy nowego zarządce pamięci; pobiera z systemu
+\item \verb+memmgr_init+ -- tworzy nowego zarządcę pamięci; pobiera z systemu
 operacyjną stronę po czym przekształca ją w zarządcę \verb+aremgr+; w adresie
 przyległym do początku obszaru umieszcza rekord \verb+memmgr_t+ i inicjuje jego
 zawartość,
+\item \verb+memmgr_verify+ -- sprawdza poprawność struktur danych podrzędnych
+alokatorów,
 \item \verb+memmgr_alloc+ -- próbuje przydzielić żądany blok o rozmiarze $size$
 i adresie podzielnym przez $alignment$; jeśli $size \le 32$ i $alignment \le 8$
 to do realizacji żądania wybierany jest \verb+eqsbmgr+, jeśli $size \le 32760$
@@ -2815,15 +2817,50 @@ przekazywane do podległego menadżera, a następnie sprawdza się czy nie powst
 nieużytki, które należy zwrócić do systemu operacyjnego; jeśli jest łącznie
 więcej niż 64 wolne strony pamięci, to procedura przegląda w porządku malejącym
 względem wielkości listy wolnych obszarów \verb+areamgr+; w~trakcie
-przeglądania zwalnia obszary dopóty wolnych stron nie będzie mnie niż wcześniej
-podany próg,
-\item \verb+memmgr_verify+ -- sprawdza spójność i poprawność struktur danych
-należących do podrzędnych alokatorów.
+przeglądania zwalnia obszary dopóty wolnych stron nie będzie mniej niż zadany próg.
 \end{itemize}
 
 \subsubsection{Możliwe optymalizacje}
 
-Jeszcze się zastanawiam.
+Ogólny menadżer \texttt{memmgr} jest elementem systemu, który ma wgląd we
+wszystkie żądania dawane przez program. Może zatem analizować zachowanie
+aplikacji i modyfikować działanie wszystkich swoich elementów, czyli zachowywać
+się adaptatywnie.  Posiadając czas przyjścia żądania, jego typ i ewentualnie
+długość bloku, można zaimplementować kilka ciekawych heurystyk, które
+zmieniałby czasowo parametry pracy poszczególnych elementów alokatora lub
+wywoływały specjalnie zoptymalizowane wersje procedur.
+
+\textit{Prealokacja bloków} może być odpowiedzią zarządcy pamięci na długie
+spójne ciągi operacji rezerwujących bloki tego samego rozmiaru. Załóżmy, że
+podrzędny alokator może przydzielić kilka identycznych bloków przy użyciu
+jednej procedury i jest to szybsze niż wielokrotne wywoływanie funkcji
+alokującej bloki pojedynczo. Wtedy kuszące jest przygotowanie puli fragmentów
+pamięci, które są gotowe do użycia przy następnych odwołaniach do \texttt{memmgr}.
+
+Przy długich ciągach operacji dealokacji bloków można byłoby rozpatrzyć
+wywołanie podrzędnego alokatora, przy pomocy którego wysyła się do zwolnienia
+paczki, a nie tylko pojedyncze fragmenty pamięci. \textit{Grupowanie żądań}
+typu \texttt{free} można byłoby optymalizować, gdyż zapewne część wyników
+pośrednich obliczeń jest wspólna dla poszczególnych operacji. Podobnie jak w
+przypadku \textit{prealokacji bloków} optymalizacji uległoby wykorzystanie
+pamięci podręcznej. Realizując kolejno kilka operacji na strukturze danych
+alokatora będziemy wielokrotnie używali tych samych linii cache. Przy obsłudze
+żądań osobno istnieje duża szansa, że zostaną one usunięte z pamięci podręcznej
+między wywołaniami alokatora.
+
+Analizując bilans operacji \texttt{alloc} oraz \texttt{free} w kolejnych
+kwantach czasu można optymalizować działanie menadżera obszarów.  Zauważmy, że
+jeśli w ostatnim okresie występowała przewaga operacji \texttt{alloc}, to
+możemy poinstruować nasz algorytm by niechętnie oddawał posiadane wolne strony
+do systemu operacyjnego. Jeśli w ostatnim kwancie czasu \texttt{areamgr}
+pobierał dużo stron z systemu i tendencja ta utrzymuje się, wtedy możemy
+realizować schemat \textit{gorliwego przydziału stron}.  Jeżeli zaobserwowano
+szybko przyrastającą liczbę wolnych stron, to \texttt{areamgr} powinien
+powstrzymać się od natychmiastowego ich oddawania do jądra systemu. Strategia
+\textit{leniwego zwalniania stron} zakłada, że być może kolejne żądania
+spowodują powiększenie się liczby przyległych stron w wyniku scalania obszarów,
+a tym samym zmniejszenie się wymaganej liczby odwołań do systemu operacyjnego
+mających na celu ich oddanie.
 
 \newpage
 
@@ -2832,7 +2869,6 @@ Jeszcze się zastanawiam.
 \section{Podsumowanie i kierunek dalszych badań}
 \hypertarget{Podsumowanie}{}
 
-Śmieci i inne pomysły, o których lepiej nie zapomnieć, a trzeba gdzieś umieścić:
 \begin{enumerate}
 \item System logowania, asercji i programowania transakcyjnego dla języka C ---
 \texttt{GNU Nana}.
