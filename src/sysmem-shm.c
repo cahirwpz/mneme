@@ -29,7 +29,7 @@ void pm_shm_init()
 	pages.brk	= pages.start;
 	pages.end	= pages.start + PAGE_SIZE * PM_PAGES;
 
-	assert(pages.start != NULL);
+	I(pages.start != NULL);
 }
 
 void *pm_shm_alloc(void *hint, uint32_t n)

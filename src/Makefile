@@ -4,25 +4,25 @@ DEFS	=	-D__USE_GNU -DPM_USE_SBRK -DPM_USE_MMAP -DPM_USE_SHM -DDEADMEMORY -DVERBO
 CFLAGS	=	-march=i686 -O2 -Wall $(DEFS) $(INCLUDE)
 
 LD		=	libtool --mode=link gcc -g 
-LDFLAGS	=	-rpath /usr/local/lib -lrt -lm
+LDFLAGS	=	-rpath /usr/local/lib -lnana -lrt -lm
 
 OBJS	=	memmgr.lo eqsbmgr.lo blkmgr.lo blklst-ao.lo areamgr.lo mmapmgr.lo sysmem-mmap.lo sysmem-sbrk.lo sysmem-shm.lo
 
-all:	cscope.out tags libmymalloc.la tst-random tests/t-test1 tests/t-test2
+all:	cscope.out tags libmneme.la tst-random tests/t-test1 tests/t-test2
 
-libmymalloc.la:	$(OBJS)
+libmneme.la:	$(OBJS)
 	$(LD) $(LDFLAGS) -static -o $@ $(patsubst %.o,%.lo,$^)
 
-libmymalloc_posix.la: $(OBJS)
-	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^)
+libmneme_posix.la: $(OBJS) ldwrapper.lo
+	$(LD) $(LDFLAGS) -o $@ $(patsubst %.o,%.lo,$^) ldwrapper.lo
 
-tst-random:	libmymalloc.la tst-random.lo 
+tst-random:	libmneme.la tst-random.lo 
 	$(LD) $(LDFLAGS) -static -o $@ $^
 
-tests/t-test1:		tests/t-test1.lo libmymalloc.la
+tests/t-test1:		tests/t-test1.lo libmneme.la
 	$(LD) $(LDFLAGS) -static -o $@ $^
 
-tests/t-test2:		tests/t-test2.lo libmymalloc.la
+tests/t-test2:		tests/t-test2.lo libmneme.la
 	$(LD) $(LDFLAGS) -static -o $@ $^
 
 %.lo: %.o

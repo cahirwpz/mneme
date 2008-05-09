@@ -275,7 +275,7 @@ void __METHOD_ARGS(__LIST_DECL, split, __LIST_T *list, __ITEM_T *item)
 		counter++;
 	}
 
-	assert(iter);
+	I(iter);
 
 	__FIRST(list) = iter;
 	__LAST(list)  = __LAST(self);

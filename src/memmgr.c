@@ -193,7 +193,7 @@ bool memmgr_free(memmgr_t *self, void *memory)/*{{{*/
 				if (area != NULL) {
 					areamgr_remove_area(&self->areamgr, area);
 
-					assert(area_delete(area)); 
+					I(area_delete(area)); 
 				} else
 					break;
 			}

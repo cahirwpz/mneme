@@ -80,7 +80,7 @@ static inline void __METHOD(__TREE_DECL, unlock) { pthread_rwlock_unlock(&__LOCK
 
 static void __METHOD_ARGS(__TREE_DECL, splay, __NODE_T *x)
 {
-	assert(x != NULL);
+	I(x != NULL);
 
 	__NODE_T *p;
 	__NODE_T *g;
@@ -217,7 +217,7 @@ void __METHOD_ARGS(__TREE_DECL, split, __TREE_T *tree, __NODE_T *node)
 		/* splay at the node */
 		__CALL(__TREE, splay, self, node);
 
-		assert(__ROOT(self) == node);
+		I(__ROOT(self) == node);
 
 		/* left subtree will be first tree */
 		__ROOT(tree) = __ROOT(self);
@@ -237,7 +237,7 @@ void __METHOD_ARGS(__TREE_DECL, split, __TREE_T *tree, __NODE_T *node)
 
 void __METHOD_ARGS(__TREE_DECL, merge, __TREE_T *tree);
 {
-	assert(__ROOT(self) && __ROOT(root));
+	I(__ROOT(self) && __ROOT(root));
 
 	/* find last node in first tree */
 	__NODE_T *last = __ROOT(self);
@@ -357,7 +357,7 @@ void __METHOD_ARGS(__TREE_DECL, remove, __NODE_T *node)
 	/* move node to root */
 	__CALL(__TREE, splay, self, node);
 
-	assert(__ROOT(self) == node);
+	I(__ROOT(self) == node);
 
 	/* get left and right subtree */
 	__NODE_T *left  = __LEFT(__ROOT(self));

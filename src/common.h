@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <nana.h>
 #include <stdio.h>
 
 typedef enum { FALSE, TRUE } bool;

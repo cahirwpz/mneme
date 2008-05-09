@@ -75,7 +75,7 @@ void *calloc(size_t nmemb, size_t size)
 
 void free(void *ptr)
 {
-	assert(ma_initialized == TRUE);
+	I(ma_initialized == TRUE);
 
 	if (ptr != NULL) {
 		/* sem_wait(&ma_sem); */
@@ -95,7 +95,7 @@ void cfree(void *ptr)
 
 void *realloc(void *ptr, size_t size)
 {
-	assert(ma_initialized == TRUE);
+	I(ma_initialized == TRUE);
 
 	if (ptr == NULL)
 		return malloc(size);

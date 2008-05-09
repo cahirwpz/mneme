@@ -25,17 +25,19 @@ mgr.bbl: mgr.bib mgr.tex
 mgr.aux: mgr.tex
 	pdflatex mgr.tex
 
-dist:	full
-	@rm -f mgr.tar.gz
+dist:	
+	@rm -f mgr.tar.bz2
 	@tar --verbose			\
 		--exclude *.bin		\
 		--exclude *.o		\
 		--exclude .svn 		\
 		--exclude .libs		\
 		--create		\
-		--gzip			\
-		--file mgr.tar.gz	\
-		mgr.{tex,pdf}		\
+		--bzip2			\
+		--file mgr.tar.bz2	\
+		materialy		\
+		allokatory		\
+		mgr.tex			\
 		*.dia			\
 		Makefile		\
 		src

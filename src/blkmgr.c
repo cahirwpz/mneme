@@ -44,7 +44,7 @@ void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 	mb_list_t *list = NULL;
 
 	while (!area_is_guard(area)) {
-		assert(area_is_ready(area));
+		I(area_is_ready(area));
 
 		DEBUG("searching for free block in [$%.8x; %u; $%.2x]\n", (uint32_t)area, area->size, area->flags0);
 
@@ -99,7 +99,7 @@ void *blkmgr_alloc(blkmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 				mb_list_t *to_merge = mb_list_from_area(area->local.next);
 
 				if (area_end(area) == area_begining(area->local.next)) {
-					assert(area->local.next == area->global.next);
+					I(area->local.next == area->global.next);
 
 					arealst_remove_area(&self->blklst, area->local.next, DONTLOCK);
 					arealst_join_area(&self->areamgr->global, area, area->global.next, LOCK);

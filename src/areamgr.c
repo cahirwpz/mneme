@@ -87,8 +87,8 @@ area_t *area_new(pm_type_t type, uint32_t pages)/*{{{*/
 bool area_delete(area_t *area)/*{{{*/
 {
 	area_valid(area);
-	assert(area_is_used(area));
-	assert(area_is_mmap(area));
+	I(area_is_used(area));
+	I(area_is_mmap(area));
 
 	if (pm_mmap_free(area_begining(area), SIZE_IN_PAGES(area->size))) {
 		DEBUG("Removed area at $%.8x\n", (uint32_t)area);
@@ -140,7 +140,7 @@ void arealst_global_add_area(arealst_t *arealst, area_t *newarea, locking_t lock
 		arealst_wrlock(arealst);
 
 	area_valid(newarea);
-	assert(area_is_global_guard((area_t *)arealst));
+	I(area_is_global_guard((area_t *)arealst));
 
 	/* search the list for place where new area will be placed */
 	area_t *after = (area_t *)arealst;
@@ -195,7 +195,7 @@ void arealst_global_remove_area(arealst_t *arealst, area_t *area, locking_t lock
 	if (locking)
 		arealst_wrlock(arealst);
 
-	assert(area_is_global_guard((area_t *)arealst));
+	I(area_is_global_guard((area_t *)arealst));
 
 	/* Remove area from global list */
 	area_valid(area->global.prev);
@@ -458,7 +458,7 @@ void arealst_remove_area(arealst_t *arealst, area_t *area, locking_t locking)/*{
 		arealst_wrlock(arealst);
 
 	area_valid(area);
-	assert(area_is_guard((area_t *)arealst));
+	I(area_is_guard((area_t *)arealst));
 
 	/* Remove area from the list */
 	area_valid(area->local.prev);
@@ -502,10 +502,10 @@ area_t *arealst_join_area(arealst_t *global, area_t *first, area_t *second, lock
 	area_valid(first);
 	area_valid(second);
 
-	assert(area_is_used(first));
-	assert(area_is_used(second));
+	I(area_is_used(first));
+	I(area_is_used(second));
 
-	assert(area_end(first) == area_begining(second));
+	I(area_end(first) == area_begining(second));
 
 	/* Sum sizes */
 	second->size += first->size;
@@ -559,13 +559,13 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 	area_t *area = *splitted;
 
 	area_valid(area);
-	assert(area_is_used(area));
+	I(area_is_used(area));
 
 	DEBUG("Will split area [$%.8x; %u; $%.2x] at $%.8x with cut point at $%.8x\n",
 		  (uint32_t)area, area->size, area->flags0, (uint32_t)area_begining(area),
 		  (uint32_t)area_begining(area) + pages * PAGE_SIZE);
 
-	assert(pages * PAGE_SIZE < area->size);
+	I(pages * PAGE_SIZE < area->size);
 
 	/* Now split point is inside area */
 	area_t *newarea = area_footer(area_begining(area), pages);
@@ -609,7 +609,7 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 	*splitted  = newarea;
 	*remainder = area;
 
-	assert(*splitted < *remainder);
+	I(*splitted < *remainder);
 
 	if (locking)
 		arealst_unlock(global);
@@ -628,7 +628,7 @@ void arealst_split_area(arealst_t *global, area_t **splitted, area_t **remainder
 
 static area_t *arealst_pullout_area(arealst_t *arealst, area_t *addr, uint32_t pages, locking_t locking)/*{{{*/
 {
-	assert(pages > 0);
+	I(pages > 0);
 
 	if (locking)
 		arealst_wrlock(arealst);
@@ -676,7 +676,7 @@ areamgr_t *areamgr_init(area_t *area)/*{{{*/
 	area_valid(area);
 
 	/* Check if area has enough space to hold area manager's structure */
-	assert(area->size - sizeof(area_t) >= sizeof(areamgr_t));
+	I(area->size - sizeof(area_t) >= sizeof(areamgr_t));
 
 	areamgr_t *areamgr = area_begining(area);
 
@@ -744,8 +744,8 @@ void areamgr_remove_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 {
 	area_valid(area);
 
-	assert(!area_is_guard(area));
-	assert(area_is_used(area));
+	I(!area_is_guard(area));
+	I(area_is_used(area));
 
 	DEBUG("Remove area [$%.8x, %u, $%.2x] from the global list\n", (uint32_t)area, area->size, area->flags0);
 
@@ -780,8 +780,8 @@ area_t *areamgr_alloc_adjacent_area(areamgr_t *areamgr, area_t *addr, uint32_t p
 		  pages, (side == LEFT) ? "left" : "right",
 		  (uint32_t)addr, addr->size, addr->flags0, (uint32_t)area_begining(addr));
 
-	assert((side == LEFT) || (side == RIGHT));
-	assert(pages > 0);
+	I((side == LEFT) || (side == RIGHT));
+	I(pages > 0);
 
 	area_t *area = NULL;
 
@@ -848,7 +848,7 @@ area_t *areamgr_alloc_area(areamgr_t *areamgr, uint32_t pages)/*{{{*/
 {
 	DEBUG("Will try to find area of size %u pages\n", pages);
 
-	assert(pages > 0);
+	I(pages > 0);
 
 	int32_t n = pages - 1;
 
@@ -942,7 +942,7 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 	DEBUG("Will try to free area [$%.8x, %u, $%.2x] at $%.8x\n",
 			(uint32_t)newarea, newarea->size, newarea->flags0, (uint32_t)area_begining(newarea));
 
-	assert(area_is_used(newarea));
+	I(area_is_used(newarea));
 
 	/* mark area as free */
 	{
@@ -1002,7 +1002,7 @@ void areamgr_free_area(areamgr_t *areamgr, area_t *newarea)/*{{{*/
 area_t *areamgr_coalesce_area(areamgr_t *areamgr, area_t *area)/*{{{*/
 {
 	area_valid(area);
-	assert(area_is_used(area));
+	I(area_is_used(area));
 
 	DEBUG("Will try to coalesce area [$%.8x; $%x; $%.2x] with adjacent areas\n",
 		  (uint32_t)area, area->size, area->flags0);
@@ -1062,8 +1062,8 @@ bool areamgr_expand_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 
 	area_valid(newarea);
 
-	assert(pages > 0);
-	assert(area_is_used(newarea));
+	I(pages > 0);
+	I(area_is_used(newarea));
 
 	DEBUG("Will expand area at $%.8x [$%.8x; %u; $%.2x] by %u pages from %s side.\n",
 		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0,
@@ -1116,9 +1116,9 @@ void areamgr_shrink_area(areamgr_t *areamgr, area_t **area, uint32_t pages, dire
 
 	area_valid(newarea);
 
-	assert(pages > 0);
-	assert((side == LEFT) || (side == RIGHT));
-	assert(area_is_used(newarea));
+	I(pages > 0);
+	I((side == LEFT) || (side == RIGHT));
+	I(area_is_used(newarea));
 
 	DEBUG("Will %s-shrink area at $%.8x [$%.8x; %u; $%.2x] by %u pages\n", (side == LEFT) ? "left" : "right", 
 		  (uint32_t)newarea, (uint32_t)area_begining(newarea), newarea->size, newarea->flags0,

@@ -17,8 +17,8 @@ static void mb_insert(mb_list_t *list, mb_free_t *newblk)/*{{{*/
 	mb_valid(list);
 	mb_valid(newblk);
 
-	assert(mb_is_guard(list));
-	assert(!mb_is_used(newblk) && !mb_is_guard(newblk));
+	I(mb_is_guard(list));
+	I(!mb_is_used(newblk) && !mb_is_guard(newblk));
 
 	DEBUG("will insert block [$%.8x; %u; $%.2x] on free list\n", (uint32_t)newblk, newblk->size, newblk->flags);
 
@@ -27,7 +27,7 @@ static void mb_insert(mb_list_t *list, mb_free_t *newblk)/*{{{*/
 
 	/* iterate till next block exists and has earlier address */
 	while (TRUE) {
-		assert(blk != newblk);
+		I(blk != newblk);
 
 		mb_valid(blk);
 
@@ -70,8 +70,8 @@ static void mb_split(mb_list_t *list, mb_free_t **splitted, uint32_t size, bool 
 
 	mb_valid(blk);
 
-	assert(!mb_is_used(blk) && !mb_is_guard(blk));
-	assert((size & MB_GRANULARITY_MASK) == 0);
+	I(!mb_is_used(blk) && !mb_is_guard(blk));
+	I((size & MB_GRANULARITY_MASK) == 0);
 
 	/* split the block if it is large enough */
 	if (blk->size - size < sizeof(mb_free_t))
@@ -128,7 +128,7 @@ static void mb_pullout(mb_free_t *blk)/*{{{*/
 {
 	mb_valid(blk);
 
-	assert(!mb_is_used(blk) && !mb_is_guard(blk));
+	I(!mb_is_used(blk) && !mb_is_guard(blk));
 
 	DEBUG("pulling out block [$%.8x; %u; $%.2x] [prev: $%.8x; next: $%.8x] from list\n",
 		  (uint32_t)blk, blk->size, blk->flags, (uint32_t)blk->prev, (uint32_t)blk->next);
@@ -164,13 +164,13 @@ static mb_free_t *mb_coalesce(mb_list_t *list, mb_free_t *blk)/*{{{*/
 {
 	mb_valid(blk);
 
-	assert(!mb_is_used(blk) && !mb_is_guard(blk));
+	I(!mb_is_used(blk) && !mb_is_guard(blk));
 
 	/* coalesce with next block */
 	while (!mb_is_guard(blk)) {
 		mb_valid(blk->next);
 
-		assert(!mb_is_used(blk));
+		I(!mb_is_used(blk));
 
 		if ((uint32_t)blk + blk->size != (uint32_t)blk->next) {
 			mb_t *next = (mb_t *)((uint32_t)blk + blk->size);
@@ -260,7 +260,7 @@ bool mb_verify(mb_list_t *list, bool verbose)/*{{{*/
 
 	/* check if it is guard block */
 	mb_valid(list);
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	/* find first block */
 	mb_t *blk = (mb_t *)((uint32_t)list + sizeof(mb_list_t));
@@ -358,11 +358,11 @@ bool mb_verify(mb_list_t *list, bool verbose)/*{{{*/
 		fprintf(stderr, "\033[0;36m   First free block: $%.8x, last free block: $%.8x.\033[0m\n", (uint32_t)list->next, (uint32_t)list->prev);
 	}
 
-	assert(list->blkcnt == used_blocks + free_blocks);
-	assert(list->ublkcnt == used_blocks);
-	assert(list->fmemcnt == free);
-	assert(first_free == list->next);
-	assert(last_free == list->prev);
+	I(list->blkcnt == used_blocks + free_blocks);
+	I(list->ublkcnt == used_blocks);
+	I(list->fmemcnt == free);
+	I(first_free == list->next);
+	I(last_free == list->prev);
 
 	if (error && verbose)
 		fprintf(stderr, "\033[7m   Invalid!\033[0m\n");
@@ -419,7 +419,7 @@ void *mb_alloc(mb_list_t *list, uint32_t size, bool from_last)/*{{{*/
 	/* check if it is guard block */
 	mb_valid(list);
 
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	/* calculate block size */
 	size = ALIGN(size + sizeof(mb_t), MB_GRANULARITY);
@@ -478,7 +478,7 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)/*{{{*
 {
 	/* check if it is guard block */
 	mb_valid(list);
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	if (alignment <= MB_GRANULARITY)
 		return mb_alloc(list, size, FALSE);
@@ -537,7 +537,7 @@ void *mb_alloc_aligned(mb_list_t *list, uint32_t size, uint32_t alignment)/*{{{*
 
 	DEBUG("will use block [$%.8x; %u; $%.2x]\n", (uint32_t)blk, blk->size, blk->flags);
 
-	assert((uint32_t)blk + sizeof(mb_t) == ALIGN((uint32_t)blk + sizeof(mb_t), alignment));
+	I((uint32_t)blk + sizeof(mb_t) == ALIGN((uint32_t)blk + sizeof(mb_t), alignment));
 
 	/* block is ready to be pulled out of list */
 	mb_pullout(blk);
@@ -568,8 +568,8 @@ bool mb_resize(mb_list_t *list, void *memory, uint32_t new_size)/*{{{*/
 {
 	/* check if it is guard block */
 	mb_valid(list);
-	assert(mb_is_guard(list));
-	assert(new_size > 0);
+	I(mb_is_guard(list));
+	I(new_size > 0);
 
 	mb_t *blk = (mb_t *)((uint32_t)memory - sizeof(mb_t));
 
@@ -700,7 +700,7 @@ mb_free_t *mb_free(mb_list_t *list, void *memory)/*{{{*/
 {
 	/* check if it is guard block */
 	mb_valid(list);
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	mb_t *blk = (mb_t *)((uint32_t)memory - sizeof(mb_t));
 
@@ -739,7 +739,7 @@ static mb_t *mb_list_find_last(mb_list_t *list)/*{{{*/
 {
 	mb_valid(list);
 
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	mb_t *blk = (mb_t *)list->prev;
 
@@ -754,7 +754,7 @@ static mb_t *mb_list_find_last(mb_list_t *list)/*{{{*/
 			blk = (mb_t *)((uint32_t)blk + blk->size);
 		}
 
-		assert(mb_is_last(blk));
+		I(mb_is_last(blk));
 	}
 
 	DEBUG("last block in list at $%.8x is: [$%.8x; %u; $%.2x]\n", (uint32_t)list, (uint32_t)blk, blk->size, blk->flags);
@@ -773,7 +773,7 @@ uint32_t mb_list_can_shrink_at_end(mb_list_t *list, uint32_t space)/*{{{*/
 	mb_valid(list);
 	mb_valid(list->prev);
 
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	return (mb_is_last(list->prev)) ? list->prev->size / PAGE_SIZE : 0;
 }/*}}}*/
@@ -811,14 +811,14 @@ uint32_t mb_list_can_shrink_at_beginning(mb_list_t *list, uint32_t space)/*{{{*/
 void mb_list_shrink_at_end(mb_list_t *list, uint32_t pages, uint32_t space)/*{{{*/
 {
 	mb_valid(list);
-	assert(pages > 0);
-	assert(mb_is_guard(list));
+	I(pages > 0);
+	I(mb_is_guard(list));
 
 	DEBUG("will shrink list of blocks at $%.8x from right side by %u pages\n", (uint32_t)list, pages);
 
 	mb_valid(list->prev);
-	assert(mb_is_last(list->prev));
-	assert(list->prev->size >= pages * PAGE_SIZE);
+	I(mb_is_last(list->prev));
+	I(list->prev->size >= pages * PAGE_SIZE);
 
 	/* shorten list */
 	list->size    -= pages * PAGE_SIZE;
@@ -875,16 +875,16 @@ void mb_list_shrink_at_beginning(mb_list_t **to_shrink, uint32_t pages, uint32_t
 	mb_list_t *newlist = NULL;
 
 	mb_valid(list);
-	assert(mb_is_guard(list));
-	assert(pages > 0);
+	I(mb_is_guard(list));
+	I(pages > 0);
 	
 	DEBUG("will shrink list of blocks at $%.8x from left side by %u pages\n", (uint32_t)list, pages);
 
 	mb_valid(list->next);
-	assert(mb_is_first(list->next));
+	I(mb_is_first(list->next));
 	
 	/* Two posibilities: first free block can be removed or shrinked */
-	assert(list->next->size - pages * PAGE_SIZE >= 0);
+	I(list->next->size - pages * PAGE_SIZE >= 0);
 
 	if (list->next->size - pages * PAGE_SIZE == 0) {
 		/* remove first block */
@@ -945,7 +945,7 @@ void mb_list_shrink_at_beginning(mb_list_t **to_shrink, uint32_t pages, uint32_t
 		newfirst->prev		 = (mb_free_t *)newlist;
 		newfirst->next->prev = newfirst;
 
-		assert(newfirst->size != 8);
+		I(newfirst->size != 8);
 
 		mb_touch(newfirst);
 		mb_touch(newfirst->next);
@@ -969,8 +969,8 @@ void mb_list_shrink_at_beginning(mb_list_t **to_shrink, uint32_t pages, uint32_t
 void mb_list_expand(mb_list_t *list, uint32_t pages)/*{{{*/
 {
 	mb_valid(list);
-	assert(mb_is_guard(list));
-	assert(pages > 0);
+	I(mb_is_guard(list));
+	I(pages > 0);
 
 	DEBUG("will expand list of block at $%.8x by %u pages\n", (uint32_t)list, pages);
 
@@ -1025,11 +1025,11 @@ mb_list_t *mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)/*{
 		  (uint32_t)second, second->size, second->flags, second->blkcnt, second->ublkcnt, second->fmemcnt);
 
 	/* a few checks */
-	assert(mb_is_guard(first));
-	assert(mb_is_guard(second));
+	I(mb_is_guard(first));
+	I(mb_is_guard(second));
 
-	assert(((uint32_t)first + first->size + space) == ((uint32_t)second));
-	assert(space >= sizeof(mb_free_t));
+	I(((uint32_t)first + first->size + space) == ((uint32_t)second));
+	I(space >= sizeof(mb_free_t));
 
 	/* last block in first memory blocks' list is not last in joined list */
 	mb_free_t *blk;
@@ -1108,8 +1108,8 @@ mb_list_t *mb_list_merge(mb_list_t *first, mb_list_t *second, uint32_t space)/*{
 uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, uint32_t space)/*{{{*/
 {
 	mb_valid(list);
-	assert(mb_is_guard(list));
-	assert(to_split != NULL && cut != NULL);
+	I(mb_is_guard(list));
+	I(to_split != NULL && cut != NULL);
 
 	mb_free_t *blk  = list->next;
 
@@ -1143,7 +1143,7 @@ uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, u
 				/* check if enough space at the end */
 				leftover = end - end_point;
 
-				assert(leftover >= 0);
+				I(leftover >= 0);
 
 				if (leftover < sizeof(mb_list_t))
 					pages--;
@@ -1151,7 +1151,7 @@ uint32_t mb_list_find_split(mb_list_t *list, mb_free_t **to_split, void **cut, u
 				/* check if enough space at the begining */
 				leftover = cut_point - (uint32_t)blk;
 
-				assert(leftover >= 0);
+				I(leftover >= 0);
 
 				if (leftover < space) {
 					cut_point += PAGE_SIZE;
@@ -1190,7 +1190,7 @@ static void mb_list_recalculate_statistics(mb_list_t *list)/*{{{*/
 {
 	/* check if it is guard block */
 	mb_valid(list);
-	assert(mb_is_guard(list));
+	I(mb_is_guard(list));
 
 	/* find first block */
 	mb_t *blk = (mb_t *)((uint32_t)list + sizeof(mb_list_t));
@@ -1229,10 +1229,10 @@ static void mb_list_recalculate_statistics(mb_list_t *list)/*{{{*/
 mb_list_t *mb_list_split(mb_list_t *first, mb_free_t *to_split, uint32_t pages, uint32_t space)/*{{{*/
 {
 	mb_valid(first);
-	assert(mb_is_guard(first));
+	I(mb_is_guard(first));
 
 	mb_valid(to_split);
-	assert(!mb_is_guard(to_split) && !mb_is_used(to_split));
+	I(!mb_is_guard(to_split) && !mb_is_used(to_split));
 
 	DEBUG("split block's list [$%.8x; %u; $%.2x] at block [$%.8x; %u; $%.2x] removing %u pages\n",
 		  (uint32_t)first, first->size, first->flags, (uint32_t)to_split, to_split->size, to_split->flags, pages);

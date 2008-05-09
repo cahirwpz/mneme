@@ -185,7 +185,7 @@ static inline void *sb_get_data(sb_t *self)/*{{{*/
 
 static void sb_prepare(sb_t *self, uint8_t blksize)/*{{{*/
 {
-	assert(blksize < 4);
+	I(blksize < 4);
 
 	self->blksize = blksize;
 
@@ -228,7 +228,7 @@ static int16_t sb_alloc(sb_t *self)/*{{{*/
 		i += 32;
 	}
 
-	assert(j > 0);
+	I(j > 0);
 
 	self->fblkcnt--;
 	self->bitmap[i >> 5] &= ~(1 << (32 - j));
@@ -252,7 +252,7 @@ static uint16_t sb_alloc_indexed(sb_t *self, uint32_t index)/*{{{*/
 
 	uint32_t i = index >> 5, j = index & 0x1F, lastblk = sb_get_blocks(self);
 
-	assert(index < lastblk);
+	I(index < lastblk);
 
 	if (self->bitmap[i] & (1 << j)) {
 		self->fblkcnt--;
@@ -277,8 +277,8 @@ static void sb_free(sb_t *self, uint32_t index)/*{{{*/
 
 	uint32_t i = index >> 5, j = 31 - (index & 0x1F), lastblk = sb_get_blocks(self);
 
-	assert(index < lastblk);
-	assert((self->bitmap[i] & (1 << j)) == 0);
+	I(index < lastblk);
+	I((self->bitmap[i] & (1 << j)) == 0);
 
 	self->fblkcnt++;
 	self->bitmap[i] |= (1 << j);
@@ -581,8 +581,8 @@ sb_mgr_t *sb_mgr_expand(sb_mgr_t *mgr, uint32_t newsbs, direction_t side)/*{{{*/
 	DEBUG("Will expand SB's manager at $%.8x by %u SBs from %s side.\n",
 		  (uint32_t)mgr, newsbs, (side == LEFT) ? "left" : "right");
 
-	assert(newsbs > 0);
-	assert(mgr->all <= SB_COUNT_MAX - newsbs);
+	I(newsbs > 0);
+	I(mgr->all <= SB_COUNT_MAX - newsbs);
 
 	sb_mgr_t *oldmgr = mgr;
 	sb_t     *oldsb  = sb_get_from_address(mgr);
@@ -659,10 +659,10 @@ void *eqsbmgr_alloc(eqsbmgr_t *self, uint32_t size, uint32_t alignment)/*{{{*/
 
 	uint8_t blksize = (size - 1) >> 3;
 
-	assert(blksize < 4);
+	I(blksize < 4);
 
 	/* alignment is not supported due to much more complex implementation */
-	assert(alignment <= 8);
+	I(alignment <= 8);
 
 	sb_t     *sb   = NULL;
     sb_mgr_t *mgr  = NULL;
@@ -1038,7 +1038,7 @@ bool eqsbmgr_realloc(eqsbmgr_t *self, void *memory, uint32_t new_size)/*{{{*/
 {
 	DEBUG("\033[37;1mResizing block at $%.8x to %u bytes.\033[0m\n", (uint32_t)memory, new_size);
 
-	assert(new_size <= 32);
+	I(new_size <= 32);
 
 	uint8_t  new_blksize = (new_size - 1) >> 3;
 	sb_mgr_t *mgr = NULL;
@@ -1106,7 +1106,7 @@ bool eqsbmgr_verify(eqsbmgr_t *self, bool verbose)/*{{{*/
 
 			error |= sb_mgr_verify(mgr, verbose);
 
-			assert(area->manager == AREA_MGR_EQSBMGR);
+			I(area->manager == AREA_MGR_EQSBMGR);
 		} else {
 			if (verbose)
 				fprintf(stderr, "\033[1;33m  $%.8x %11s : %8s : $%.8x : $%.8x\033[0m\n",

@@ -59,7 +59,7 @@ void *mmapmgr_alloc(mmapmgr_t *mmapmgr, uint32_t size, uint32_t alignment)/*{{{*
 				area = leftover;
 			}
 
-			assert(((uint32_t)area_begining(area) & (alignment-1)) == 0);
+			I(((uint32_t)area_begining(area) & (alignment-1)) == 0);
 
 			if (SIZE_IN_PAGES(area->size) > SIZE_IN_PAGES(size)) {
 				DEBUG("Will cut %u pages from back\n", area->size - SIZE_IN_PAGES(size));
@@ -69,7 +69,7 @@ void *mmapmgr_alloc(mmapmgr_t *mmapmgr, uint32_t size, uint32_t alignment)/*{{{*
 				areamgr_free_area(mmapmgr->areamgr, leftover);
 			}
 
-			assert(SIZE_IN_PAGES(area->size) == SIZE_IN_PAGES(size));
+			I(SIZE_IN_PAGES(area->size) == SIZE_IN_PAGES(size));
 		}
 
 		arealst_wrlock(&mmapmgr->blklst);

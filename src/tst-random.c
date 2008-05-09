@@ -320,7 +320,7 @@ static void *memmgr_test(void *args)
 
 					if ((ptr = memmgr_alloc(mm, (size > 0) ? size : 1, alignment))) {
 						if (alignment > 0) {
-							assert(((uint32_t)ptr & (alignment - 1)) == 0);
+							I(((uint32_t)ptr & (alignment - 1)) == 0);
 							DEBUG("memalign(%d, %d) = %p\n", size, alignment, ptr);
 						} else {
 							DEBUG("malloc(%d) = %p\n", size, ptr);

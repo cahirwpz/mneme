@@ -3,7 +3,6 @@
  */
 
 #include <stdio.h>
-#include <assert.h>
 #include <stdlib.h>
 
 #define swapi(a,b)      { int t; t=(b); (b)=(a); (a)=t; }
